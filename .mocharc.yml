@@ -1,0 +1,7 @@
+require:
+  - test/setup.js
+  - ts-node/register
+spec: 'test/suite/**/*.test.ts'
+timeout: 10000
+node-option:
+  - "no-warnings"

@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+  <!-- Top layer -->
+  <rect x="4" y="4" width="16" height="3.5" rx="0.8"/>
+  <!-- Middle layer -->
+  <rect x="4" y="9" width="16" height="3.5" rx="0.8"/>
+  <!-- Bottom layer with wavy top edge -->
+  <path d="M4 14.5 C7 14.5 7.5 16 10.5 16 C13.5 16 14 14.5 17 14.5 C18.5 14.5 19.5 15 20 15.3 L20 19.2 C20 19.64 19.64 20 19.2 20 L4.8 20 C4.36 20 4 19.64 4 19.2 Z"/>
+</svg>

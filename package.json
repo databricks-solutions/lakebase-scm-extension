@@ -1,0 +1,1423 @@
+{
+  "name": "lakebase-scm-extension",
+  "displayName": "Lakebase SCM Extension",
+  "description": "Unified visibility into code and database branch changes for Databricks Lakebase",
+  "version": "0.5.5",
+  "publisher": "kevin-hartman",
+  "icon": "resources/icons/extension-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/databricks-solutions/lakebase-scm-extension"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:lakebaseBranches",
+    "onCommand:lakebaseSync.createProject",
+    "onCommand:lakebaseSync.createLakebaseProject",
+    "onCommand:lakebaseSync.connectWorkspace",
+    "onCommand:lakebaseSync.setupCiSecrets",
+    "workspaceContains:.env",
+    "workspaceContains:.env.example"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lakebase-synced-scm",
+          "title": "Lakebase SCM Extension",
+          "icon": "resources/icons/lakebase-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "lakebase-synced-scm": [
+        {
+          "id": "lakebaseBranches",
+          "name": "Project"
+        },
+        {
+          "id": "lakebaseChanges",
+          "name": "Changes"
+        },
+        {
+          "id": "lakebaseMigrations",
+          "name": "Schema Migrations",
+          "when": "!lakebaseSync.onFeatureBranch"
+        },
+        {
+          "id": "lakebasePR",
+          "name": "Pull Request",
+          "when": "lakebaseSync.hasPR"
+        },
+        {
+          "id": "lakebaseRunner",
+          "name": "CI Runner"
+        },
+        {
+          "id": "lakebaseMerges",
+          "name": "Recent Merges",
+          "when": "!lakebaseSync.onFeatureBranch"
+        },
+        {
+          "id": "lakebaseGraph",
+          "name": "Graph",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "lakebaseSync.showBranchStatus",
+        "title": "Show Branch Status"
+      },
+      {
+        "command": "lakebaseSync.connectWorkspace",
+        "title": "Connect to Workspace",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "lakebaseSync.refreshBranches",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lakebaseSync.createBranch",
+        "title": "Create Lakebase Branch",
+        "icon": "$(diff-added)"
+      },
+      {
+        "command": "lakebaseSync.createUnifiedBranch",
+        "title": "Create Branch...",
+        "icon": "$(git-branch-create)"
+      },
+      {
+        "command": "lakebaseSync.deleteBranch",
+        "title": "Delete Lakebase Branch",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "lakebaseSync.refreshCredentials",
+        "title": "Refresh Database Credentials",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lakebaseSync.runMigrate",
+        "title": "Run Migrations"
+      },
+      {
+        "command": "lakebaseSync.runTests",
+        "title": "Run Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "lakebaseSync.deleteBranchEverywhere",
+        "title": "Delete Branch (local + remote + Lakebase)",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "lakebaseSync.installPlaywrightConfig",
+        "title": "Install Reference Playwright Config"
+      },
+      {
+        "command": "lakebaseSync.showMigrationHistory",
+        "title": "Show Migration History"
+      },
+      {
+        "command": "lakebaseSync.showTableDiff",
+        "title": "Schema Diff"
+      },
+      {
+        "command": "lakebaseSync.showBranchDiff",
+        "title": "Branch Diff Summary",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "lakebaseSync.moreActions",
+        "title": "More Actions...",
+        "icon": "$(ellipsis)"
+      },
+      {
+        "command": "lakebaseSync.showCachedBranchDiff",
+        "title": "Branch Diff (Cached)"
+      },
+      {
+        "command": "lakebaseSync.switchBranch",
+        "title": "Switch to Branch",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "lakebaseSync.openInConsole",
+        "title": "Open in Databricks Console",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "lakebaseSync.stageFile",
+        "title": "Stage",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lakebaseSync.unstageFile",
+        "title": "Unstage",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "lakebaseSync.discardChanges",
+        "title": "Discard Changes",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "lakebaseSync.stageAll",
+        "title": "Stage All",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lakebaseSync.unstageAll",
+        "title": "Unstage All",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "lakebaseSync.commit",
+        "title": "Commit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "lakebaseSync.push",
+        "title": "Push",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "lakebaseSync.pull",
+        "title": "Pull",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "lakebaseSync.publishBranch",
+        "title": "Publish Branch...",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "lakebaseSync.sync",
+        "title": "Sync",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "lakebaseSync.reviewBranch",
+        "title": "Review Branch",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "lakebaseSync.createPullRequest",
+        "title": "Create Pull Request",
+        "icon": "$(git-pull-request-create)"
+      },
+      {
+        "command": "lakebaseSync.healthCheck",
+        "title": "Health Check",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "lakebaseSync.switchBranchPicker",
+        "title": "Create New Branch | Create Branch From | Switch Branch to...",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "lakebaseSync.graphPickRepo",
+        "title": "Select Repository",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "lakebaseSync.graphPickRef",
+        "title": "Filter Branch/Ref",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "lakebaseSync.graphGoToCurrent",
+        "title": "Go to Current History Item",
+        "icon": "$(target)"
+      },
+      {
+        "command": "lakebaseSync.graphFetchAll",
+        "title": "Fetch from All Remotes",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "lakebaseSync.graphPull",
+        "title": "Pull",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "lakebaseSync.graphPush",
+        "title": "Push",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "lakebaseSync.graphRefresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lakebaseSync.fetch",
+        "title": "Fetch",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "lakebaseSync.stash",
+        "title": "Stash",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "lakebaseSync.stashPop",
+        "title": "Pop Stash...",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "lakebaseSync.commitStaged",
+        "title": "Commit Staged"
+      },
+      {
+        "command": "lakebaseSync.commitAll",
+        "title": "Commit All"
+      },
+      {
+        "command": "lakebaseSync.undoLastCommit",
+        "title": "Undo Last Commit"
+      },
+      {
+        "command": "lakebaseSync.commitAmend",
+        "title": "Commit (Amend)"
+      },
+      {
+        "command": "lakebaseSync.commitStagedAmend",
+        "title": "Commit Staged (Amend)"
+      },
+      {
+        "command": "lakebaseSync.commitAllAmend",
+        "title": "Commit All (Amend)"
+      },
+      {
+        "command": "lakebaseSync.discardAllChanges",
+        "title": "Discard All Changes"
+      },
+      {
+        "command": "lakebaseSync.deleteBranch",
+        "title": "Delete Lakebase Branch",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "lakebaseSync.renameBranch",
+        "title": "Rename Branch..."
+      },
+      {
+        "command": "lakebaseSync.mergeBranch",
+        "title": "Merge..."
+      },
+      {
+        "command": "lakebaseSync.commitSignedOff",
+        "title": "Commit (Signed Off)"
+      },
+      {
+        "command": "lakebaseSync.commitStagedSignedOff",
+        "title": "Commit Staged (Signed Off)"
+      },
+      {
+        "command": "lakebaseSync.commitAllSignedOff",
+        "title": "Commit All (Signed Off)"
+      },
+      {
+        "command": "lakebaseSync.createProject",
+        "title": "Lakebase: Create New Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lakebaseSync.createLakebaseProject",
+        "title": "Lakebase: Create Database Project for This Workspace",
+        "icon": "$(database)"
+      },
+      {
+        "command": "lakebaseSync.startRunner",
+        "title": "Lakebase: Start CI Runner"
+      },
+      {
+        "command": "lakebaseSync.setupCiSecrets",
+        "title": "Lakebase: Set CI Secrets (GitHub)",
+        "icon": "$(key)"
+      },
+      {
+        "command": "lakebaseSync.stopRunner",
+        "title": "Lakebase: Stop CI Runner"
+      },
+      {
+        "command": "lakebaseSync.refreshRunner",
+        "title": "Refresh CI Runner",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lakebaseSync.createLakebaseBranchForGit",
+        "title": "Lakebase: Create Branch from Production",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lakebaseSync.deleteLakebaseBranch",
+        "title": "Lakebase: Delete Branch",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "lakebaseSync.createTag",
+        "title": "Create Tag"
+      },
+      {
+        "command": "lakebaseSync.deleteTag",
+        "title": "Delete Tag"
+      },
+      {
+        "command": "lakebaseSync.deleteRemoteTag",
+        "title": "Delete Remote Tag"
+      },
+      {
+        "command": "lakebaseSync.stashStaged",
+        "title": "Stash Staged"
+      },
+      {
+        "command": "lakebaseSync.stashIncludeUntracked",
+        "title": "Stash (Include Untracked)"
+      },
+      {
+        "command": "lakebaseSync.viewStash",
+        "title": "View Stash..."
+      },
+      {
+        "command": "lakebaseSync.stashApply",
+        "title": "Apply Stash..."
+      },
+      {
+        "command": "lakebaseSync.stashApplyLatest",
+        "title": "Apply Latest Stash"
+      },
+      {
+        "command": "lakebaseSync.stashPopLatest",
+        "title": "Pop Latest Stash"
+      },
+      {
+        "command": "lakebaseSync.stashDrop",
+        "title": "Drop Stash..."
+      },
+      {
+        "command": "lakebaseSync.stashDropAll",
+        "title": "Drop All Stashes..."
+      },
+      {
+        "command": "lakebaseSync.createWorktree",
+        "title": "Create Worktree"
+      },
+      {
+        "command": "lakebaseSync.removeWorktree",
+        "title": "Delete Worktree"
+      },
+      {
+        "command": "lakebaseSync.pullRebase",
+        "title": "Pull (Rebase)"
+      },
+      {
+        "command": "lakebaseSync.pullFrom",
+        "title": "Pull from..."
+      },
+      {
+        "command": "lakebaseSync.pushTo",
+        "title": "Push to..."
+      },
+      {
+        "command": "lakebaseSync.fetchPrune",
+        "title": "Fetch (Prune)"
+      },
+      {
+        "command": "lakebaseSync.fetchAll",
+        "title": "Fetch From All Remotes"
+      },
+      {
+        "command": "lakebaseSync.abortRebase",
+        "title": "Abort Rebase"
+      },
+      {
+        "command": "lakebaseSync.rebaseBranch",
+        "title": "Rebase Branch..."
+      },
+      {
+        "command": "lakebaseSync.createBranchFrom",
+        "title": "Create Branch From..."
+      },
+      {
+        "command": "lakebaseSync.deleteRemoteBranch",
+        "title": "Delete Remote Branch..."
+      },
+      {
+        "command": "lakebaseSync.addRemote",
+        "title": "Add Remote..."
+      },
+      {
+        "command": "lakebaseSync.removeRemote",
+        "title": "Remove Remote..."
+      },
+      {
+        "command": "lakebaseSync.showPrSchemaDiff",
+        "title": "View PR Schema Diff",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "lakebaseSync.refreshPrStatus",
+        "title": "Refresh PR Status",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lakebaseSync.mergePullRequest",
+        "title": "Merge Pull Request",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "lakebaseSync.clone",
+        "title": "Clone"
+      },
+      {
+        "command": "lakebaseSync.showGitOutput",
+        "title": "Show Git Output",
+        "icon": "$(history)"
+      },
+      {
+        "command": "lakebaseSync.toggleChangesList",
+        "title": "View as List",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "lakebaseSync.toggleChangesTree",
+        "title": "View as Tree",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "lakebaseSync.deployApp",
+        "title": "Lakebase: Deploy App",
+        "icon": "$(rocket)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "lakebaseSync.commitMenu",
+        "label": "Commit"
+      },
+      {
+        "id": "lakebaseSync.changesMenu",
+        "label": "Changes"
+      },
+      {
+        "id": "lakebaseSync.pullPushMenu",
+        "label": "Pull, Push"
+      },
+      {
+        "id": "lakebaseSync.branchMenu",
+        "label": "Branch"
+      },
+      {
+        "id": "lakebaseSync.stashMenu",
+        "label": "Stash"
+      },
+      {
+        "id": "lakebaseSync.tagsMenu",
+        "label": "Tags"
+      },
+      {
+        "id": "lakebaseSync.remoteMenu",
+        "label": "Remote"
+      },
+      {
+        "id": "lakebaseSync.worktreeMenu",
+        "label": "Worktrees"
+      },
+      {
+        "id": "lakebaseSync.lakebaseMenu",
+        "label": "Lakebase"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "lakebaseSync.publishBranch",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.commit",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lakebaseSync.createPullRequest",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@3"
+        },
+        {
+          "command": "lakebaseSync.refreshBranches",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@4"
+        },
+        {
+          "command": "lakebaseSync.reviewBranch",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@5"
+        },
+        {
+          "command": "lakebaseSync.createUnifiedBranch",
+          "when": "scmProvider == lakebaseUnified && !lakebaseSync.onFeatureBranch",
+          "group": "navigation@6"
+        },
+        {
+          "command": "lakebaseSync.showBranchDiff",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "navigation@7"
+        },
+        {
+          "command": "lakebaseSync.pull",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "1_top@1"
+        },
+        {
+          "command": "lakebaseSync.push",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "1_top@2"
+        },
+        {
+          "command": "lakebaseSync.clone",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "1_top@3"
+        },
+        {
+          "command": "lakebaseSync.switchBranchPicker",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "1_top@4"
+        },
+        {
+          "command": "lakebaseSync.fetch",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "1_top@5"
+        },
+        {
+          "submenu": "lakebaseSync.commitMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@1"
+        },
+        {
+          "submenu": "lakebaseSync.changesMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@2"
+        },
+        {
+          "submenu": "lakebaseSync.pullPushMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@3"
+        },
+        {
+          "submenu": "lakebaseSync.branchMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@4"
+        },
+        {
+          "submenu": "lakebaseSync.stashMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@5"
+        },
+        {
+          "submenu": "lakebaseSync.tagsMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@6"
+        },
+        {
+          "submenu": "lakebaseSync.remoteMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@7"
+        },
+        {
+          "submenu": "lakebaseSync.worktreeMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@8"
+        },
+        {
+          "submenu": "lakebaseSync.lakebaseMenu",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "2_submenus@9"
+        },
+        {
+          "command": "lakebaseSync.showGitOutput",
+          "when": "scmProvider == lakebaseUnified",
+          "group": "3_misc@1"
+        }
+      ],
+      "lakebaseSync.commitMenu": [
+        {
+          "command": "lakebaseSync.commit",
+          "group": "1_commit@1"
+        },
+        {
+          "command": "lakebaseSync.commitStaged",
+          "group": "1_commit@2"
+        },
+        {
+          "command": "lakebaseSync.commitAll",
+          "group": "1_commit@3"
+        },
+        {
+          "command": "lakebaseSync.undoLastCommit",
+          "group": "1_commit@4"
+        },
+        {
+          "command": "lakebaseSync.abortRebase",
+          "group": "1_commit@5",
+          "when": "lakebaseSync.isRebasing"
+        },
+        {
+          "command": "lakebaseSync.commitAmend",
+          "group": "2_amend@1"
+        },
+        {
+          "command": "lakebaseSync.commitStagedAmend",
+          "group": "2_amend@2"
+        },
+        {
+          "command": "lakebaseSync.commitAllAmend",
+          "group": "2_amend@3"
+        },
+        {
+          "command": "lakebaseSync.commitSignedOff",
+          "group": "3_signed@1"
+        },
+        {
+          "command": "lakebaseSync.commitStagedSignedOff",
+          "group": "3_signed@2"
+        },
+        {
+          "command": "lakebaseSync.commitAllSignedOff",
+          "group": "3_signed@3"
+        }
+      ],
+      "lakebaseSync.changesMenu": [
+        {
+          "command": "lakebaseSync.stageAll",
+          "group": "1_changes@1",
+          "title": "Stage All Changes"
+        },
+        {
+          "command": "lakebaseSync.unstageAll",
+          "group": "1_changes@2",
+          "title": "Unstage All Changes"
+        },
+        {
+          "command": "lakebaseSync.discardAllChanges",
+          "group": "1_changes@3",
+          "title": "Discard All Changes"
+        }
+      ],
+      "lakebaseSync.pullPushMenu": [
+        {
+          "command": "lakebaseSync.sync",
+          "group": "1_sync@1"
+        },
+        {
+          "command": "lakebaseSync.pull",
+          "group": "2_pull@1"
+        },
+        {
+          "command": "lakebaseSync.pullRebase",
+          "group": "2_pull@2"
+        },
+        {
+          "command": "lakebaseSync.pullFrom",
+          "group": "2_pull@3"
+        },
+        {
+          "command": "lakebaseSync.push",
+          "group": "3_push@1"
+        },
+        {
+          "command": "lakebaseSync.pushTo",
+          "group": "3_push@2"
+        },
+        {
+          "command": "lakebaseSync.fetch",
+          "group": "4_fetch@1"
+        },
+        {
+          "command": "lakebaseSync.fetchPrune",
+          "group": "4_fetch@2"
+        },
+        {
+          "command": "lakebaseSync.fetchAll",
+          "group": "4_fetch@3"
+        }
+      ],
+      "lakebaseSync.branchMenu": [
+        {
+          "command": "lakebaseSync.mergeBranch",
+          "group": "1_merge@1"
+        },
+        {
+          "command": "lakebaseSync.rebaseBranch",
+          "group": "1_merge@2"
+        },
+        {
+          "command": "lakebaseSync.createUnifiedBranch",
+          "group": "2_create@1"
+        },
+        {
+          "command": "lakebaseSync.createBranchFrom",
+          "group": "2_create@2"
+        },
+        {
+          "command": "lakebaseSync.renameBranch",
+          "group": "3_manage@1"
+        },
+        {
+          "command": "lakebaseSync.deleteBranch",
+          "group": "3_manage@2"
+        },
+        {
+          "command": "lakebaseSync.deleteRemoteBranch",
+          "group": "3_manage@3"
+        },
+        {
+          "command": "lakebaseSync.publishBranch",
+          "group": "4_publish@1"
+        }
+      ],
+      "lakebaseSync.stashMenu": [
+        {
+          "command": "lakebaseSync.stash",
+          "group": "1_stash@1"
+        },
+        {
+          "command": "lakebaseSync.stashIncludeUntracked",
+          "group": "1_stash@2"
+        },
+        {
+          "command": "lakebaseSync.stashStaged",
+          "group": "1_stash@3"
+        },
+        {
+          "command": "lakebaseSync.stashApplyLatest",
+          "group": "2_apply@1"
+        },
+        {
+          "command": "lakebaseSync.stashApply",
+          "group": "2_apply@2"
+        },
+        {
+          "command": "lakebaseSync.stashPopLatest",
+          "group": "3_pop@1"
+        },
+        {
+          "command": "lakebaseSync.stashPop",
+          "group": "3_pop@2"
+        },
+        {
+          "command": "lakebaseSync.stashDrop",
+          "group": "4_drop@1"
+        },
+        {
+          "command": "lakebaseSync.stashDropAll",
+          "group": "4_drop@2"
+        },
+        {
+          "command": "lakebaseSync.viewStash",
+          "group": "5_view@1"
+        }
+      ],
+      "lakebaseSync.tagsMenu": [
+        {
+          "command": "lakebaseSync.createTag",
+          "group": "1_tags@1"
+        },
+        {
+          "command": "lakebaseSync.deleteTag",
+          "group": "1_tags@2"
+        },
+        {
+          "command": "lakebaseSync.deleteRemoteTag",
+          "group": "1_tags@3"
+        }
+      ],
+      "lakebaseSync.remoteMenu": [
+        {
+          "command": "lakebaseSync.addRemote",
+          "group": "1_remote@1"
+        },
+        {
+          "command": "lakebaseSync.removeRemote",
+          "group": "1_remote@2"
+        }
+      ],
+      "lakebaseSync.worktreeMenu": [
+        {
+          "command": "lakebaseSync.createWorktree",
+          "group": "1_worktree@1"
+        },
+        {
+          "command": "lakebaseSync.listWorktrees",
+          "group": "1_worktree@2"
+        },
+        {
+          "command": "lakebaseSync.removeWorktree",
+          "group": "1_worktree@3"
+        }
+      ],
+      "lakebaseSync.lakebaseMenu": [
+        {
+          "command": "lakebaseSync.healthCheck",
+          "group": "1_lakebase@1"
+        },
+        {
+          "command": "lakebaseSync.openInConsole",
+          "group": "1_lakebase@2"
+        },
+        {
+          "command": "lakebaseSync.showBranchDiff",
+          "group": "1_lakebase@3"
+        },
+        {
+          "command": "lakebaseSync.showPrSchemaDiff",
+          "group": "2_pr@1"
+        },
+        {
+          "command": "lakebaseSync.mergePullRequest",
+          "group": "2_pr@2"
+        },
+        {
+          "command": "lakebaseSync.refreshPrStatus",
+          "group": "2_pr@3"
+        },
+        {
+          "command": "lakebaseSync.deployApp",
+          "group": "3_deploy@1"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "lakebaseSync.stageAll",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == code",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.unstageAll",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == staged",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.mergePullRequest",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == pr && lakebaseSync.hasPR",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.showPrSchemaDiff",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == pr && lakebaseSync.hasPR",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.refreshPrStatus",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == pr && lakebaseSync.hasPR",
+          "group": "inline@3"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "lakebaseSync.stageFile",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == code",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.discardChanges",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == code",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.unstageFile",
+          "when": "scmProvider == lakebaseUnified && scmResourceGroup == staged",
+          "group": "inline@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "lakebaseSync.refreshRunner",
+          "when": "view == lakebaseRunner",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.connectWorkspace",
+          "when": "view == lakebaseBranches",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.refreshBranches",
+          "when": "view == lakebaseBranches",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lakebaseSync.deployApp",
+          "when": "view == lakebaseBranches",
+          "group": "navigation@3"
+        },
+        {
+          "command": "lakebaseSync.toggleChangesTree",
+          "when": "view == lakebaseChanges && !lakebaseChanges.viewAsTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "lakebaseSync.toggleChangesList",
+          "when": "view == lakebaseChanges && lakebaseChanges.viewAsTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "lakebaseSync.commit",
+          "when": "view == lakebaseChanges",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.publishBranch",
+          "when": "view == lakebaseChanges",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lakebaseSync.createPullRequest",
+          "when": "view == lakebaseChanges",
+          "group": "navigation@3"
+        },
+        {
+          "command": "lakebaseSync.refreshBranches",
+          "when": "view == lakebaseChanges",
+          "group": "navigation@4"
+        },
+        {
+          "command": "lakebaseSync.reviewBranch",
+          "when": "view == lakebaseChanges",
+          "group": "navigation@5"
+        },
+        {
+          "command": "lakebaseSync.pull",
+          "when": "view == lakebaseChanges",
+          "group": "1_top@1"
+        },
+        {
+          "command": "lakebaseSync.push",
+          "when": "view == lakebaseChanges",
+          "group": "1_top@2"
+        },
+        {
+          "command": "lakebaseSync.switchBranchPicker",
+          "when": "view == lakebaseChanges",
+          "group": "1_top@3"
+        },
+        {
+          "command": "lakebaseSync.fetch",
+          "when": "view == lakebaseChanges",
+          "group": "1_top@4"
+        },
+        {
+          "submenu": "lakebaseSync.commitMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@1"
+        },
+        {
+          "submenu": "lakebaseSync.changesMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@2"
+        },
+        {
+          "submenu": "lakebaseSync.pullPushMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@3"
+        },
+        {
+          "submenu": "lakebaseSync.branchMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@4"
+        },
+        {
+          "submenu": "lakebaseSync.stashMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@5"
+        },
+        {
+          "submenu": "lakebaseSync.tagsMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@6"
+        },
+        {
+          "submenu": "lakebaseSync.remoteMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@7"
+        },
+        {
+          "submenu": "lakebaseSync.worktreeMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@8"
+        },
+        {
+          "submenu": "lakebaseSync.lakebaseMenu",
+          "when": "view == lakebaseChanges",
+          "group": "2_submenus@9"
+        },
+        {
+          "command": "lakebaseSync.showGitOutput",
+          "when": "view == lakebaseChanges",
+          "group": "3_misc@1"
+        },
+        {
+          "command": "lakebaseSync.graphPickRepo",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.graphPickRef",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lakebaseSync.graphGoToCurrent",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@3"
+        },
+        {
+          "command": "lakebaseSync.graphFetchAll",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@4"
+        },
+        {
+          "command": "lakebaseSync.graphPull",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@5"
+        },
+        {
+          "command": "lakebaseSync.graphPush",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@6"
+        },
+        {
+          "command": "lakebaseSync.graphRefresh",
+          "when": "view == lakebaseGraph",
+          "group": "navigation@7"
+        },
+        {
+          "command": "lakebaseSync.mergePullRequest",
+          "when": "view == lakebasePR",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.showPrSchemaDiff",
+          "when": "view == lakebasePR",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lakebaseSync.refreshPrStatus",
+          "when": "view == lakebasePR",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "lakebaseSync.createBranch",
+          "when": "view == lakebaseBranches && viewItem =~ /^(dbItemMissing|currentBranchNoDb|branchNoDb)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.openInConsole",
+          "when": "view == lakebaseBranches && viewItem =~ /^dbItem(Branch|Default)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.openInConsole",
+          "when": "view == lakebaseBranches && viewItem == dbOnlyBranch",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.showBranchDiff",
+          "when": "view == lakebaseBranches && viewItem == dbOnlyBranch",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.deleteBranch",
+          "when": "view == lakebaseBranches && viewItem =~ /^(dbItemBranch|dbOnlyBranch)$/",
+          "group": "inline@3"
+        },
+        {
+          "command": "lakebaseSync.refreshCredentials",
+          "when": "view == lakebaseBranches && viewItem =~ /^dbItem(Branch|Default)$/",
+          "group": "inline@3"
+        },
+        {
+          "command": "lakebaseSync.switchBranchPicker",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.publishBranch",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.commit",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@3"
+        },
+        {
+          "command": "lakebaseSync.createPullRequest",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@4"
+        },
+        {
+          "command": "lakebaseSync.refreshBranches",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@5"
+        },
+        {
+          "command": "lakebaseSync.reviewBranch",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@6"
+        },
+        {
+          "command": "lakebaseSync.showBranchDiff",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@7"
+        },
+        {
+          "command": "lakebaseSync.moreActions",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "inline@8"
+        },
+        {
+          "command": "lakebaseSync.pull",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "1_top@1"
+        },
+        {
+          "command": "lakebaseSync.push",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "1_top@2"
+        },
+        {
+          "command": "lakebaseSync.clone",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "1_top@3"
+        },
+        {
+          "command": "lakebaseSync.fetch",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "1_top@4"
+        },
+        {
+          "submenu": "lakebaseSync.commitMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@1"
+        },
+        {
+          "submenu": "lakebaseSync.changesMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@2"
+        },
+        {
+          "submenu": "lakebaseSync.pullPushMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@3"
+        },
+        {
+          "submenu": "lakebaseSync.branchMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@4"
+        },
+        {
+          "submenu": "lakebaseSync.stashMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@5"
+        },
+        {
+          "submenu": "lakebaseSync.tagsMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@6"
+        },
+        {
+          "submenu": "lakebaseSync.remoteMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@7"
+        },
+        {
+          "submenu": "lakebaseSync.worktreeMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@8"
+        },
+        {
+          "submenu": "lakebaseSync.lakebaseMenu",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "2_submenus@9"
+        },
+        {
+          "command": "lakebaseSync.showGitOutput",
+          "when": "view == lakebaseBranches && viewItem == project",
+          "group": "3_misc@1"
+        },
+        {
+          "command": "lakebaseSync.runTests",
+          "when": "view == lakebaseBranches && viewItem =~ /^(currentBranch|currentBranchNoDb)$/",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.showBranchDiff",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|currentBranch|branchNoDb|currentBranchNoDb)$/",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.switchBranch",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|branchNoDb)$/",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.deleteBranchEverywhere",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|branchNoDb|currentBranch|currentBranchNoDb)$/",
+          "group": "inline@9"
+        },
+        {
+          "command": "lakebaseSync.deleteBranchEverywhere",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|branchNoDb|currentBranch|currentBranchNoDb)$/",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "lakebaseSync.openInConsole",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|currentBranch|branchNoDb|currentBranchNoDb)$/",
+          "group": "inline"
+        },
+        {
+          "command": "lakebaseSync.deleteBranch",
+          "when": "view == lakebaseBranches && viewItem =~ /^(branch|branchNoDb)$/"
+        },
+        {
+          "command": "lakebaseSync.stageFile",
+          "when": "view == lakebaseChanges && viewItem == unstagedFile",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.discardChanges",
+          "when": "view == lakebaseChanges && viewItem == unstagedFile",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.unstageFile",
+          "when": "view == lakebaseChanges && viewItem == stagedFile",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.stageAll",
+          "when": "view == lakebaseChanges && viewItem == unstagedGroup",
+          "group": "inline@1"
+        },
+        {
+          "command": "lakebaseSync.discardAllChanges",
+          "when": "view == lakebaseChanges && viewItem == unstagedGroup",
+          "group": "inline@2"
+        },
+        {
+          "command": "lakebaseSync.unstageAll",
+          "when": "view == lakebaseChanges && viewItem == stagedGroup",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Lakebase SCM Extension",
+      "properties": {
+        "lakebaseSync.databricksHost": {
+          "type": "string",
+          "default": "",
+          "description": "Databricks workspace URL (auto-read from .env if empty)"
+        },
+        "lakebaseSync.lakebaseProjectId": {
+          "type": "string",
+          "default": "",
+          "description": "Lakebase project ID (auto-read from .env if empty)"
+        },
+        "lakebaseSync.autoCreateBranch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically create Lakebase branch on git checkout"
+        },
+        "lakebaseSync.autoRefreshCredentials": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh database credentials in background"
+        },
+        "lakebaseSync.migrationPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to migration files relative to workspace root. Leave empty to auto-detect from project language (Java: src/main/resources/db/migration, Python: alembic/versions, Node.js: migrations)."
+        },
+        "lakebaseSync.showUnifiedRepo": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Unified Repo in SCM"
+        },
+        "lakebaseSync.productionReadOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prevent creating or deleting branches on the default (production) Lakebase branch"
+        },
+        "lakebaseSync.trunkBranch": {
+          "type": "string",
+          "default": "",
+          "description": "Alternative git branch name to treat as 'main' (in addition to main/master). Overrides LAKEBASE_TRUNK_BRANCH from .env if both are set."
+        },
+        "lakebaseSync.stagingBranch": {
+          "type": "string",
+          "default": "",
+          "description": "Git branch name to pair with the Lakebase `staging` branch. Overrides LAKEBASE_STAGING_BRANCH from .env if both are set."
+        },
+        "lakebaseSync.baseBranch": {
+          "type": "string",
+          "default": "",
+          "description": "Lakebase branch id that new feature branches ALWAYS fork from. When empty (default), new branches fork from whichever Lakebase branch you were just on — git-like semantics. Set this to pin a fixed fork source (e.g. `staging` for a 3-tier promotion flow). Overrides LAKEBASE_BASE_BRANCH from .env if both are set."
+        },
+        "lakebaseSync.gitBranchPrefix": {
+          "type": "string",
+          "default": "",
+          "description": "String prefix that scopes the branch-tree view to this project's git branches. Only branches whose name starts with this prefix are listed (the current branch is always shown regardless). Useful in monorepos with branches from other projects/users. Overrides LAKEBASE_GIT_BRANCH_PREFIX from .env if both are set."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "lint": "eslint src --ext ts",
+    "test": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/suite/**/*.test.ts' --timeout 10000",
+    "test:integration": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/integration/**/*.test.ts' --timeout 120000"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.20.0",
+    "@types/sinon": "^17.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "mocha": "^11.7.5",
+    "sinon": "^17.0.0",
+    "ts-loader": "^9.5.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "pg": "^8.20.0",
+    "vsce": "^2.15.0"
+  }
+}

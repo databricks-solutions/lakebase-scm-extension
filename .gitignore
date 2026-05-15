@@ -1,5 +1,7 @@
-*conf*.json
-.DS_Store
-__pycache__
-.idea/
-.env
+node_modules/
+dist/
+*.vsix
+.agent-logs/
+.claude/
+
+

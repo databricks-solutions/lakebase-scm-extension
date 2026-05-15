@@ -1,0 +1,11 @@
+.mocharc.yml
+test/**
+node_modules/**
+src/**
+docs/**
+*.vsix
+.gitignore
+tsconfig.json
+webpack.config.js
+.claude/**
+.agent-logs/**
