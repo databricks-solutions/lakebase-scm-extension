@@ -271,8 +271,22 @@ No schema changes (in sync)
         createdAt: Date.now(),
       });
 
-      // Primary path (queryBranchSchema) needs getDefaultBranch to throw so fallback is used
-      lakebaseStub.getDefaultBranch.rejects(new Error('not reachable'));
+      lakebaseStub.getBranchByName.resolves({
+        uid: 'br-test',
+        name: 'projects/p/branches/test-branch',
+        branchId: 'test-branch',
+        state: 'READY',
+        isDefault: false,
+        sourceBranchId: 'prod',
+      });
+      lakebaseStub.getDefaultBranch.resolves({
+        uid: 'br-prod',
+        name: 'projects/p/branches/prod',
+        branchId: 'prod',
+        state: 'READY',
+        isDefault: true,
+      });
+      lakebaseStub.queryBranchSchema.rejects(new Error('pg failed'));
       // Fallback: getEndpoint returns undefined → error result (proves cache was bypassed)
       lakebaseStub.getEndpoint.resolves(undefined);
 

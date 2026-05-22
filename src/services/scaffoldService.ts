@@ -60,13 +60,31 @@ export class ScaffoldService {
     return this.copyDir(srcDir, destDir, false);
   }
 
-  /** Install git hooks by running scripts/install-hook.sh */
+  /** Install git hooks by copying template scripts into `.git/hooks` (replaces `scripts/install-hook.sh`). */
   async installHooks(targetDir: string): Promise<string> {
-    const hookScript = path.join(targetDir, 'scripts', 'install-hook.sh');
-    if (!fs.existsSync(hookScript)) {
-      throw new Error(`install-hook.sh not found at ${hookScript}. Deploy scripts first.`);
+    const scriptsDir = path.join(targetDir, 'scripts');
+    const gitHooksDir = path.join(targetDir, '.git', 'hooks');
+    if (!fs.existsSync(path.join(targetDir, '.git'))) {
+      throw new Error(`Not a git repo root: ${targetDir}`);
     }
-    return exec(`bash "${hookScript}"`, { cwd: targetDir });
+    fs.mkdirSync(gitHooksDir, { recursive: true });
+
+    const hookPairs: Array<[string, string]> = [
+      ['post-checkout.sh', 'post-checkout'],
+      ['prepare-commit-msg.sh', 'prepare-commit-msg'],
+      ['pre-push.sh', 'pre-push'],
+      ['post-merge.sh', 'post-merge'],
+    ];
+    const installed: string[] = [];
+    for (const [srcName, hookName] of hookPairs) {
+      const src = path.join(scriptsDir, srcName);
+      if (!fs.existsSync(src)) { continue; }
+      const dest = path.join(gitHooksDir, hookName);
+      fs.copyFileSync(src, dest);
+      fs.chmodSync(dest, 0o755);
+      installed.push(hookName);
+    }
+    return `Installed hooks: ${installed.join(', ') || 'none'}`;
   }
 
   /** Deploy .env.example with optional value substitution */

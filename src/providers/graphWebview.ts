@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
 import { getWorkspaceRoot } from '../utils/config';
 import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { GitService } from '../services/gitService';
+import { GitHubService } from '../services/githubService';
 import { GraphService } from '../services/graphService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { buildDiffTuples, sortMigrationsToEnd, DiffTuple } from '../utils/diffBuilder';
@@ -51,6 +51,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private lakebaseService: LakebaseService;
   private gitService: GitService;
+  private githubService: GitHubService;
   private graphService: GraphService;
   showAllRefs = false;
   graphFilterRefs: string[] | null = null;
@@ -58,10 +59,16 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
   private pageSize = 50;
   private loadedCount = 50;
 
-  constructor(private extensionUri: vscode.Uri, lakebaseService: LakebaseService, gitService: GitService) {
+  constructor(
+    private extensionUri: vscode.Uri,
+    lakebaseService: LakebaseService,
+    gitService: GitService,
+    githubService: GitHubService,
+  ) {
     this.lakebaseService = lakebaseService;
     this.gitService = gitService;
-    this.graphService = new GraphService(gitService);
+    this.githubService = githubService;
+    this.graphService = new GraphService(gitService, githubService);
   }
 
   resolveWebviewView(v: vscode.WebviewView): void {
@@ -203,22 +210,25 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
             // 1. Try CI comment from PR
             if (msg.pr) {
               try {
-                const commentsRaw = await this.gitService.ghApi(`repos/${(await this.gitService.getGitHubUrl()).match(/github\.com\/(.+)/)?.[1] || ''}/issues/${msg.pr}/comments`, undefined, '.[].body');
-                const prComments = commentsRaw;
-                const schemaComment = prComments.split('\n').find((line: string) =>
-                  line.includes('CREATED') || line.includes('MODIFIED') || line.includes('REMOVED') ||
-                  line.includes('No schema changes') || line.includes('schema diff'));
-                if (schemaComment) {
-                  found = true;
-                  if (schemaComment.includes('No schema changes')) { noChanges = true; }
-                  else {
-                    for (const line of prComments.split('\n')) {
-                      const tblMatch = line.match(/^[+~-]\s*TABLE\s+(\w+)\s+\((\w+)\)/);
-                      if (tblMatch) { tables.push({ name: tblMatch[1], status: tblMatch[2], columns: [] }); continue; }
-                      const colMatch = line.match(/^\s+([+-])\s+(\w+)\s+(.+)/);
-                      if (colMatch && tables.length > 0) { tables[tables.length - 1].columns.push({ name: colMatch[2], type: colMatch[3], change: colMatch[1] === '+' ? 'add' : 'del' }); continue; }
-                      const newColMatch = line.match(/^\s{4}(\w+)\s+(.+)/);
-                      if (newColMatch && tables.length > 0) { tables[tables.length - 1].columns.push({ name: newColMatch[1], type: newColMatch[2], change: 'add' }); }
+                const ownerRepo = await this.gitService.getOwnerRepo();
+                if (ownerRepo) {
+                  const bodies = await this.githubService.listIssueComments(ownerRepo, msg.pr);
+                  const prComments = bodies.join('\n');
+                  const schemaComment = prComments.split('\n').find((line: string) =>
+                    line.includes('CREATED') || line.includes('MODIFIED') || line.includes('REMOVED') ||
+                    line.includes('No schema changes') || line.includes('schema diff'));
+                  if (schemaComment) {
+                    found = true;
+                    if (schemaComment.includes('No schema changes')) { noChanges = true; }
+                    else {
+                      for (const line of prComments.split('\n')) {
+                        const tblMatch = line.match(/^[+~-]\s*TABLE\s+(\w+)\s+\((\w+)\)/);
+                        if (tblMatch) { tables.push({ name: tblMatch[1], status: tblMatch[2], columns: [] }); continue; }
+                        const colMatch = line.match(/^\s+([+-])\s+(\w+)\s+(.+)/);
+                        if (colMatch && tables.length > 0) { tables[tables.length - 1].columns.push({ name: colMatch[2], type: colMatch[3], change: colMatch[1] === '+' ? 'add' : 'del' }); continue; }
+                        const newColMatch = line.match(/^\s{4}(\w+)\s+(.+)/);
+                        if (newColMatch && tables.length > 0) { tables[tables.length - 1].columns.push({ name: newColMatch[1], type: newColMatch[2], change: 'add' }); }
+                      }
                     }
                   }
                 }

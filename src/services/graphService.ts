@@ -1,4 +1,5 @@
 import { GitService } from './gitService';
+import { GitHubService } from './githubService';
 
 export interface GraphCommit {
   sha: string;
@@ -26,7 +27,10 @@ export interface DiffFile {
 export class GraphService {
   private ghUrlCache: string | null = null;
 
-  constructor(private gitService: GitService) {}
+  constructor(
+    private gitService: GitService,
+    private githubService: GitHubService,
+  ) {}
 
   /**
    * Fetch commit history for the graph view.
@@ -109,27 +113,23 @@ export class GraphService {
   }
 
   /**
-   * Fetch GitHub avatar URLs for recent commits via gh API.
+   * Fetch GitHub avatar URLs for recent commits via Octokit
+   * ({@link GitHubService.listCommits}).
    */
   private async fetchAvatars(limit: number): Promise<Map<string, string>> {
     const cache = new Map<string, string>();
     try {
-      const ghUrl = await this.getGitHubUrl();
-      const match = ghUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-      if (!match) { return cache; }
-      const [, owner, repo] = match;
+      const ownerRepo = await this.gitService.getOwnerRepo();
+      if (!ownerRepo) { return cache; }
       const currentBranch = await this.gitService.getCurrentBranch();
       const sha = currentBranch || 'HEAD';
-      const apiOut = await this.gitService.ghApi(
-        `repos/${owner}/${repo}/commits?sha=${sha}&per_page=${limit}`,
-        undefined,
-        '.[] | "\\(.sha[:7]) \\(.author.avatar_url // "")"'
-      );
-      for (const line of apiOut.split('\n').filter(Boolean)) {
-        const sp = line.indexOf(' ');
-        if (sp > 0) { cache.set(line.substring(0, sp), line.substring(sp + 1)); }
+      const commits = await this.githubService.listCommits(ownerRepo, sha, limit);
+      for (const c of commits) {
+        if (c.sha && c.avatarUrl) {
+          cache.set(c.sha, c.avatarUrl);
+        }
       }
-    } catch { /* gh CLI not available */ }
+    } catch { /* GitHub not available */ }
     return cache;
   }
 }

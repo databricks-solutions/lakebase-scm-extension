@@ -5,12 +5,14 @@ import { SchemaScmProvider } from '../../src/providers/schemaScmProvider';
 import { GitService } from '../../src/services/gitService';
 import { SchemaMigrationService } from '../../src/services/schemaMigrationService';
 import { SchemaDiffService, SchemaDiffResult } from '../../src/services/schemaDiffService';
+import { GitHubService } from '../../src/services/githubService';
 
 describe('SchemaScmProvider (Unified Repo)', () => {
   let provider: SchemaScmProvider;
   let gitStub: sinon.SinonStubbedInstance<GitService>;
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
   let schemaDiffStub: sinon.SinonStubbedInstance<SchemaDiffService>;
+  let githubStub: sinon.SinonStubbedInstance<GitHubService>;
 
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
@@ -29,6 +31,9 @@ describe('SchemaScmProvider (Unified Repo)', () => {
     migrationStub.watchMigrations.returns({ dispose: () => {} });
 
     schemaDiffStub = sinon.createStubInstance(SchemaDiffService);
+
+    githubStub = sinon.createStubInstance(GitHubService);
+    githubStub.getPullRequest.resolves(undefined);
   });
 
   afterEach(() => {
@@ -53,7 +58,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
   describe('showUnifiedRepo setting', () => {
     it('creates SCM when showUnifiedRepo is true (default)', async () => {
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.ok(provider.getScm());
     });
@@ -64,7 +69,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
         get: (key: string, def: any) => key === 'showUnifiedRepo' ? false : def,
       });
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.strictEqual(provider.getScm(), undefined);
       (vscode.workspace as any).getConfiguration = origGet;
@@ -80,7 +85,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
       gitStub.getUnstagedChanges.resolves([]);
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.ok(gitStub.getStagedChanges.called);
     });
@@ -92,7 +97,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
         { status: 'added', path: 'src/new.ts' },
       ]);
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.ok(gitStub.getUnstagedChanges.called);
     });
@@ -101,7 +106,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
       gitStub.getCachedBranch.returns('main');
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.strictEqual(schemaDiffStub.compareBranchSchemas.called, false);
     });
@@ -115,7 +120,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
       ]);
 
       // No lakebaseService → live DB diff not available → Lakebase group empty
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.strictEqual(migrationStub.parseMigrationSchemaChanges.called, false);
     });
@@ -126,7 +131,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
         { status: 'modified', path: 'src/App.java' },
       ]);
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       assert.strictEqual(migrationStub.parseMigrationSchemaChanges.called, false);
     });
@@ -140,7 +145,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
         created: [{ type: 'TABLE', name: 'orders' }],
       }));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       // 1 staged + 1 change + 1 schema = 3
       assert.ok(gitStub.getStagedChanges.called);
@@ -151,7 +156,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
   describe('commit input box', () => {
     it('enables input box with placeholder', async () => {
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 100));
       const scm = provider.getScm();
       assert.ok(scm);
@@ -165,7 +170,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
       const diff = makeDiff();
       schemaDiffStub.getCachedDiff.returns(diff);
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       assert.strictEqual(provider.getLastDiff(), diff);
     });
   });
@@ -173,7 +178,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
   describe('dispose', () => {
     it('disposes SCM and watchers without error', () => {
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       assert.doesNotThrow(() => provider.dispose());
     });
 
@@ -182,7 +187,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
       (vscode.workspace as any).getConfiguration = (section: string) => ({
         get: (key: string, def: any) => key === 'showUnifiedRepo' ? false : def,
       });
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       assert.doesNotThrow(() => provider.dispose());
       (vscode.workspace as any).getConfiguration = origGet;
     });

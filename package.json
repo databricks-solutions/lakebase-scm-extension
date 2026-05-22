@@ -1396,6 +1396,11 @@
           "type": "string",
           "default": "https://start.spring.io",
           "description": "Spring Initializr base URL for Java/Kotlin project generation"
+        },
+        "lakebaseSync.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional GitHub PAT for headless/CI use. Leave empty to use VS Code GitHub sign-in."
         }
       }
     }
@@ -1428,7 +1433,14 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.17",
+    "command-exists": "^1.2.9",
+    "find-java-home": "^2.0.0",
+    "octokit": "^5.0.5",
     "pg": "^8.20.0",
+    "tar": "^7.5.15",
+    "tree-kill": "^1.2.2",
+    "tweetnacl": "^1.0.3",
+    "tweetsodium": "^0.0.4",
     "vsce": "^2.15.0"
   }
 }

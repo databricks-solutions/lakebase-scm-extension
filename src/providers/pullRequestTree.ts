@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { SchemaScmProvider } from './schemaScmProvider';
 import { GitService, PullRequestInfo, PullRequestCheck, PullRequestReview, PullRequestFile } from '../services/gitService';
+import { GitHubService } from '../services/githubService';
 
 type PrItemType = 'status' | 'checks' | 'check' | 'files' | 'file' | 'reviews' | 'review' | 'ciBranch';
 
@@ -21,7 +22,8 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
 
   constructor(
     private scmProvider: SchemaScmProvider,
-    private gitService?: GitService
+    private gitService?: GitService,
+    private githubService?: GitHubService,
   ) {
     scmProvider.onDidRefresh(() => {
       this.cachedPr = undefined;
@@ -32,8 +34,9 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
   /** Force refresh — clears cache and re-fetches PR data immediately */
   async forceRefresh(): Promise<void> {
     this.cachedPr = undefined;
-    if (this.gitService) {
-      this.cachedPr = await this.gitService.getPullRequest();
+    const pr = await this.fetchPullRequest();
+    if (pr !== undefined) {
+      this.cachedPr = pr;
       vscode.commands.executeCommand('setContext', 'lakebaseSync.hasPR', !!this.cachedPr);
     }
     this._onDidChangeTreeData.fire(undefined);
@@ -59,10 +62,17 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
     return [];
   }
 
+  private async fetchPullRequest(): Promise<PullRequestInfo | undefined> {
+    if (!this.gitService || !this.githubService) { return undefined; }
+    const ownerRepo = await this.gitService.getOwnerRepo();
+    const branch = await this.gitService.getCurrentBranch();
+    if (!ownerRepo || !branch) { return undefined; }
+    return this.githubService.getPullRequest(ownerRepo, branch);
+  }
+
   private async getPr(): Promise<PullRequestInfo | undefined> {
     if (this.cachedPr) { return this.cachedPr; }
-    if (!this.gitService) { return undefined; }
-    this.cachedPr = await this.gitService.getPullRequest();
+    this.cachedPr = await this.fetchPullRequest();
     vscode.commands.executeCommand('setContext', 'lakebaseSync.hasPR', !!this.cachedPr);
     return this.cachedPr;
   }
@@ -211,10 +221,13 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
   }
 
   private async getFileItems(): Promise<PrTreeItem[]> {
-    if (!this.gitService) { return []; }
+    const pr = await this.getPr();
+    if (!this.gitService || !this.githubService || !pr) { return []; }
 
     try {
-      const files = await this.gitService.getPullRequestFiles();
+      const ownerRepo = await this.gitService.getOwnerRepo();
+      if (!ownerRepo) { return []; }
+      const files = await this.githubService.getPullRequestFiles(ownerRepo, pr.number);
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
       return files.map(file => {
@@ -254,10 +267,13 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
   }
 
   private async getReviewItems(): Promise<PrTreeItem[]> {
-    if (!this.gitService) { return []; }
+    const pr = await this.getPr();
+    if (!this.gitService || !this.githubService || !pr) { return []; }
 
     try {
-      const reviews = await this.gitService.getPullRequestReviews();
+      const ownerRepo = await this.gitService.getOwnerRepo();
+      if (!ownerRepo) { return []; }
+      const reviews = await this.githubService.getPullRequestReviews(ownerRepo, pr.number);
       if (reviews.length === 0) {
         const item = new PrTreeItem('No reviews yet', vscode.TreeItemCollapsibleState.None);
         item.iconPath = new vscode.ThemeIcon('comment', new vscode.ThemeColor('disabledForeground'));

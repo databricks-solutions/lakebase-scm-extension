@@ -381,48 +381,47 @@ describe('GitService — branch operations', () => {
     });
   });
 
-  describe('createPullRequest', () => {
-    it('publishes branch if no upstream then creates PR', async () => {
-      let commands: string[] = [];
+  describe('pushCurrentBranchForPr', () => {
+    it('publishes branch if no upstream', async () => {
+      let pushedCmd = '';
       cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
         if (typeof _opts === 'function') { cb = _opts; }
-        commands.push(cmd);
         if (cmd.includes('rev-parse --abbrev-ref @{u}')) {
           cb(new Error('no upstream'), '', '');
         } else if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
           cb(null, 'feature-x', '');
-        } else if (cmd.includes('gh pr create')) {
-          cb(null, 'https://github.com/user/repo/pull/42', '');
+        } else if (cmd.includes('git push')) {
+          pushedCmd = cmd;
+          cb(null, '', '');
         } else {
           cb(null, '', '');
         }
       };
       const service = new GitService();
-      const url = await service.createPullRequest('Test PR', 'body');
-      assert.strictEqual(url, 'https://github.com/user/repo/pull/42');
-      assert.ok(commands.some(c => c.includes('git push -u origin')), 'should publish first');
-      assert.ok(commands.some(c => c.includes('gh pr create')));
+      await service.pushCurrentBranchForPr();
+      assert.ok(pushedCmd.includes('git push'));
+      assert.ok(pushedCmd.includes('feature-x'));
     });
 
-    it('skips publish if upstream exists', async () => {
-      let commands: string[] = [];
+    it('pushes existing upstream branch', async () => {
+      let pushedCmd = '';
       cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
         if (typeof _opts === 'function') { cb = _opts; }
-        commands.push(cmd);
         if (cmd.includes('rev-parse --abbrev-ref @{u}')) {
           cb(null, 'origin/feature-x', '');
         } else if (cmd.includes('rev-parse --abbrev-ref HEAD')) {
           cb(null, 'feature-x', '');
-        } else if (cmd.includes('gh pr create')) {
-          cb(null, 'https://github.com/user/repo/pull/43', '');
+        } else if (cmd.includes('git push')) {
+          pushedCmd = cmd;
+          cb(null, '', '');
         } else {
           cb(null, '', '');
         }
       };
       const service = new GitService();
-      const url = await service.createPullRequest('Test PR', 'body');
-      assert.strictEqual(url, 'https://github.com/user/repo/pull/43');
-      assert.ok(!commands.some(c => c.includes('git push -u origin')), 'should not publish');
+      await service.pushCurrentBranchForPr();
+      assert.ok(pushedCmd.includes('git push'));
+      assert.ok(!pushedCmd.includes('git push -u origin'), 'should push upstream without -u');
     });
   });
 });
