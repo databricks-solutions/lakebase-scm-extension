@@ -104,14 +104,43 @@ export class ProjectCreationService {
       description: `Lakebase project: ${input.projectName}`,
     });
 
-    // Step 2: Clone the repo (retry once — GitHub API may not have propagated yet)
-    report('Cloning repository...', projectDir);
-    try {
-      await exec(`gh repo clone "${fullRepoName}" "${projectDir}"`, { timeout: 30000 });
-    } catch {
-      await new Promise(r => setTimeout(r, 3000));
-      await exec(`gh repo clone "${fullRepoName}" "${projectDir}"`, { timeout: 30000 });
+    // Step 2: Clone the repo. Two failure modes we've seen in practice:
+    //   (a) propagation delay — `gh repo create` returned 201 but the repo
+    //       isn't yet readable via the API/clone (EMU orgs with SAML can take
+    //       10–20s, sometimes more)
+    //   (b) SAML SSO authorization gap — gh token has scope to create in the
+    //       org but hasn't been SSO-authorized for reads
+    // Poll the API for visibility first (exposes both failure modes with the
+    // real error), then clone. Backoff 1s, 2s, 3s, 5s, 8s — total ~19s max.
+    report('Waiting for GitHub repo to be visible...', fullRepoName);
+    const probeDelays = [1000, 2000, 3000, 5000, 8000];
+    let probeErr = '';
+    let visible = false;
+    for (const delay of probeDelays) {
+      try {
+        await exec(`gh api repos/${fullRepoName} --jq '.full_name'`, { timeout: 8000 });
+        visible = true;
+        break;
+      } catch (err: any) {
+        probeErr = (err.stderr || err.message || '').toString();
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
+    if (!visible) {
+      let activeUser = '';
+      try { activeUser = (await exec(`gh api user --jq '.login'`, { timeout: 5000 })).trim(); } catch { /* ignore */ }
+      const samlHint = /SAML|scope does not match|sso/i.test(probeErr)
+        ? `\n\nThe error mentions SAML — your gh token may need SSO authorization for this org:\n    gh auth refresh -h github.com -s repo\n  (then click Authorize for the org during the SSO redirect)`
+        : '';
+      const userHint = activeUser && activeUser !== input.githubOwner
+        ? `\n\nNote: gh is logged in as "${activeUser}", but the repo was created under "${input.githubOwner}". If those are different identities, the repo may have landed elsewhere — check with: gh repo list ${input.githubOwner} --limit 5`
+        : '';
+      throw new Error(
+        `GitHub repo "${fullRepoName}" was created but isn't visible to the gh token after ~19s of polling. Project creation paused here.${samlHint}${userHint}\n\nLast probe error:\n  ${probeErr.split('\n')[0].slice(0, 200)}`
+      );
+    }
+    report('Cloning repository...', projectDir);
+    await exec(`gh repo clone "${fullRepoName}" "${projectDir}"`, { timeout: 30000 });
 
     // Step 3: Create Lakebase project
     report('Creating Lakebase database...', lakebaseProjectId);
