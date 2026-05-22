@@ -173,13 +173,38 @@ export class ProjectCreationService {
       report('Using GitHub-hosted runners — no local runner needed.');
     }
 
-    // Step 10: Initial commit + push (triggers merge.yml → runner picks it up)
+    // Step 10: Initial commit + push (triggers merge.yml → runner picks it up).
+    // Pushing any .github/workflows/* file requires the `workflow` OAuth scope
+    // on whatever token gh/git is using. Default `gh auth login` doesn't grant
+    // it. Preflight + clear error message — the raw "remote rejected ...
+    // without `workflow` scope" output is opaque if you haven't seen it before.
     const langLabels: Record<string, string> = { java: 'Java/Spring Boot', python: 'Python/FastAPI', nodejs: 'Node.js/Express' };
     const langLabel = langLabels[language] || language;
     report('Creating initial commit...');
     await exec('git add -A', { cwd: projectDir });
     await exec(`git commit -m "Initial project scaffold (${langLabel} + Lakebase)"`, { cwd: projectDir, timeout: 30000 });
-    await exec('git push -u origin main', { cwd: projectDir, timeout: 30000 });
+
+    try {
+      const ghStatus = await exec('gh auth status 2>&1', { timeout: 5_000 }).catch(() => '');
+      if (ghStatus && !/Token scopes:[^\n]*\bworkflow\b/.test(ghStatus)) {
+        report('⚠ gh CLI is missing the `workflow` OAuth scope; the upcoming push will be rejected because we scaffolded GitHub Actions workflows. Adding it now requires re-auth — best to run `gh auth refresh -s workflow` in a separate terminal, then retry the push from the project directory.');
+      }
+    } catch { /* preflight best-effort */ }
+
+    try {
+      await exec('git push -u origin main', { cwd: projectDir, timeout: 30000 });
+    } catch (err: any) {
+      const msg = (err.stderr || err.stdout || err.message || '').toString();
+      if (/without `?workflow`? scope|workflow scope/i.test(msg)) {
+        throw new Error(
+          `Push rejected: gh CLI lacks the \`workflow\` OAuth scope, which GitHub requires for any commit that touches \`.github/workflows/*\`. The project on disk is fine; only the initial push failed.\n\n` +
+          `To finish:\n` +
+          `  1. Run in a terminal:  gh auth refresh -s workflow\n` +
+          `  2. Then from the project dir:  cd ${projectDir} && git push -u origin main`
+        );
+      }
+      throw err;
+    }
 
     // Step 11: Run health check (verify everything is in place)
     report('Verifying project...');
