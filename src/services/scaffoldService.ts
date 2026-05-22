@@ -1,23 +1,48 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { exec } from '../utils/exec';
+import { patchPomForLakebase } from '../utils/pomPatch';
+import { extractZipToDir } from '../utils/zipExtract';
+import {
+  SpringInitializrClient,
+  SpringJvmLanguage,
+  InitializrNetworkError,
+} from './springInitializrClient';
 
-export type ProjectLanguage = 'java' | 'python' | 'nodejs';
+export type ProjectLanguage = 'java' | 'kotlin' | 'python' | 'nodejs';
+
+export type ScaffoldReportFn = (message: string, detail?: string) => void;
 
 /**
  * Service for scaffolding new Lakebase projects.
  * Deploys common files (scripts, workflows, hooks, config) plus language-specific
- * project files (Java/Maven, Python/FastAPI, Node.js/Express).
+ * project files (Java/Kotlin via Spring Initializr, Python/FastAPI, Node.js/Express).
  */
 export class ScaffoldService {
   private templateDir: string;
 
-  constructor(extensionPath: string) {
+  constructor(
+    extensionPath: string,
+    private readonly initializrClient?: SpringInitializrClient,
+  ) {
     this.templateDir = path.join(extensionPath, 'templates', 'project');
   }
 
   private commonDir(): string { return path.join(this.templateDir, 'common'); }
+  private springDir(): string { return path.join(this.templateDir, 'spring'); }
   private langDir(language: ProjectLanguage): string { return path.join(this.templateDir, language); }
+
+  private getInitializrClient(): SpringInitializrClient {
+    if (this.initializrClient) {
+      return this.initializrClient;
+    }
+    const baseUrl = vscode.workspace.getConfiguration('lakebaseSync').get<string>(
+      'springInitializrUrl',
+      'https://start.spring.io',
+    );
+    return new SpringInitializrClient(baseUrl);
+  }
 
   // ── Common file deployment ──────────────────────────────────────
 
@@ -90,23 +115,113 @@ export class ScaffoldService {
 
   /**
    * Deploy language-specific project files.
-   * Copies the entire language template directory and performs placeholder substitution.
-   * Skips .gitignore.extra (handled by deployGitignore).
+   * Java/Kotlin use Spring Initializr; Python/Node copy static templates.
    */
-  async deployLanguageProject(targetDir: string, language: ProjectLanguage, projectName?: string): Promise<void> {
+  async deployLanguageProject(
+    targetDir: string,
+    language: ProjectLanguage,
+    projectName?: string,
+    report?: ScaffoldReportFn,
+  ): Promise<void> {
+    if (language === 'java' || language === 'kotlin') {
+      await this.deploySpringFromInitializr(targetDir, language, projectName, report);
+      return;
+    }
+
     const langSrc = this.langDir(language);
     if (!fs.existsSync(langSrc)) {
       throw new Error(`No template found for language: ${language}`);
     }
-
-    // Copy all files from the language template
     this.copyDirWithSubstitution(langSrc, targetDir, projectName);
+  }
 
-    // Set executable permissions where needed
-    if (language === 'java') {
+  private async deploySpringFromInitializr(
+    targetDir: string,
+    language: SpringJvmLanguage,
+    projectName?: string,
+    report?: ScaffoldReportFn,
+  ): Promise<void> {
+    const label = language === 'kotlin' ? 'Kotlin' : 'Java';
+    const useFallback = process.env.LAKEBASE_SCAFFOLD_FALLBACK === '1';
+
+    if (useFallback) {
+      report?.(`Using bundled ${label} template (LAKEBASE_SCAFFOLD_FALLBACK)...`);
+      await this.deploySpringFallback(targetDir, language, projectName);
+      await this.deploySpringOverlays(targetDir);
+      return;
+    }
+
+    report?.(`Fetching Spring Boot project from start.spring.io (${label})...`);
+    let initializrExtracted = false;
+    try {
+      const client = this.getInitializrClient();
+      const metadata = await client.getMetadata();
+      report?.(
+        `Scaffolding Spring Boot ${metadata.bootVersion} (JVM ${metadata.javaVersion}, ${label})...`,
+        `bootVersion=${metadata.bootVersion}`,
+      );
+
+      const zip = await client.generateMavenProject({
+        language,
+        artifactId: projectName || 'demo',
+        name: projectName,
+      });
+      extractZipToDir(zip, targetDir);
+      initializrExtracted = true;
+
+      const pomPath = path.join(targetDir, 'pom.xml');
+      if (!fs.existsSync(pomPath)) {
+        throw new Error('Spring Initializr did not produce a Maven project (missing pom.xml)');
+      }
+
       const mvnw = path.join(targetDir, 'mvnw');
       if (fs.existsSync(mvnw)) { fs.chmodSync(mvnw, 0o755); }
+
+      await this.deploySpringOverlays(targetDir);
+      patchPomForLakebase(pomPath);
+    } catch (err) {
+      if (initializrExtracted) {
+        throw new Error(
+          `Spring Initializr project was extracted but post-processing failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      const reason = err instanceof InitializrNetworkError ? err.message : String(err);
+      report?.(`Spring Initializr unavailable; using bundled ${label} template.`, reason);
+      this.clearScaffoldArtifacts(targetDir);
+      await this.deploySpringFallback(targetDir, language, projectName);
+      await this.deploySpringOverlays(targetDir);
     }
+  }
+
+  /** Remove scaffold output while preserving an existing .git directory. */
+  private clearScaffoldArtifacts(targetDir: string): void {
+    if (!fs.existsSync(targetDir)) { return; }
+    for (const entry of fs.readdirSync(targetDir)) {
+      if (entry === '.git') { continue; }
+      fs.rmSync(path.join(targetDir, entry), { recursive: true, force: true });
+    }
+  }
+
+  private async deploySpringFallback(
+    targetDir: string,
+    language: SpringJvmLanguage,
+    projectName?: string,
+  ): Promise<void> {
+    const fallbackDir = path.join(this.langDir(language), 'fallback');
+    if (!fs.existsSync(fallbackDir)) {
+      throw new Error(`No fallback template found for language: ${language}`);
+    }
+    this.copyDirWithSubstitution(fallbackDir, targetDir, projectName);
+    const mvnw = path.join(targetDir, 'mvnw');
+    if (fs.existsSync(mvnw)) { fs.chmodSync(mvnw, 0o755); }
+  }
+
+  private async deploySpringOverlays(targetDir: string): Promise<void> {
+    const overlayDir = this.springDir();
+    if (!fs.existsSync(overlayDir)) {
+      throw new Error(`Spring overlay template not found at ${overlayDir}`);
+    }
+    this.copyDirWithSubstitution(overlayDir, targetDir);
   }
 
   // ── Full scaffold ──────────────────────────────────────────────
@@ -119,6 +234,7 @@ export class ScaffoldService {
     lakebaseProjectId?: string;
     language?: ProjectLanguage;
     runnerType?: 'self-hosted' | 'github-hosted';
+    report?: ScaffoldReportFn;
   }): Promise<{
     scripts: string[];
     workflows: string[];
@@ -126,6 +242,7 @@ export class ScaffoldService {
   }> {
     const language = values?.language || 'java';
     const runnerType = values?.runnerType || 'self-hosted';
+    const report = values?.report;
 
     // Common files
     await this.deployGitignore(targetDir, language);
@@ -134,7 +251,7 @@ export class ScaffoldService {
     await this.deployDeployTargets(targetDir, values?.lakebaseProjectId);
 
     // Language-specific project files
-    await this.deployLanguageProject(targetDir, language, values?.lakebaseProjectId);
+    await this.deployLanguageProject(targetDir, language, values?.lakebaseProjectId, report);
 
     // Scripts, workflows, hooks (common across all languages)
     const scripts = await this.deployScripts(targetDir);
@@ -231,7 +348,7 @@ export class ScaffoldService {
   private copyDirWithSubstitution(srcDir: string, destDir: string, projectName?: string): void {
     fs.mkdirSync(destDir, { recursive: true });
     for (const file of fs.readdirSync(srcDir)) {
-      if (file === '.gitignore.extra') { continue; }
+      if (file === '.gitignore.extra' || file === 'fallback') { continue; }
       const srcPath = path.join(srcDir, file);
       const destPath = path.join(destDir, file);
       if (fs.statSync(srcPath).isDirectory()) {

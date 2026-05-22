@@ -3,5 +3,7 @@ dist/
 *.vsix
 .agent-logs/
 .claude/
+.npmrc
+target/
 
 

@@ -7,7 +7,7 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 **The problem it solves:** When applications use Lakebase (Databricks' Postgres-compatible database with copy-on-write branching), developers need to keep code branches and database branches in sync. Without this extension, you manually create database branches, refresh credentials, track schema diffs, and clean up branches — across the CLI, the Databricks console, and GitHub.
 
 **What it does:**
-- **Create New Project** — 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Python/Node.js) + CI/CD workflows + self-hosted runner
+- **Create New Project** — 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
 - **Automatic branch pairing** — `git checkout -b feature/x` automatically creates a Lakebase database branch
 - **Live schema visibility** — see actual database tables on each branch with diff indicators (new/modified/removed vs production)
 - **Two parallel interfaces** — work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
@@ -33,7 +33,7 @@ The wizard walks through 10 steps:
 | 3 | GitHub authentication | Sign in via browser, or use existing auth |
 | 4 | GitHub repo name | Defaults to project name |
 | 5 | Visibility | Private (default) or Public |
-| 6 | Language | Java/Spring Boot, Python/FastAPI, or Node.js/Express |
+| 6 | Language | Java/Spring Boot, Kotlin/Spring Boot, Python/FastAPI, or Node.js/Express |
 | 7 | Runner type | Self-hosted (default) or GitHub-hosted |
 | 8 | Databricks workspace | Select or connect to a workspace with Lakebase |
 | 9 | Lakebase project name | Defaults to repo name |
@@ -54,9 +54,12 @@ After creation, the extension offers to open the new project folder.
 
 | Language | Framework | Migration Tool | Package Manager | Test Framework |
 |----------|-----------|---------------|-----------------|----------------|
-| **Java** | Spring Boot 3.5 / JPA | Flyway 10.22 | Maven (mvnw) | JUnit 5 + MockMvc |
+| **Java** | Spring Boot (latest via [start.spring.io](https://start.spring.io)) / JPA | Flyway | Maven (mvnw) | JUnit 5 |
+| **Kotlin** | Spring Boot (latest via [start.spring.io](https://start.spring.io)) / JPA | Flyway | Maven (mvnw) | JUnit 5 |
 | **Python** | FastAPI / SQLAlchemy / psycopg3 | Alembic 1.14 | uv + pyproject.toml | pytest + httpx |
 | **Node.js** | Express | Knex 3.1 | npm | Jest + supertest |
+
+Java and Kotlin projects are generated live from Spring Initializr at scaffold time (always the latest stable Spring Boot version). Lakebase-specific configuration (datasource, Flyway plugin, migration placeholder) is overlaid on top. If Initializr is unreachable, the extension falls back to bundled templates. Override the Initializr URL with the `lakebaseSync.springInitializrUrl` setting for private instances.
 
 Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language from `pom.xml`, `pyproject.toml`, or `package.json`. CI workflows are language-aware — they detect the project type and run the correct setup, migration, and test tools automatically.
 
@@ -79,7 +82,7 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 | PostgreSQL client (psql) | `brew install libpq` |
 | Databricks workspace | With Lakebase enabled |
 
-**For Java projects:** Java 21+ and Maven (the scaffold includes `mvnw`)
+**For Java/Kotlin projects:** JVM 21+ and Maven (the scaffold includes `mvnw`)
 **For Python projects:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (`brew install uv` or `pip install uv`)
 **For Node.js projects:** Node.js 18+
 
@@ -321,7 +324,7 @@ The extension supports explicit, versioned migrations — not ORM auto-DDL. Sche
 
 | Language | Migration Tool | Migration Files |
 |----------|---------------|----------------|
-| Java | Flyway | `src/main/resources/db/migration/V{N}__desc.sql` |
+| Java / Kotlin | Flyway | `src/main/resources/db/migration/V{N}__desc.sql` |
 | Python | Alembic | `alembic/versions/*.py` |
 | Node.js | Knex | `migrations/*.js` |
 

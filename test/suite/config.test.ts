@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { parseEnvFile, getConfig, getEnvConfig, getWorkspaceRoot, updateEnvConnection } from '../../src/utils/config';
+import { parseEnvFile, getConfig, getEnvConfig, getWorkspaceRoot, updateEnvConnection, detectLanguage } from '../../src/utils/config';
 
 describe('Config Utilities', () => {
   afterEach(() => sinon.restore());
@@ -84,6 +84,30 @@ describe('Config Utilities', () => {
       (vscode.workspace as any).workspaceFolders = undefined;
       const env = getEnvConfig();
       assert.deepStrictEqual(env, {});
+    });
+  });
+
+  describe('detectLanguage', () => {
+    it('detects kotlin from src/main/kotlin', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}`);
+      fs.mkdirSync(path.join(tmp, 'src', 'main', 'kotlin'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'pom.xml'), '<project/>');
+      try {
+        assert.strictEqual(detectLanguage(tmp), 'kotlin');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('detects kotlin from kotlin-maven-plugin in pom.xml', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}`);
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'pom.xml'), '<project><build><plugins><plugin><artifactId>kotlin-maven-plugin</artifactId></plugin></plugins></build></project>');
+      try {
+        assert.strictEqual(detectLanguage(tmp), 'kotlin');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
     });
   });
 
