@@ -418,6 +418,10 @@
         "title": "Create Worktree"
       },
       {
+        "command": "lakebaseSync.listWorktrees",
+        "title": "List Worktrees..."
+      },
+      {
         "command": "lakebaseSync.removeWorktree",
         "title": "Delete Worktree"
       },
@@ -1387,6 +1391,11 @@
           "type": "string",
           "default": "",
           "description": "String prefix that scopes the branch-tree view to this project's git branches. Only branches whose name starts with this prefix are listed (the current branch is always shown regardless). Useful in monorepos with branches from other projects/users. Overrides LAKEBASE_GIT_BRANCH_PREFIX from .env if both are set."
+        },
+        "lakebaseSync.springInitializrUrl": {
+          "type": "string",
+          "default": "https://start.spring.io",
+          "description": "Spring Initializr base URL for Java/Kotlin project generation"
         }
       }
     }
@@ -1400,6 +1409,7 @@
     "test:integration": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/integration/**/*.test.ts' --timeout 120000"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.20.0",
@@ -1417,6 +1427,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
     "pg": "^8.20.0",
     "vsce": "^2.15.0"
   }

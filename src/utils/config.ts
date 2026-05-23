@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export type ProjectLanguage = 'java' | 'python' | 'nodejs' | 'unknown';
+export type ProjectLanguage = 'java' | 'kotlin' | 'python' | 'nodejs' | 'unknown';
 
 export interface LakebaseConfig {
   databricksHost: string;
@@ -99,7 +99,19 @@ export function parseEnvFile(filePath: string): EnvConfig {
 /** Detect project language from marker files in workspace root */
 export function detectLanguage(root?: string): ProjectLanguage {
   if (!root) { return 'unknown'; }
-  if (fs.existsSync(path.join(root, 'pom.xml'))) { return 'java'; }
+  if (fs.existsSync(path.join(root, 'pom.xml'))) {
+    const kotlinDir = path.join(root, 'src', 'main', 'kotlin');
+    if (fs.existsSync(kotlinDir)) {
+      return 'kotlin';
+    }
+    try {
+      const pom = fs.readFileSync(path.join(root, 'pom.xml'), 'utf-8');
+      if (pom.includes('kotlin-maven-plugin')) {
+        return 'kotlin';
+      }
+    } catch { /* fall through to java */ }
+    return 'java';
+  }
   if (fs.existsSync(path.join(root, 'pyproject.toml')) || fs.existsSync(path.join(root, 'requirements.txt'))) { return 'python'; }
   if (fs.existsSync(path.join(root, 'package.json')) && !fs.existsSync(path.join(root, 'pom.xml'))) { return 'nodejs'; }
   return 'unknown';
@@ -107,6 +119,7 @@ export function detectLanguage(root?: string): ProjectLanguage {
 
 const MIGRATION_DEFAULTS: Record<ProjectLanguage, { path: string; pattern: RegExp; glob: string }> = {
   java:    { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },
+  kotlin:  { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },
   python:  { path: 'alembic/versions',                pattern: /^[0-9a-f][\w]*.*\.py$/i, glob: '*.py' },
   nodejs:  { path: 'migrations',                      pattern: /^\d+.*\.(js|ts)$/i,   glob: '*.{js,ts}' },
   unknown: { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },

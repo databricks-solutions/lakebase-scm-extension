@@ -583,65 +583,80 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!folderUri || folderUri.length === 0) { return; }
       const parentDir = folderUri[0].fsPath;
 
-      // ── Step 2: GitHub auth + repo ───────────────────────────────
+      // ── Step 2: GitHub (optional) ────────────────────────────────
+      const githubPick = await vscode.window.showQuickPick([
+        { label: '$(github) Create GitHub repository', description: 'Create repo, push scaffold, and set up CI', value: true },
+        { label: '$(folder) Local project only', description: 'Scaffold locally — add GitHub later', value: false },
+      ], { title: 'Lakebase: GitHub Repository (2/10)', placeHolder: 'Create a GitHub repo or work locally?' });
+      if (!githubPick) { return; }
+      const createGithubRepo = githubPick.value;
+
       let ghUser: string | undefined;
-      try {
-        ghUser = await gitService.getCurrentGitHubUser();
-      } catch { /* not authenticated */ }
+      let privateRepo = true;
+      let repoName = projectName;
 
-      if (ghUser) {
-        const authPick = await vscode.window.showQuickPick([
-          { label: `$(check) Authenticated as ${ghUser}`, description: 'Continue with this account', action: 'continue' },
-          { label: '$(sign-in) Switch GitHub account...', description: 'Sign in with a different account', action: 'login' },
-        ], { title: 'Lakebase: GitHub Authentication (2/10)', placeHolder: `GitHub: ${ghUser}` });
-        if (!authPick) { return; }
-        if (authPick.action === 'login') { ghUser = undefined; }
-      }
-
-      if (!ghUser) {
-        const loginPick = await vscode.window.showQuickPick([
-          { label: '$(sign-in) Sign in to GitHub', description: 'Opens browser for GitHub authentication' },
-        ], { title: 'Lakebase: GitHub Authentication (2/10)', placeHolder: 'GitHub authentication required' });
-        if (!loginPick) { return; }
-
-        const terminal = vscode.window.createTerminal('GitHub Login');
-        terminal.show();
-        terminal.sendText('gh auth login --web');
-
-        await new Promise<void>(resolve => {
-          const d = vscode.window.onDidCloseTerminal(t => { if (t === terminal) { d.dispose(); resolve(); } });
-        });
-
+      if (createGithubRepo) {
         try {
           ghUser = await gitService.getCurrentGitHubUser();
-        } catch {
-          vscode.window.showErrorMessage('GitHub authentication failed. Please try again.');
-          return;
+        } catch { /* not authenticated */ }
+
+        if (ghUser) {
+          const authPick = await vscode.window.showQuickPick([
+            { label: `$(check) Authenticated as ${ghUser}`, description: 'Continue with this account', action: 'continue' },
+            { label: '$(sign-in) Switch GitHub account...', description: 'Sign in with a different account', action: 'login' },
+          ], { title: 'Lakebase: GitHub Authentication (3/10)', placeHolder: `GitHub: ${ghUser}` });
+          if (!authPick) { return; }
+          if (authPick.action === 'login') { ghUser = undefined; }
         }
+
+        if (!ghUser) {
+          const loginPick = await vscode.window.showQuickPick([
+            { label: '$(sign-in) Sign in to GitHub', description: 'Opens browser for GitHub authentication' },
+          ], { title: 'Lakebase: GitHub Authentication (3/10)', placeHolder: 'GitHub authentication required' });
+          if (!loginPick) { return; }
+
+          const terminal = vscode.window.createTerminal('GitHub Login');
+          terminal.show();
+          terminal.sendText('gh auth login --web');
+
+          await new Promise<void>(resolve => {
+            const d = vscode.window.onDidCloseTerminal(t => { if (t === terminal) { d.dispose(); resolve(); } });
+          });
+
+          try {
+            ghUser = await gitService.getCurrentGitHubUser();
+          } catch {
+            vscode.window.showErrorMessage('GitHub authentication failed. Please try again.');
+            return;
+          }
+        }
+
+        const repoNameInput = await vscode.window.showInputBox({
+          prompt: 'GitHub repository name',
+          value: projectName,
+          placeHolder: projectName,
+          title: 'Lakebase: GitHub Repository Name (4/10)',
+          validateInput: (val) => {
+            if (!val.trim()) { return 'Repository name is required'; }
+            if (!/^[a-zA-Z0-9._-]+$/.test(val)) { return 'Invalid characters in repo name'; }
+            return undefined;
+          },
+        });
+        if (!repoNameInput) { return; }
+        repoName = repoNameInput;
+
+        const visibilityPick = await vscode.window.showQuickPick([
+          { label: '$(lock) Private', description: 'Only you and collaborators can see this repository', value: true },
+          { label: '$(globe) Public', description: 'Anyone on the internet can see this repository', value: false },
+        ], { title: 'Lakebase: Repository Visibility (5/10)', placeHolder: 'Choose repository visibility' });
+        if (!visibilityPick) { return; }
+        privateRepo = visibilityPick.value;
       }
 
-      const repoName = await vscode.window.showInputBox({
-        prompt: 'GitHub repository name',
-        value: projectName,
-        placeHolder: projectName,
-        title: 'Lakebase: GitHub Repository (3/10)',
-        validateInput: (val) => {
-          if (!val.trim()) { return 'Repository name is required'; }
-          if (!/^[a-zA-Z0-9._-]+$/.test(val)) { return 'Invalid characters in repo name'; }
-          return undefined;
-        },
-      });
-      if (!repoName) { return; }
-
-      const visibilityPick = await vscode.window.showQuickPick([
-        { label: '$(lock) Private', description: 'Only you and collaborators can see this repository', value: true },
-        { label: '$(globe) Public', description: 'Anyone on the internet can see this repository', value: false },
-      ], { title: 'Lakebase: Repository Visibility (4/10)', placeHolder: 'Choose repository visibility' });
-      if (!visibilityPick) { return; }
-
-      // ── Step 2b: Language stack ──────────────────────────────────
+      // ── Language stack ───────────────────────────────────────────
       const languagePick = await vscode.window.showQuickPick([
         { label: '$(symbol-class) Java / Spring Boot', description: 'Maven, Flyway, JPA', value: 'java' as const },
+        { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' as const },
         { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' as const },
         { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' as const },
       ], { title: 'Lakebase: Project Language (5/10)', placeHolder: 'Choose project language and framework' });
@@ -763,8 +778,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 projectName: lakebaseProjectName,
                 parentDir,
                 databricksHost: dbHost!,
-                githubOwner: ghUser!,
-                privateRepo: visibilityPick.value,
+                createGithubRepo,
+                githubOwner: ghUser,
+                privateRepo,
                 language: languagePick.value,
                 runnerType: runnerPick.value,
               },
@@ -775,16 +791,20 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         );
 
-        const openAction = await vscode.window.showInformationMessage(
-          `Project "${lakebaseProjectName}" created successfully!\n` +
-          `GitHub: ${result.githubRepoUrl}\n` +
+        const successLines = [
+          `Project "${lakebaseProjectName}" created successfully!`,
+          result.githubRepoUrl ? `GitHub: ${result.githubRepoUrl}` : 'GitHub: skipped (local project)',
           `Lakebase: ${result.lakebaseProjectId}`,
-          'Open Project', 'Open on GitHub'
+        ];
+        const openAction = await vscode.window.showInformationMessage(
+          successLines.join('\n'),
+          'Open Project',
+          ...(result.githubRepoUrl ? ['Open on GitHub' as const] : []),
         );
         if (openAction === 'Open Project') {
           const projectUri = vscode.Uri.file(result.projectDir);
           await vscode.commands.executeCommand('vscode.openFolder', projectUri, { forceNewWindow: false });
-        } else if (openAction === 'Open on GitHub') {
+        } else if (openAction === 'Open on GitHub' && result.githubRepoUrl) {
           vscode.env.openExternal(vscode.Uri.parse(result.githubRepoUrl));
         }
       } catch (err: any) {
@@ -798,7 +818,8 @@ export async function activate(context: vscode.ExtensionContext) {
               projectName: lakebaseProjectName,
               parentDir,
               databricksHost: dbHost!,
-              githubOwner: ghUser!,
+              createGithubRepo,
+              githubOwner: ghUser,
             });
             vscode.window.showInformationMessage('Partial resources cleaned up.');
           } catch (cleanErr: any) {
@@ -1419,6 +1440,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const lang = detectLanguage(root);
       const cmds: Record<string, { name: string; cmd: string }> = {
         java:    { name: 'Flyway Migrate',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
+        kotlin:  { name: 'Flyway Migrate',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
         python:  { name: 'Alembic Migrate',  cmd: './scripts/refresh-token.sh uv run alembic upgrade head' },
         nodejs:  { name: 'Knex Migrate',     cmd: './scripts/refresh-token.sh bash -c "set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest"' },
         unknown: { name: 'Run Migrations',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
@@ -1708,6 +1730,7 @@ export async function activate(context: vscode.ExtensionContext) {
               const switchLang = detectLanguage(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
               const migCmds: Record<string, { name: string; cmd: string }> = {
                 java:    { name: `Flyway: ${targetGitBranch}`,   cmd: './scripts/flyway-migrate.sh' },
+                kotlin:  { name: `Flyway: ${targetGitBranch}`,   cmd: './scripts/flyway-migrate.sh' },
                 python:  { name: `Alembic: ${targetGitBranch}`,  cmd: './scripts/refresh-token.sh uv run alembic upgrade head' },
                 nodejs:  { name: `Knex: ${targetGitBranch}`,     cmd: 'set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest' },
                 unknown: { name: `Migrate: ${targetGitBranch}`,  cmd: './scripts/flyway-migrate.sh' },
