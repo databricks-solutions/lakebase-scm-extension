@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { RunnerService } from '../services/runnerService';
 import { GitService } from '../services/gitService';
+import { GitHubService } from '../services/githubService';
 import { getConfig } from '../utils/config';
 
 class RunnerItem extends vscode.TreeItem {
@@ -17,7 +18,10 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<RunnerItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<RunnerItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private gitService: GitService) {}
+  constructor(
+    private gitService: GitService,
+    private githubService: GitHubService,
+  ) {}
 
   refresh(): void { this._onDidChangeTreeData.fire(undefined); }
 
@@ -39,7 +43,7 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<RunnerItem> {
       return [item];
     }
 
-    const runnerService = new RunnerService();
+    const runnerService = new RunnerService(this.githubService);
     const info = runnerService.getRunnerInfo(config.lakebaseProjectId);
     const items: RunnerItem[] = [];
 
@@ -125,8 +129,8 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<RunnerItem> {
       return [item];
     }
 
-    const runnerService = new RunnerService();
-    const runs = runnerService.getRecentWorkflowRuns(fullRepoName, 5);
+    const runnerService = new RunnerService(this.githubService);
+    const runs = await runnerService.getRecentWorkflowRuns(fullRepoName, 5);
     if (runs.length === 0) {
       const item = new RunnerItem('No workflow runs yet', 'info');
       item.iconPath = new vscode.ThemeIcon('info');

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { GitService, GitFileChange, PullRequestInfo } from '../services/gitService';
+import { GitHubService } from '../services/githubService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService, SchemaDiffResult } from '../services/schemaDiffService';
 import { LakebaseService } from '../services/lakebaseService';
@@ -40,6 +41,7 @@ export class SchemaScmProvider {
   readonly onDidRefresh: vscode.Event<void> = this._onDidRefresh.event;
 
   private gitService: GitService;
+  private githubService: GitHubService;
   private migrationService: SchemaMigrationService;
   private schemaDiffService: SchemaDiffService;
   private lakebaseService: LakebaseService;
@@ -56,9 +58,11 @@ export class SchemaScmProvider {
     gitService: GitService,
     migrationService: SchemaMigrationService,
     schemaDiffService: SchemaDiffService,
-    lakebaseService?: LakebaseService
+    lakebaseService?: LakebaseService,
+    githubService?: GitHubService,
   ) {
     this.gitService = gitService;
+    this.githubService = githubService!;
     this.migrationService = migrationService;
     this.schemaDiffService = schemaDiffService;
     this.lakebaseService = lakebaseService!;
@@ -441,7 +445,11 @@ export class SchemaScmProvider {
   private async refreshPrStatus(): Promise<void> {
     if (!this.scm || !this.prGroup) { return; }
 
-    const pr = await this.gitService.getPullRequest();
+    const ownerRepo = await this.gitService.getOwnerRepo();
+    const branch = await this.gitService.getCurrentBranch();
+    const pr = ownerRepo && branch
+      ? await this.githubService.getPullRequest(ownerRepo, branch)
+      : undefined;
     this.lastPrInfo = pr;
 
     if (!pr) {

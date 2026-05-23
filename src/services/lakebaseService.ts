@@ -501,19 +501,14 @@ export class LakebaseService {
 
   /**
    * Query the actual tables and their columns on a Lakebase branch database.
-   * Connects via the branch endpoint and queries information_schema.
+   * Connects via the branch endpoint and queries `information_schema`.
    *
-   * Two execution paths:
-   *   1. `psql` shell-out (primary). Fast, zero node-side dependencies, but
-   *      requires the `psql` binary on PATH — not installed by default on
-   *      macOS, and the reason the schema tree used to silently render empty
-   *      for users without libpq.
-   *   2. `pg` node client (fallback). Bundled with the extension, so it
-   *      always works regardless of the user's PATH. Slightly slower on
-   *      first connect because it opens a fresh TCP+TLS session.
+   * Uses the bundled `pg` node client (no `psql` binary required). This replaced
+   * the former psql-primary + pg-fallback paths — the tree was often empty on
+   * macOS when libpq was not installed.
    *
-   * Errors in the psql path fall through to pg. Errors in pg surface to the
-   * console (not silently swallowed).
+   * Errors are logged to the developer console and return `[]` (empty tree),
+   * not thrown, so the sidebar degrades gracefully.
    *
    * @param branchNameOrUid - Branch uid, branchId, or full resource name
    * @returns Array of { name, columns[] } for each table in the public schema
@@ -524,7 +519,7 @@ export class LakebaseService {
     const cred = await this.getCredential(branchNameOrUid);
     const dbName = getProjectDatabase();
 
-    // Single source of truth for the query — keeps psql + pg paths identical.
+    // Shared SQL for schema tree and any future pg-based introspection.
     const sql =
       "SELECT c.table_name, c.column_name, c.data_type " +
       "FROM information_schema.columns c " +
@@ -542,36 +537,11 @@ export class LakebaseService {
       return Array.from(tables.entries()).map(([name, columns]) => ({ name, columns }));
     };
 
-    // ── Path 1: psql ────────────────────────────────────────────────
-    try {
-      const connStr = `host=${ep.host} port=5432 dbname=${dbName} user=${cred.email} password=${cred.token} sslmode=require`;
-      const { execSync } = require('child_process');
-      const raw: string = execSync(
-        `psql "${connStr}" -t -A -c "${sql};"`,
-        { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }
-      ).toString().trim();
-      if (!raw) { return []; }
-      const rows = raw
-        .split('\n')
-        .filter(Boolean)
-        .map(line => {
-          const [table_name, column_name, data_type] = line.split('|');
-          return { table_name, column_name, data_type };
-        });
-      return rowsToTables(rows);
-    } catch (psqlErr: any) {
-      // psql not on PATH, or a connection error. Fall through to pg.
-      console.warn(`[lakebase-scm] psql unavailable (${psqlErr?.code || psqlErr?.message || 'unknown'}); falling back to pg client.`);
-    }
-
-    // ── Path 2: pg node client (bundled, no PATH deps) ──────────────
     let Client: any;
     try {
-      // Lazy require so the extension still activates if the bundle
-      // somehow fails to include pg (unusual but defensive).
       ({ Client } = require('pg'));
     } catch (requireErr: any) {
-      console.error(`[lakebase-scm] Could not load 'pg' fallback: ${requireErr?.message || requireErr}. Schema tree will be empty.`);
+      console.error(`[lakebase-scm] Could not load 'pg' client: ${requireErr?.message || requireErr}. Schema tree will be empty.`);
       return [];
     }
 
@@ -581,7 +551,7 @@ export class LakebaseService {
       database: dbName,
       user: cred.email,
       password: cred.token,
-      ssl: { rejectUnauthorized: false }, // Lakebase uses a managed cert; match psql's sslmode=require
+      ssl: { rejectUnauthorized: false }, // Lakebase managed cert; equivalent to sslmode=require
       connectionTimeoutMillis: 10000,
       statement_timeout: 15000,
     });
@@ -591,7 +561,7 @@ export class LakebaseService {
       const result = await client.query(sql);
       return rowsToTables(result.rows as Array<{ table_name: string; column_name: string; data_type: string }>);
     } catch (pgErr: any) {
-      console.error(`[lakebase-scm] pg fallback also failed: ${pgErr?.message || pgErr}`);
+      console.error(`[lakebase-scm] queryBranchSchema failed: ${pgErr?.message || pgErr}`);
       return [];
     } finally {
       try { await client.end(); } catch { /* noop */ }

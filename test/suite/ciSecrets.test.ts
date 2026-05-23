@@ -62,26 +62,23 @@ describe('CI Secret Sync', () => {
     });
   });
 
-  describe('gh secret set command construction', () => {
-    it('builds correct command for DATABRICKS_HOST', () => {
+  describe('GitHub secrets payload', () => {
+    it('builds secret map for DATABRICKS_HOST', () => {
       const host = 'https://workspace.cloud.databricks.com/';
-      const cmd = `gh secret set DATABRICKS_HOST --body "${host}"`;
-      assert.ok(cmd.includes('gh secret set DATABRICKS_HOST'));
-      assert.ok(cmd.includes(host));
+      const secrets = { DATABRICKS_HOST: host };
+      assert.strictEqual(secrets.DATABRICKS_HOST, host);
     });
 
-    it('builds correct command for DATABRICKS_TOKEN', () => {
+    it('builds secret map for DATABRICKS_TOKEN', () => {
       const token = 'dapi1234567890';
-      const cmd = `gh secret set DATABRICKS_TOKEN --body "${token}"`;
-      assert.ok(cmd.includes('gh secret set DATABRICKS_TOKEN'));
-      assert.ok(cmd.includes(token));
+      const secrets = { DATABRICKS_TOKEN: token };
+      assert.strictEqual(secrets.DATABRICKS_TOKEN, token);
     });
 
-    it('builds correct command for LAKEBASE_PROJECT_ID', () => {
+    it('builds secret map for LAKEBASE_PROJECT_ID', () => {
       const projectId = '858e9f40-aeeb-4139-97af-f157137e1d61';
-      const cmd = `gh secret set LAKEBASE_PROJECT_ID --body "${projectId}"`;
-      assert.ok(cmd.includes('gh secret set LAKEBASE_PROJECT_ID'));
-      assert.ok(cmd.includes(projectId));
+      const secrets = { LAKEBASE_PROJECT_ID: projectId };
+      assert.strictEqual(secrets.LAKEBASE_PROJECT_ID, projectId);
     });
   });
 

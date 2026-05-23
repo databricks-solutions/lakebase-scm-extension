@@ -1,16 +1,28 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from './exec';
+import { GitHubService } from '../services/githubService';
+import { GitService } from '../services/gitService';
 
 /**
  * Sync CI secrets (DATABRICKS_HOST, LAKEBASE_PROJECT_ID, DATABRICKS_TOKEN)
- * to the GitHub repo for the current workspace.
+ * to the GitHub repo for the current workspace via Octokit
+ * ({@link GitHubService.setRepoSecrets}).
  *
- * @param root - Workspace root directory (must contain .env)
- * @param comment - Token comment (e.g. "GitHub Actions CI" or "CI merge")
- * @param lifetimeSeconds - Token lifetime (e.g. 86400 for PR, 3600 for merge)
+ * Creates a fresh Databricks PAT when possible; falls back to `.env` token.
  */
-export async function syncCiSecrets(root: string, comment: string, lifetimeSeconds: number): Promise<void> {
+export async function syncCiSecrets(
+  root: string,
+  comment: string,
+  lifetimeSeconds: number,
+  githubService: GitHubService,
+  gitService: GitService,
+): Promise<void> {
+  const ownerRepo = await gitService.getOwnerRepo(root);
+  if (!ownerRepo) {
+    throw new Error('Could not resolve GitHub repository from git remote');
+  }
+
   const envContent = fs.readFileSync(path.join(root, '.env'), 'utf-8');
   const getEnvVal = (key: string): string => {
     const match = envContent.match(new RegExp(`^${key}=(.+)$`, 'm'));
@@ -19,15 +31,11 @@ export async function syncCiSecrets(root: string, comment: string, lifetimeSecon
 
   const host = getEnvVal('DATABRICKS_HOST');
   const projectId = getEnvVal('LAKEBASE_PROJECT_ID');
+  const secrets: Record<string, string> = {};
 
-  if (host) {
-    await exec(`gh secret set DATABRICKS_HOST --body "${host}"`, { cwd: root, timeout: 30000 });
-  }
-  if (projectId) {
-    await exec(`gh secret set LAKEBASE_PROJECT_ID --body "${projectId}"`, { cwd: root, timeout: 30000 });
-  }
+  if (host) { secrets.DATABRICKS_HOST = host; }
+  if (projectId) { secrets.LAKEBASE_PROJECT_ID = projectId; }
 
-  // Generate a fresh Databricks token for CI
   try {
     const tokenRaw = await exec(
       `databricks tokens create --comment "${comment}" --lifetime-seconds ${lifetimeSeconds} -o json`,
@@ -35,13 +43,16 @@ export async function syncCiSecrets(root: string, comment: string, lifetimeSecon
     );
     const token = JSON.parse(tokenRaw).token_value || JSON.parse(tokenRaw).token || '';
     if (token) {
-      await exec(`gh secret set DATABRICKS_TOKEN --body "${token}"`, { cwd: root, timeout: 30000 });
+      secrets.DATABRICKS_TOKEN = token;
     }
   } catch {
-    // Token creation may fail — fall back to existing token from .env
     const existingToken = getEnvVal('DATABRICKS_TOKEN');
     if (existingToken) {
-      await exec(`gh secret set DATABRICKS_TOKEN --body "${existingToken}"`, { cwd: root, timeout: 30000 });
+      secrets.DATABRICKS_TOKEN = existingToken;
     }
+  }
+
+  if (Object.keys(secrets).length > 0) {
+    await githubService.setRepoSecrets(ownerRepo, secrets);
   }
 }

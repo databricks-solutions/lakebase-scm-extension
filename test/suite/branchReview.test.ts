@@ -7,12 +7,14 @@ import { SchemaMigrationService } from '../../src/services/schemaMigrationServic
 import { GitService } from '../../src/services/gitService';
 import { SchemaDiffService, SchemaDiffResult } from '../../src/services/schemaDiffService';
 import { SchemaScmProvider } from '../../src/providers/schemaScmProvider';
+import { GitHubService } from '../../src/services/githubService';
 import { SchemaDiffProvider } from '../../src/providers/schemaDiffProvider';
 
 describe('Branch Review — full branch scope', () => {
   let gitStub: sinon.SinonStubbedInstance<GitService>;
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
   let schemaDiffStub: sinon.SinonStubbedInstance<SchemaDiffService>;
+  let githubStub: sinon.SinonStubbedInstance<GitHubService>;
   let provider: SchemaScmProvider;
 
   beforeEach(() => {
@@ -33,6 +35,9 @@ describe('Branch Review — full branch scope', () => {
     migrationStub.parseMigrationSchemaChanges.returns([]);
 
     schemaDiffStub = sinon.createStubInstance(SchemaDiffService);
+
+    githubStub = sinon.createStubInstance(GitHubService);
+    githubStub.getPullRequest.resolves(undefined);
   });
 
   afterEach(() => {
@@ -63,7 +68,7 @@ describe('Branch Review — full branch scope', () => {
       ]);
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(gitStub.getUnstagedChanges.called);
@@ -74,7 +79,7 @@ describe('Branch Review — full branch scope', () => {
       gitStub.getUnstagedChanges.resolves([]);
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(gitStub.getUnstagedChanges.called);
@@ -89,7 +94,7 @@ describe('Branch Review — full branch scope', () => {
       ]);
       schemaDiffStub.compareBranchSchemas.resolves(makeDiff());
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(gitStub.getStagedChanges.called);
@@ -105,7 +110,7 @@ describe('Branch Review — full branch scope', () => {
       ]);
 
       // No lakebaseService → Lakebase group stays empty (live DB diff not available)
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // Migration file parsing is no longer used — schema comes from live DB diff
@@ -116,7 +121,7 @@ describe('Branch Review — full branch scope', () => {
       gitStub.getStagedChanges.resolves([]);
       gitStub.getUnstagedChanges.resolves([]);
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.strictEqual(migrationStub.parseMigrationSchemaChanges.called, false);
@@ -132,7 +137,7 @@ describe('Branch Review — full branch scope', () => {
         { status: 'modified', path: 'pom.xml' },
       ]);
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(gitStub.getUnstagedChanges.called);
@@ -182,22 +187,18 @@ describe('Branch Diff webview — migration fallback', () => {
     };
   }
 
-  it('supplements in-sync pg_dump with migration file changes', async () => {
+  it('does not supplement in-sync pg_dump with migration file changes (removed)', async () => {
     schemaDiffStub.getCachedDiff.returns(makeDiff({ inSync: true }));
 
-    // Branch has V6 not on main
     gitStub.listMigrationsOnBranch.resolves(['V1__init.sql']);
     migrationStub.listMigrations.returns([
       { version: '1', description: 'init', filename: 'V1__init.sql', fullPath: '/fake/V1' },
       { version: '6', description: 'orders', filename: 'V6__create_orders.sql', fullPath: '/fake/V6' },
     ]);
-    migrationStub.parseMigrationSchemaChanges.returns([
-      { type: 'created', tableName: 'orders', columns: [{ name: 'id', dataType: 'bigint' }], migration: {} as any },
-    ]);
 
     await diffProvider.showDiff(false, []);
 
-    assert.ok(migrationStub.parseMigrationSchemaChanges.called);
+    assert.strictEqual(migrationStub.parseMigrationSchemaChanges.called, false);
   });
 
   it('does not supplement when pg_dump found real differences', async () => {

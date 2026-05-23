@@ -1,11 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from './gitService';
+import { GitHubService } from './githubService';
 import { LakebaseService } from './lakebaseService';
 import { ScaffoldService } from './scaffoldService';
 import { RunnerService } from './runnerService';
 import { exec } from '../utils/exec';
 import { syncCiSecrets } from '../utils/ciSecrets';
+import { delay } from '../utils/delay';
 
 /**
  * Input collected from UI prompts before project creation begins.
@@ -83,6 +85,7 @@ export const PROJECT_CREATION_PROMPTS = {
 export class ProjectCreationService {
   constructor(
     private gitService: GitService,
+    private githubService: GitHubService,
     private lakebaseService: LakebaseService,
     private scaffoldService: ScaffoldService,
   ) {}
@@ -107,49 +110,43 @@ export class ProjectCreationService {
     if (useGithub) {
       // Step 1: Create GitHub repo
       report('Creating GitHub repository...', fullRepoName);
-      await this.gitService.createRepo(fullRepoName, {
+      await this.githubService.createRepo(fullRepoName, {
         private: input.privateRepo !== false,
-        clone: false,
         description: `Lakebase project: ${input.projectName}`,
       });
 
-      // Step 2: Clone the repo. Two failure modes we've seen in practice:
-      //   (a) propagation delay — `gh repo create` returned 201 but the repo
-      //       isn't yet readable via the API/clone (EMU orgs with SAML can take
-      //       10–20s, sometimes more)
-      //   (b) SAML SSO authorization gap — gh token has scope to create in the
-      //       org but hasn't been SSO-authorized for reads
-      // Poll the API for visibility first (exposes both failure modes with the
-      // real error), then clone. Backoff 1s, 2s, 3s, 5s, 8s — total ~19s max.
+      // Step 2: Clone the repo. createRepo() succeeds at the REST layer,
+      // but GET/clone can 404 briefly in some orgs (SAML SSO / propagation delays).
+      // Backoff 1s, 2s, 3s, 5s, 8s — total ~19s max.
       report('Waiting for GitHub repo to be visible...', fullRepoName);
       const probeDelays = [1000, 2000, 3000, 5000, 8000];
       let probeErr = '';
       let visible = false;
-      for (const delay of probeDelays) {
+      for (const waitMs of probeDelays) {
         try {
-          await exec(`gh api repos/${fullRepoName} --jq '.full_name'`, { timeout: 8000 });
+          await this.githubService.getRepoFullName(fullRepoName);
           visible = true;
           break;
         } catch (err: any) {
-          probeErr = (err.stderr || err.message || '').toString();
-          await new Promise(r => setTimeout(r, delay));
+          probeErr = (err.message || '').toString();
+          await delay(waitMs);
         }
       }
       if (!visible) {
         let activeUser = '';
-        try { activeUser = (await exec(`gh api user --jq '.login'`, { timeout: 5000 })).trim(); } catch { /* ignore */ }
+        try { activeUser = await this.githubService.getCurrentUser(); } catch { /* ignore */ }
         const samlHint = /SAML|scope does not match|sso/i.test(probeErr)
-          ? `\n\nThe error mentions SAML — your gh token may need SSO authorization for this org:\n    gh auth refresh -h github.com -s repo\n  (then click Authorize for the org during the SSO redirect)`
+          ? `\n\nThe error mentions SAML — re-sign in to GitHub in VS Code and authorize SSO for this org.`
           : '';
         const userHint = activeUser && activeUser !== input.githubOwner
-          ? `\n\nNote: gh is logged in as "${activeUser}", but the repo was created under "${input.githubOwner}". If those are different identities, the repo may have landed elsewhere — check with: gh repo list ${input.githubOwner} --limit 5`
+          ? `\n\nNote: signed in as "${activeUser}", but the repo was created under "${input.githubOwner}".`
           : '';
         throw new Error(
-          `GitHub repo "${fullRepoName}" was created but isn't visible to the gh token after ~19s of polling. Project creation paused here.${samlHint}${userHint}\n\nLast probe error:\n  ${probeErr.split('\n')[0].slice(0, 200)}`
+          `GitHub repo "${fullRepoName}" was created but isn't visible after ~19s of polling.${samlHint}${userHint}\n\nLast probe error:\n  ${probeErr.split('\n')[0].slice(0, 200)}`
         );
       }
       report('Cloning repository...', projectDir);
-      await exec(`gh repo clone "${fullRepoName}" "${projectDir}"`, { timeout: 30000 });
+      await this.gitService.cloneRepo(`https://github.com/${fullRepoName}.git`, projectDir);
     } else {
       report('Creating local project directory...', projectDir);
       if (fs.existsSync(projectDir)) {
@@ -202,7 +199,7 @@ export class ProjectCreationService {
     if (useGithub) {
       report('Setting up CI auth (service principal)...');
       try {
-        await syncCiSecrets(projectDir, 'GitHub Actions CI', 86400);
+        await syncCiSecrets(projectDir, 'GitHub Actions CI', 86400, this.githubService, this.gitService);
       } catch (err: any) {
         report(`Warning: CI auth setup failed (${err.message}). Run ./scripts/setup-ci-auth.sh manually.`);
       }
@@ -214,7 +211,7 @@ export class ProjectCreationService {
     const runnerType = input.runnerType || 'self-hosted';
     if (useGithub && runnerType === 'self-hosted') {
       report('Setting up self-hosted runner...');
-      const runnerService = new RunnerService();
+      const runnerService = new RunnerService(this.githubService);
       try {
         await runnerService.setupRunner(fullRepoName, lakebaseProjectId, (msg) => report(msg));
       } catch (err: any) {
@@ -228,9 +225,8 @@ export class ProjectCreationService {
 
     // Step 10: Initial commit (+ push when GitHub is configured).
     // Pushing any .github/workflows/* file requires the `workflow` OAuth scope
-    // on whatever token gh/git is using. Default `gh auth login` doesn't grant
-    // it. Preflight + clear error message — the raw "remote rejected ...
-    // without `workflow` scope" output is opaque if you haven't seen it before.
+    // on the VS Code GitHub token (see GITHUB_SCOPES). Re-sign in if push is
+    // rejected with "workflow scope" — the raw remote message is opaque otherwise.
     const langLabels: Record<string, string> = {
       java: 'Java/Spring Boot',
       kotlin: 'Kotlin/Spring Boot',
@@ -244,21 +240,14 @@ export class ProjectCreationService {
 
     if (useGithub) {
       try {
-        const ghStatus = await exec('gh auth status 2>&1', { timeout: 5_000 }).catch(() => '');
-        if (ghStatus && !/Token scopes:[^\n]*\bworkflow\b/.test(ghStatus)) {
-          report('⚠ gh CLI is missing the `workflow` OAuth scope; the upcoming push will be rejected because we scaffolded GitHub Actions workflows. Adding it now requires re-auth — best to run `gh auth refresh -s workflow` in a separate terminal, then retry the push from the project directory.');
-        }
-      } catch { /* preflight best-effort */ }
-
-      try {
         await exec('git push -u origin main', { cwd: projectDir, timeout: 30000 });
       } catch (err: any) {
         const msg = (err.stderr || err.stdout || err.message || '').toString();
         if (/without `?workflow`? scope|workflow scope/i.test(msg)) {
           throw new Error(
-            `Push rejected: gh CLI lacks the \`workflow\` OAuth scope, which GitHub requires for any commit that touches \`.github/workflows/*\`. The project on disk is fine; only the initial push failed.\n\n` +
+            `Push rejected: GitHub token lacks the \`workflow\` OAuth scope required for commits touching \`.github/workflows/*\`. The project on disk is fine; only the initial push failed.\n\n` +
             `To finish:\n` +
-            `  1. Run in a terminal:  gh auth refresh -s workflow\n` +
+            `  1. Re-sign in to GitHub in VS Code and grant the workflow scope\n` +
             `  2. Then from the project dir:  cd ${projectDir} && git push -u origin main`
           );
         }
@@ -271,7 +260,7 @@ export class ProjectCreationService {
     const hooks = this.scaffoldService.verifyHooks(projectDir);
     const workflows = this.scaffoldService.verifyWorkflows(projectDir);
     if (!hooks.postCheckout || !hooks.prepareCommitMsg || !hooks.prePush) {
-      report('Warning: some hooks not installed. Run scripts/install-hook.sh');
+      report('Warning: some hooks not installed. Re-run scaffold or recreate the project.');
     }
     if (!workflows.pr || !workflows.merge) {
       report('Warning: some workflows missing.');
@@ -295,8 +284,8 @@ export class ProjectCreationService {
     const projectDir = path.join(input.parentDir, input.projectName);
 
     if (useGithub && fullRepoName) {
-      try { await this.gitService.deleteRepo(fullRepoName); } catch {}
-      try { await new RunnerService().removeRunner(fullRepoName, input.projectName); } catch {}
+      try { await this.githubService.deleteRepo(fullRepoName); } catch {}
+      try { await new RunnerService(this.githubService).removeRunner(fullRepoName, input.projectName); } catch {}
     }
     try { await this.lakebaseService.deleteProject(input.projectName); } catch {}
     try { if (fs.existsSync(projectDir)) { fs.rmSync(projectDir, { recursive: true, force: true }); } } catch {}

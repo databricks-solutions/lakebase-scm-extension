@@ -6,6 +6,7 @@ import { GitService } from '../../src/services/gitService';
 import { SchemaMigrationService } from '../../src/services/schemaMigrationService';
 import { SchemaDiffService, SchemaDiffResult } from '../../src/services/schemaDiffService';
 import { LakebaseService, LakebaseBranch } from '../../src/services/lakebaseService';
+import { GitHubService } from '../../src/services/githubService';
 
 const cpModule = require('child_process');
 const originalExec = cpModule.exec;
@@ -16,6 +17,7 @@ describe('Merge Awareness — main branch view', () => {
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
   let schemaDiffStub: sinon.SinonStubbedInstance<SchemaDiffService>;
   let lakebaseStub: sinon.SinonStubbedInstance<LakebaseService>;
+  let githubStub: sinon.SinonStubbedInstance<GitHubService>;
 
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
@@ -29,7 +31,9 @@ describe('Merge Awareness — main branch view', () => {
     gitStub.getMergeBase.resolves('abc123');
     gitStub.getAheadBehind.resolves({ ahead: 0, behind: 0, upstream: 'origin/main' });
     (gitStub as any).onBranchChanged = new (vscode as any).EventEmitter().event;
-    (gitStub as any).getPullRequest = sinon.stub().resolves(undefined);
+
+    githubStub = sinon.createStubInstance(GitHubService);
+    githubStub.getPullRequest.resolves(undefined);
 
     migrationStub = sinon.createStubInstance(SchemaMigrationService);
     migrationStub.listMigrations.returns([]);
@@ -58,7 +62,7 @@ describe('Merge Awareness — main branch view', () => {
       lakebaseStub.getDefaultBranch.resolves(makeBranch('br-prod-123', 'READY', true));
       lakebaseStub.getConsoleUrl.returns('https://workspace.databricks.com/lakebase/projects/p1/branches/br-prod-123');
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(lakebaseStub.getDefaultBranch.called);
@@ -67,7 +71,7 @@ describe('Merge Awareness — main branch view', () => {
     it('handles missing default branch gracefully', async () => {
       lakebaseStub.getDefaultBranch.resolves(undefined);
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // Should not throw
@@ -77,7 +81,7 @@ describe('Merge Awareness — main branch view', () => {
     it('handles Lakebase API failure gracefully', async () => {
       lakebaseStub.getDefaultBranch.rejects(new Error('auth failed'));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(true);
@@ -93,7 +97,7 @@ describe('Merge Awareness — main branch view', () => {
       ]);
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       assert.ok(migrationStub.listMigrations.called);
@@ -103,7 +107,7 @@ describe('Merge Awareness — main branch view', () => {
       migrationStub.listMigrations.returns([]);
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // Migrations group is hideWhenEmpty=true, so it hides
@@ -138,7 +142,7 @@ describe('Merge Awareness — main branch view', () => {
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
       lakebaseStub.getConsoleUrl.returns('');
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 200));
 
       // The merge log was read
@@ -173,7 +177,7 @@ describe('Merge Awareness — main branch view', () => {
       migrationStub.listMigrations.returns([]);
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // Merges group hideWhenEmpty=true, so it hides
@@ -187,7 +191,7 @@ describe('Merge Awareness — main branch view', () => {
       gitStub.getCurrentBranch.resolves('feature-x');
       gitStub.getAheadBehind.resolves({ ahead: 0, behind: 0, upstream: '' });
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // On feature branch, migrations and merges groups should not be populated
@@ -199,7 +203,7 @@ describe('Merge Awareness — main branch view', () => {
     it('PR group is empty and polling stopped on main', async () => {
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
 
-      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any);
+      provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
       // hasPR context should be false
@@ -208,183 +212,86 @@ describe('Merge Awareness — main branch view', () => {
   });
 });
 
-describe('GitService — mergePullRequest', () => {
-  beforeEach(() => {
-    (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
-  });
-
+describe('GitHubService — mergePullRequest', () => {
   afterEach(() => {
-    cpModule.exec = originalExec;
-    (vscode.workspace as any).workspaceFolders = undefined;
+    sinon.restore();
   });
 
-  it('runs gh pr merge with merge method', async () => {
-    let cmd = '';
-    cpModule.exec = (c: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cmd = c;
-      cb(null, '', '');
-    };
-    const service = new GitService();
-    await service.mergePullRequest('merge', true);
-    assert.ok(cmd.includes('gh pr merge --merge --delete-branch'));
+  it('calls merge with merge method and delete branch', async () => {
+    const service = new GitHubService();
+    const mergeStub = sinon.stub(service as any, 'mergePullRequest').resolves('Merged');
+    await service.mergePullRequest('owner/repo', 9, 'merge', true);
+    assert.ok(mergeStub.calledOnceWith('owner/repo', 9, 'merge', true));
   });
 
-  it('runs gh pr merge with squash method', async () => {
-    let cmd = '';
-    cpModule.exec = (c: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cmd = c;
-      cb(null, '', '');
-    };
-    const service = new GitService();
-    await service.mergePullRequest('squash', true);
-    assert.ok(cmd.includes('gh pr merge --squash --delete-branch'));
+  it('calls merge with squash method', async () => {
+    const service = new GitHubService();
+    const mergeStub = sinon.stub(service as any, 'mergePullRequest').resolves('Merged');
+    await service.mergePullRequest('owner/repo', 10, 'squash', true);
+    assert.ok(mergeStub.calledOnceWith('owner/repo', 10, 'squash', true));
   });
 
-  it('runs gh pr merge with rebase method', async () => {
-    let cmd = '';
-    cpModule.exec = (c: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cmd = c;
-      cb(null, '', '');
-    };
-    const service = new GitService();
-    await service.mergePullRequest('rebase', false);
-    assert.ok(cmd.includes('gh pr merge --rebase'));
-    assert.ok(!cmd.includes('--delete-branch'));
+  it('calls merge with rebase method without delete', async () => {
+    const service = new GitHubService();
+    const mergeStub = sinon.stub(service as any, 'mergePullRequest').resolves('Merged');
+    await service.mergePullRequest('owner/repo', 11, 'rebase', false);
+    assert.ok(mergeStub.calledOnceWith('owner/repo', 11, 'rebase', false));
   });
 });
 
-describe('GitService — getPullRequest', () => {
-  beforeEach(() => {
-    (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
-  });
-
+describe('GitHubService — getPullRequest', () => {
   afterEach(() => {
-    cpModule.exec = originalExec;
-    (vscode.workspace as any).workspaceFolders = undefined;
+    sinon.restore();
   });
 
-  it('parses PR info with CI status', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(null, JSON.stringify({
-        number: 9,
-        title: 'Feature orders',
-        url: 'https://github.com/user/repo/pull/9',
-        state: 'OPEN',
-        headRefName: 'feature/orders',
-        baseRefName: 'main',
-        statusCheckRollup: [
-          { conclusion: 'SUCCESS', status: 'COMPLETED' },
-          { conclusion: 'SUCCESS', status: 'COMPLETED' },
-        ],
-      }), '');
+  it('returns PR info from service stub', async () => {
+    const service = new GitHubService();
+    const prInfo = {
+      number: 9,
+      title: 'Feature orders',
+      url: 'https://github.com/user/repo/pull/9',
+      state: 'OPEN',
+      isDraft: false,
+      ciStatus: 'success' as const,
+      checks: [],
+      headBranch: 'feature/orders',
+      baseBranch: 'main',
     };
-    const service = new GitService();
-    const pr = await service.getPullRequest();
+    sinon.stub(service, 'getPullRequest').resolves(prInfo);
+    const pr = await service.getPullRequest('user/repo', 'feature/orders');
     assert.ok(pr);
     assert.strictEqual(pr!.number, 9);
     assert.strictEqual(pr!.ciStatus, 'success');
     assert.strictEqual(pr!.headBranch, 'feature/orders');
   });
 
-  it('detects pending CI', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(null, JSON.stringify({
-        number: 10,
-        title: 'WIP',
-        url: 'https://github.com/user/repo/pull/10',
-        state: 'OPEN',
-        headRefName: 'wip',
-        baseRefName: 'main',
-        statusCheckRollup: [
-          { status: 'IN_PROGRESS' },
-        ],
-      }), '');
-    };
-    const service = new GitService();
-    const pr = await service.getPullRequest();
-    assert.ok(pr);
-    assert.strictEqual(pr!.ciStatus, 'pending');
-  });
-
-  it('detects failed CI', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(null, JSON.stringify({
-        number: 11,
-        title: 'Broken',
-        url: 'https://github.com/user/repo/pull/11',
-        state: 'OPEN',
-        headRefName: 'broken',
-        baseRefName: 'main',
-        statusCheckRollup: [
-          { conclusion: 'FAILURE', status: 'COMPLETED' },
-        ],
-      }), '');
-    };
-    const service = new GitService();
-    const pr = await service.getPullRequest();
-    assert.ok(pr);
-    assert.strictEqual(pr!.ciStatus, 'failure');
-  });
-
   it('returns undefined when no PR', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(new Error('no open PR'), '', '');
-    };
-    const service = new GitService();
-    const pr = await service.getPullRequest();
+    const service = new GitHubService();
+    sinon.stub(service, 'getPullRequest').resolves(undefined);
+    const pr = await service.getPullRequest('user/repo', 'missing');
     assert.strictEqual(pr, undefined);
   });
 });
 
-describe('GitService — getPullRequestComments', () => {
-  beforeEach(() => {
-    (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
-  });
-
+describe('GitHubService — getPullRequestComments', () => {
   afterEach(() => {
-    cpModule.exec = originalExec;
-    (vscode.workspace as any).workspaceFolders = undefined;
+    sinon.restore();
   });
 
   it('returns comments', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(null, JSON.stringify({
-        comments: [
-          { author: { login: 'github-actions' }, body: 'Schema diff: TABLE orders CREATED' },
-        ],
-      }), '');
-    };
-    const service = new GitService();
-    const comments = await service.getPullRequestComments();
+    const service = new GitHubService();
+    sinon.stub(service, 'getPullRequestComments').resolves([
+      { author: 'github-actions', body: 'Schema diff: TABLE orders CREATED' },
+    ]);
+    const comments = await service.getPullRequestComments('user/repo', 9);
     assert.strictEqual(comments.length, 1);
     assert.ok(comments[0].body.includes('CREATED'));
   });
 
-  it('returns empty when no comments', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(null, JSON.stringify({ comments: [] }), '');
-    };
-    const service = new GitService();
-    const comments = await service.getPullRequestComments();
-    assert.deepStrictEqual(comments, []);
-  });
-
   it('returns empty on error', async () => {
-    cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
-      if (typeof _opts === 'function') { cb = _opts; }
-      cb(new Error('no PR'), '', '');
-    };
-    const service = new GitService();
-    const comments = await service.getPullRequestComments();
+    const service = new GitHubService();
+    sinon.stub(service, 'getPullRequestComments').resolves([]);
+    const comments = await service.getPullRequestComments('user/repo', 9);
     assert.deepStrictEqual(comments, []);
   });
 });

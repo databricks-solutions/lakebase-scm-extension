@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 import { exec } from '../utils/exec';
+import { formatOwnerRepo, parseOwnerRepo } from '../utils/parseRepo';
 
 export interface PullRequestCheck {
   name: string;
@@ -57,22 +57,6 @@ export interface GitFileChange {
   oldPath?: string;
 }
 
-
-/** Safe execution using spawn with shell — arguments passed as array, not interpolated into command string */
-function execArgs(file: string, args: string[], cwd?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = cp.spawn(file, args, { cwd, timeout: 60000, shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-    child.on('close', (code) => {
-      if (code !== 0) { reject(new Error(stderr.trim() || `Process exited with code ${code}`)); return; }
-      resolve(stdout.trim());
-    });
-    child.on('error', (err) => { reject(new Error(stderr.trim() || err.message)); });
-  });
-}
 
 export class GitService {
   private _onBranchChanged = new vscode.EventEmitter<string>();
@@ -570,42 +554,23 @@ export class GitService {
     await exec('git pull', root);
   }
 
-  /** Create a pull request via gh CLI. Returns the PR URL. */
-  async createPullRequest(title: string, body: string, baseBranch?: string): Promise<string> {
+  /**
+   * Ensure the current branch is pushed to origin before PR creation.
+   * Publishes with `-u origin` when no upstream exists; otherwise pushes
+   * latest commits. Pair with {@link GitHubService.createPullRequest} — git
+   * handles push, GitHubService handles the REST API (formerly `gh pr create`).
+   */
+  async pushCurrentBranchForPr(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
     const branch = await this.getCurrentBranch();
     if (!branch) { throw new Error('No current branch'); }
-
-    // Ensure branch is pushed to remote
     const hasRemote = await this.hasUpstream();
     if (!hasRemote) {
       await exec(`git push -u origin "${branch}"`, root);
     } else {
-      // Push latest commits even if upstream exists
       await exec('git push', root);
     }
-
-    // Use --head flag to explicitly specify the branch, and --body-file for safe body passing.
-    // --base is honored when provided — otherwise gh defaults to the repo's default branch,
-    // which silently ignores 3-tier (feature → staging → main) flows.
-    const result = await new Promise<string>((resolve, reject) => {
-      const escapedTitle = title.replace(/"/g, '\\"');
-      const baseFlag = baseBranch ? ` --base "${baseBranch}"` : '';
-      const child = cp.exec(
-        `gh pr create --title "${escapedTitle}" --head "${branch}"${baseFlag} --body-file -`,
-        { cwd: root, timeout: 30000 },
-        (err, stdout, stderr) => {
-          if (err) { reject(new Error(stderr || err.message)); }
-          else { resolve(stdout); }
-        }
-      );
-      child.stdin?.write(body);
-      child.stdin?.end();
-    });
-    // gh pr create outputs the PR URL
-    const urlMatch = result.match(/https:\/\/github\.com\/[^\s]+/);
-    return urlMatch ? urlMatch[0] : result.trim();
   }
 
   async commitAll(message: string): Promise<void> {
@@ -922,8 +887,8 @@ export class GitService {
    * Get the normalized GitHub HTTPS URL for the origin remote.
    * Handles HTTPS, git@, and ssh:// formats. Returns empty string if not GitHub.
    */
-  async getGitHubUrl(): Promise<string> {
-    const root = getWorkspaceRoot();
+  async getGitHubUrl(cwd?: string): Promise<string> {
+    const root = cwd || getWorkspaceRoot();
     if (!root) { return ''; }
     try {
       const url = (await exec('git remote get-url origin', root)).trim();
@@ -932,6 +897,22 @@ export class GitService {
         .replace(/^git@github\.com:/, 'https://github.com/')
         .replace(/^ssh:\/\/git@github\.com\//, 'https://github.com/');
     } catch { return ''; }
+  }
+
+  /**
+   * owner/repo slug for the origin remote, or empty string if not GitHub.
+   * Used by {@link GitHubService} to scope Octokit API requests.
+   * @param cwd - Optional repo root (defaults to workspace root)
+   */
+  async getOwnerRepo(cwd?: string): Promise<string> {
+    const url = await this.getGitHubUrl(cwd);
+    if (!url) { return ''; }
+    try {
+      const { owner, repo } = parseOwnerRepo(url);
+      return formatOwnerRepo(owner, repo);
+    } catch {
+      return '';
+    }
   }
 
   /**
@@ -1042,223 +1023,13 @@ export class GitService {
     await exec('git push', root);
   }
 
-  /** Get PR info for the current branch via gh CLI */
-  async getPullRequest(): Promise<PullRequestInfo | undefined> {
-    const root = getWorkspaceRoot();
-    if (!root) { return undefined; }
-    try {
-      const raw = await exec(
-        'gh pr view --json number,title,url,state,isDraft,headRefName,baseRefName,body,statusCheckRollup,additions,deletions,changedFiles,reviewDecision',
-        root
-      );
-      const pr = JSON.parse(raw);
-
-      // Only return open PRs
-      if (pr.state && pr.state !== 'OPEN') { return undefined; }
-
-      // Parse CI status and individual checks from statusCheckRollup.
-      // GitHub returns ALL check runs (including retries), so we must deduplicate
-      // by check name and only consider the LATEST run for each.
-      let ciStatus: PullRequestInfo['ciStatus'] = 'unknown';
-      const rawChecks = pr.statusCheckRollup || [];
-      const parsedChecks: PullRequestCheck[] = rawChecks.map((c: any) => ({
-        name: c.name || c.context || 'unknown',
-        status: (c.status || '').toUpperCase(),
-        conclusion: (c.conclusion || '').toUpperCase(),
-        detailsUrl: c.detailsUrl || c.targetUrl || undefined,
-      }));
-
-      if (rawChecks.length === 0) {
-        ciStatus = 'pending';
-      } else {
-        // Deduplicate: keep only the latest check per name (last in the array = most recent)
-        const latestByName = new Map<string, any>();
-        for (const c of rawChecks) {
-          const name = c.name || c.context || 'unknown';
-          latestByName.set(name, c);
-        }
-        const latestChecks = Array.from(latestByName.values());
-        const states = latestChecks.map((c: any) => (c.conclusion || c.status || '').toUpperCase());
-        if (states.some((s: string) => s === 'FAILURE' || s === 'ERROR' || s === 'ACTION_REQUIRED')) {
-          ciStatus = 'failure';
-        } else if (states.every((s: string) => s === 'SUCCESS' || s === 'NEUTRAL' || s === 'SKIPPED')) {
-          ciStatus = 'success';
-        } else {
-          ciStatus = 'pending';
-        }
-      }
-
-      return {
-        number: pr.number,
-        title: pr.title,
-        url: pr.url,
-        state: pr.state,
-        isDraft: pr.isDraft || false,
-        ciStatus,
-        checks: parsedChecks,
-        headBranch: pr.headRefName,
-        baseBranch: pr.baseRefName,
-        body: pr.body,
-        additions: pr.additions,
-        deletions: pr.deletions,
-        changedFiles: pr.changedFiles,
-        reviewDecision: pr.reviewDecision,
-      };
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Get PR reviews (approvals, change requests, comments) */
-  async getPullRequestReviews(): Promise<PullRequestReview[]> {
-    const root = getWorkspaceRoot();
-    if (!root) { return []; }
-    try {
-      const raw = await exec('gh pr view --json reviews', root);
-      const data = JSON.parse(raw);
-      return (data.reviews || []).map((r: any) => ({
-        author: r.author?.login || 'unknown',
-        state: r.state || 'COMMENTED',
-        body: r.body || '',
-        submittedAt: r.submittedAt,
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  /** Get PR changed files */
-  async getPullRequestFiles(): Promise<PullRequestFile[]> {
-    const root = getWorkspaceRoot();
-    if (!root) { return []; }
-    try {
-      const raw = await exec('gh pr view --json files', root);
-      const data = JSON.parse(raw);
-      return (data.files || []).map((f: any) => {
-        const statusMap: Record<string, PullRequestFile['status']> = {
-          added: 'added', removed: 'deleted', modified: 'modified', renamed: 'renamed',
-        };
-        return {
-          path: f.path || '',
-          status: statusMap[(f.status || '').toLowerCase()] || 'modified',
-          additions: f.additions || 0,
-          deletions: f.deletions || 0,
-        };
-      });
-    } catch {
-      return [];
-    }
-  }
-
-  /** Get PR comments (for finding CI schema diff comment) */
-  async getPullRequestComments(): Promise<Array<{ author: string; body: string }>> {
-    const root = getWorkspaceRoot();
-    if (!root) { return []; }
-    try {
-      const raw = await exec('gh pr view --json comments', root);
-      const data = JSON.parse(raw);
-      return (data.comments || []).map((c: any) => ({
-        author: c.author?.login || 'unknown',
-        body: c.body || '',
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  /** Merge the current branch's PR via gh CLI. Returns the merge URL. */
-  async mergePullRequest(method: 'merge' | 'squash' | 'rebase' = 'merge', deleteRemoteBranch: boolean = true): Promise<string> {
-    const root = getWorkspaceRoot();
-    if (!root) { throw new Error('No workspace root'); }
-    const deleteFlag = deleteRemoteBranch ? ' --delete-branch' : '';
-    const result = await exec(`gh pr merge --${method}${deleteFlag}`, root);
-    return result.trim();
-  }
-
-  /**
-   * Create a new GitHub repository via gh CLI.
-   * @param name - Repo name (e.g. "my-app") or "owner/my-app"
-   * @param opts - Options: private (default true), clone (default false), description
-   * @returns The created repo URL
-   */
-  async createRepo(name: string, opts?: { private?: boolean; clone?: boolean; description?: string; parentDir?: string }): Promise<string> {
-    const visibility = opts?.private !== false ? '--private' : '--public';
-    const cloneFlag = opts?.clone ? ' --clone' : '';
-    const descFlag = opts?.description ? ` --description "${opts.description.replace(/"/g, '\\"')}"` : '';
-    const cwd = opts?.parentDir || getWorkspaceRoot() || undefined;
-    const result = await exec(`gh repo create "${name}" ${visibility}${cloneFlag}${descFlag}`, cwd);
-    return result.trim();
-  }
-
-  /**
-   * Delete a GitHub repository via gh CLI. Requires delete_repo scope.
-   * @param name - Full repo name (e.g. "owner/my-app")
-   */
-  async deleteRepo(name: string): Promise<void> {
-    await exec(`gh repo delete "${name}" --yes`);
-  }
-
-  /**
-   * Set a GitHub Actions secret on a repository.
-   * @param repoName - Full repo name (e.g. "owner/my-app")
-   * @param secretName - Secret name (e.g. "DATABRICKS_TOKEN")
-   * @param secretValue - Secret value
-   */
-  async setRepoSecret(repoName: string, secretName: string, secretValue: string): Promise<void> {
-    const root = getWorkspaceRoot() || undefined;
-    await exec(`echo "${secretValue.replace(/"/g, '\\"')}" | gh secret set "${secretName}" --repo "${repoName}"`, root);
-  }
-
-  /**
-   * Check if a GitHub repository exists.
-   * @param name - Full repo name (e.g. "owner/my-app")
-   */
-  async repoExists(name: string): Promise<boolean> {
-    try {
-      await exec(`gh repo view "${name}" --json name`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Get the currently authenticated GitHub username via gh CLI. */
-  async getCurrentGitHubUser(): Promise<string> {
-    const result = await exec('gh api user --jq ".login"');
-    return result.trim();
-  }
-
   /**
    * Clone a GitHub repository into a parent directory.
    * @param repoUrl - The repo URL (e.g. "https://github.com/owner/repo")
-   * @param parentDir - The directory to clone into
+   * @param parentDir - Directory that will contain the cloned repo folder
    */
   async cloneRepo(repoUrl: string, parentDir: string): Promise<void> {
     await exec(`git clone "${repoUrl}"`, parentDir);
-  }
-
-  /**
-   * List GitHub Actions secrets for the current repository.
-   * @param cwd - Optional working directory (defaults to workspace root)
-   */
-  async listSecrets(cwd?: string): Promise<string> {
-    const root = cwd || getWorkspaceRoot() || undefined;
-    const result = await exec('gh secret list', root);
-    return result.trim();
-  }
-
-  /**
-   * Generic GitHub API call via gh CLI.
-   * @param endpoint - API endpoint (e.g. "repos/{owner}/{repo}/actions/runs")
-   * @param method - Optional HTTP method (e.g. "POST", "DELETE")
-   * @param jqFilter - Optional jq filter (e.g. ".[].name")
-   * @returns Raw response string
-   */
-  async ghApi(endpoint: string, method?: string, jqFilter?: string): Promise<string> {
-    const methodFlag = method ? `-X ${method} ` : '';
-    const jqFlag = jqFilter ? ` --jq '${jqFilter}'` : '';
-    const result = await exec(`gh api ${methodFlag}"${endpoint}"${jqFlag}`);
-    return result.trim();
   }
 
   getCachedBranch(): string {

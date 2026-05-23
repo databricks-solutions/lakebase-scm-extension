@@ -22,8 +22,12 @@ import { ProjectCreationService, PROJECT_CREATION_PROMPTS } from './services/pro
 import { ScaffoldService } from './services/scaffoldService';
 import { DeployService, DeployTarget, DeployTargetsConfig } from './services/deployService';
 import { RunnerTreeProvider } from './providers/runnerTreeProvider';
+import { GitHubService } from './services/githubService';
+import { RunnerService } from './services/runnerService';
+import { ensureGitHubAuth } from './utils/githubAuth';
 
 let gitService: GitService;
+let githubService: GitHubService;
 let lakebaseService: LakebaseService;
 let migrationService: SchemaMigrationService;
 let schemaDiffService: SchemaDiffService;
@@ -95,8 +99,7 @@ async function offerCiSecretsSetup(
   defaults: { host: string; projectId: string },
   opts: { force?: boolean } = {},
 ): Promise<void> {
-  const { RunnerService } = require('./services/runnerService');
-  const runnerService = new RunnerService();
+  const runnerService = new RunnerService(githubService);
 
   const { missing, present } = await runnerService.checkCiSecrets(fullRepoName);
   if (!opts.force && missing.length === 0) {
@@ -165,6 +168,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initialize services
   gitService = new GitService();
+  githubService = new GitHubService();
   lakebaseService = new LakebaseService();
   migrationService = new SchemaMigrationService();
   schemaDiffService = new SchemaDiffService(lakebaseService);
@@ -198,7 +202,7 @@ export async function activate(context: vscode.ExtensionContext) {
   branchTreeProvider = new BranchTreeProvider(gitService, lakebaseService, migrationService, schemaDiffService);
 
   // Initialize SCM provider — compares actual Lakebase branch schemas
-  schemaScmProvider = new SchemaScmProvider(gitService, migrationService, schemaDiffService, lakebaseService);
+  schemaScmProvider = new SchemaScmProvider(gitService, migrationService, schemaDiffService, lakebaseService, githubService);
 
   // Register schema DDL content provider for multi-diff editor
   const schemaContentProvider = vscode.workspace.registerTextDocumentContentProvider(
@@ -232,7 +236,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register sidebar tree views (Phases A-G)
   const changesTreeProvider = new ChangesTreeProvider(schemaScmProvider);
   const migrationsTreeProvider = new MigrationsTreeProvider(schemaScmProvider);
-  const pullRequestTreeProvider = new PullRequestTreeProvider(schemaScmProvider, gitService);
+  const pullRequestTreeProvider = new PullRequestTreeProvider(schemaScmProvider, gitService, githubService);
   const mergesTreeProvider = new MergesTreeProvider(schemaScmProvider);
 
   const changesView = vscode.window.createTreeView('lakebaseChanges', {
@@ -245,7 +249,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const prView = vscode.window.createTreeView('lakebasePR', {
     treeDataProvider: pullRequestTreeProvider,
   });
-  const runnerTreeProvider = new RunnerTreeProvider(gitService);
+  const runnerTreeProvider = new RunnerTreeProvider(gitService, githubService);
   const runnerView = vscode.window.createTreeView('lakebaseRunner', {
     treeDataProvider: runnerTreeProvider,
   });
@@ -254,7 +258,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   // Graph webview
-  const graphWebviewProvider = new GraphWebviewProvider(context.extensionUri, lakebaseService, gitService);
+  const graphWebviewProvider = new GraphWebviewProvider(context.extensionUri, lakebaseService, gitService, githubService);
   const graphView = vscode.window.registerWebviewViewProvider('lakebaseGraph', graphWebviewProvider);
 
   // Badge count on the activity bar icon (uses the Changes view)
@@ -561,7 +565,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.createProject', async () => {
-      const cp = require('child_process');
       const path = require('path');
 
       // ── Step 1: Project name + location ──────────────────────────
@@ -597,7 +600,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (createGithubRepo) {
         try {
-          ghUser = await gitService.getCurrentGitHubUser();
+          ghUser = await githubService.getCurrentUser();
         } catch { /* not authenticated */ }
 
         if (ghUser) {
@@ -611,22 +614,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
         if (!ghUser) {
           const loginPick = await vscode.window.showQuickPick([
-            { label: '$(sign-in) Sign in to GitHub', description: 'Opens browser for GitHub authentication' },
+            { label: '$(sign-in) Sign in to GitHub', description: 'Uses VS Code GitHub authentication' },
           ], { title: 'Lakebase: GitHub Authentication (3/10)', placeHolder: 'GitHub authentication required' });
           if (!loginPick) { return; }
 
-          const terminal = vscode.window.createTerminal('GitHub Login');
-          terminal.show();
-          terminal.sendText('gh auth login --web');
-
-          await new Promise<void>(resolve => {
-            const d = vscode.window.onDidCloseTerminal(t => { if (t === terminal) { d.dispose(); resolve(); } });
-          });
-
           try {
-            ghUser = await gitService.getCurrentGitHubUser();
+            githubService.resetAuth();
+            ghUser = await ensureGitHubAuth();
           } catch {
-            vscode.window.showErrorMessage('GitHub authentication failed. Please try again.');
+            vscode.window.showErrorMessage('GitHub authentication failed. Sign in via VS Code or set lakebaseSync.githubToken.');
             return;
           }
         }
@@ -761,7 +757,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // ── Step 4: Execute ──────────────────────────────────────────
       const extensionPath = context.extensionPath;
       const scaffoldSvc = new ScaffoldService(extensionPath);
-      const creationSvc = new ProjectCreationService(gitService, lakebaseService, scaffoldSvc);
+      const creationSvc = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldSvc);
       lakebaseService.setHostOverride(dbHost!);
       lakebaseService.setProjectIdOverride(lakebaseProjectName);
 
@@ -906,8 +902,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
               { location: vscode.ProgressLocation.Notification, title: `Setting up runner for ${fullRepoName}`, cancellable: false },
               async (progress) => {
-                const { RunnerService } = require('./services/runnerService');
-                const runnerService = new RunnerService();
+                const runnerService = new RunnerService(githubService);
                 await runnerService.setupRunner(fullRepoName, projectId, (msg: string) => progress.report({ message: msg }));
               }
             );
@@ -1202,8 +1197,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       try {
-        const { RunnerService } = require('./services/runnerService');
-        const runnerService = new RunnerService();
+        const runnerService = new RunnerService(githubService);
 
         // Get GitHub repo name
         const repoUrl = await gitService.getGitHubUrl();
@@ -1300,8 +1294,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const config = getConfig();
       if (!config.lakebaseProjectId) { return; }
       try {
-        const { RunnerService } = require('./services/runnerService');
-        const runnerService = new RunnerService();
+        const runnerService = new RunnerService(githubService);
         runnerService.stopRunner(config.lakebaseProjectId);
         vscode.window.showInformationMessage(`Runner stopped for ${config.lakebaseProjectId}`);
         runnerTreeProvider.refresh();
@@ -2367,7 +2360,10 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: 'Fetching PR schema diff...' },
           async () => {
-            const comments = await gitService.getPullRequestComments();
+            const ownerRepo = await gitService.getOwnerRepo();
+            const comments = ownerRepo
+              ? await githubService.getPullRequestComments(ownerRepo, pr.number)
+              : [];
             let schemaDiffComment = comments.find(c =>
               c.body.includes('Schema') && (c.body.includes('CREATED') || c.body.includes('MODIFIED') ||
               c.body.includes('REMOVED') || c.body.includes('No schema changes') || c.body.includes('schema diff'))
@@ -2478,12 +2474,16 @@ export async function activate(context: vscode.ExtensionContext) {
             if (root) {
               try {
                 const { syncCiSecrets } = require('./utils/ciSecrets');
-                await syncCiSecrets(root, 'CI merge', 3600);
+                await syncCiSecrets(root, 'CI merge', 3600, githubService, gitService);
               } catch { /* non-fatal */ }
             }
 
             progress.report({ message: 'Merging...' });
-            await gitService.mergePullRequest(method.value, true);
+            const ownerRepo = await gitService.getOwnerRepo();
+            if (!ownerRepo) {
+              throw new Error('Could not determine GitHub repository');
+            }
+            await githubService.mergePullRequest(ownerRepo, pr.number, method.value, true);
 
             progress.report({ message: `Switching to ${pr.baseBranch}...` });
             await gitService.checkoutBranch(pr.baseBranch);
@@ -2541,7 +2541,11 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: 'Refreshing PR status...' },
           async () => {
-            const pr = await gitService.getPullRequest();
+            const ownerRepo = await gitService.getOwnerRepo();
+            const branch = await gitService.getCurrentBranch();
+            const pr = ownerRepo && branch
+              ? await githubService.getPullRequest(ownerRepo, branch)
+              : undefined;
             if (pr) {
               vscode.window.showInformationMessage(
                 `PR #${pr.number}: ${pr.ciStatus === 'success' ? 'CI passed' : pr.ciStatus === 'failure' ? 'CI failed' : 'CI running...'}`
@@ -2566,7 +2570,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const fs = require('fs');
       const path = require('path');
-      const cp = require('child_process');
 
       const results: { label: string; ok: boolean; detail: string }[] = [];
 
@@ -2600,10 +2603,10 @@ export async function activate(context: vscode.ExtensionContext) {
       });
 
       // 3. Check Databricks CLI
+      const commandExists = require('command-exists');
       let cliOk = false;
       try {
-        cp.execSync('databricks --version', { timeout: 5000 });
-        cliOk = true;
+        cliOk = await commandExists('databricks');
       } catch { /* ignore */ }
       results.push({
         label: 'Databricks CLI',
@@ -2625,31 +2628,38 @@ export async function activate(context: vscode.ExtensionContext) {
         detail: authOk ? 'Authenticated' : 'Not authenticated — run "databricks auth login"',
       });
 
-      // 5. Check gh CLI
+      // 5. Check GitHub authentication
       let ghOk = false;
+      let ghUser = '';
       try {
-        cp.execSync('gh --version', { timeout: 5000 });
+        githubService.resetAuth();
+        ghUser = await githubService.getCurrentUser();
         ghOk = true;
       } catch { /* ignore */ }
       results.push({
-        label: 'GitHub CLI (gh)',
+        label: 'GitHub authentication',
         ok: ghOk,
-        detail: ghOk ? 'Installed' : 'Not found — needed for PR creation',
+        detail: ghOk
+          ? `Signed in as ${ghUser}`
+          : 'Not signed in — use VS Code GitHub sign-in or set lakebaseSync.githubToken',
       });
 
-      // 6. Check GitHub secrets (requires gh + repo access)
+      // 6. Check GitHub secrets (requires auth + repo access)
       let secretsChecked = false;
       const missingSecrets: string[] = [];
       if (ghOk) {
         try {
-          const secretsRaw = await gitService.listSecrets(root);
-          secretsChecked = true;
-          for (const name of ['DATABRICKS_HOST', 'DATABRICKS_TOKEN', 'LAKEBASE_PROJECT_ID']) {
-            if (!secretsRaw.includes(name)) {
-              missingSecrets.push(name);
+          const ownerRepo = await gitService.getOwnerRepo(root);
+          if (ownerRepo) {
+            secretsChecked = true;
+            const names = await githubService.listSecretNames(ownerRepo);
+            for (const name of ['DATABRICKS_HOST', 'DATABRICKS_TOKEN', 'LAKEBASE_PROJECT_ID']) {
+              if (!names.includes(name)) {
+                missingSecrets.push(name);
+              }
             }
           }
-        } catch { /* no repo access or not a gh repo */ }
+        } catch { /* no repo access */ }
       }
       if (secretsChecked) {
         results.push({
@@ -2675,7 +2685,7 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'Post-checkout hook',
         ok: fs.existsSync(hookPath),
-        detail: fs.existsSync(hookPath) ? 'Installed' : 'Missing — run scripts/install-hook.sh',
+        detail: fs.existsSync(hookPath) ? 'Installed' : 'Missing — re-open project or run scaffold hook install',
       });
 
       // Display results
@@ -2752,9 +2762,9 @@ export async function activate(context: vscode.ExtensionContext) {
         }
 
         // Pick PR base branch. In 3-tier projects the parent is often `staging`,
-        // not `main`, and `gh pr create` without --base silently targets the
-        // repo's default branch (usually main) — so a feature branched from
-        // staging ends up PR'd against main without the user noticing.
+        // not `main`, and creating a PR without an explicit base silently targets the
+        // repo's default branch (usually main) — so a feature branched from staging
+        // ends up PR'd against main without the user noticing.
         // Candidates: trunk, staging, and other local branches; default = the
         // candidate whose merge-base with HEAD is most recent (= the nearest
         // ancestor in branch history).
@@ -2813,7 +2823,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         } catch { /* ignore — branch may not have diverged from base yet */ }
 
-        // Step 3: Push is handled by gitService.createPullRequest() — no separate dialog needed.
+        // Step 3: Push + create PR via GitHubService (pushCurrentBranchForPr below).
         // Just inform the user if the branch hasn't been pushed yet.
         const hasUpstream = await gitService.hasUpstream();
         if (!hasUpstream) {
@@ -2825,7 +2835,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (root) {
           try {
             const { syncCiSecrets } = require('./utils/ciSecrets');
-            await syncCiSecrets(root, 'GitHub Actions CI', 86400);
+            await syncCiSecrets(root, 'GitHub Actions CI', 86400, githubService, gitService);
           } catch {
             // Non-fatal — CI may still work with existing secrets
           }
@@ -2858,12 +2868,18 @@ export async function activate(context: vscode.ExtensionContext) {
           `> CI will automatically create a \`ci-pr-<N>\` Lakebase branch for testing.`,
         ].join('\n');
 
+        // Step 3: Push branch, then create PR via GitHub API
         const prUrl = await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: `Creating pull request → ${prBase}...` },
           async (progress) => {
             progress.report({ message: 'Pushing branch...' });
-            const url = await gitService.createPullRequest(title, prBody, prBase);
-            return url;
+            await gitService.pushCurrentBranchForPr();
+            const ownerRepo = await gitService.getOwnerRepo();
+            if (!ownerRepo) {
+              throw new Error('Could not determine GitHub repository');
+            }
+            progress.report({ message: 'Creating pull request...' });
+            return githubService.createPullRequest(ownerRepo, currentBranch, title, prBody, prBase);
           }
         );
 
