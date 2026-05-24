@@ -2,21 +2,21 @@
 
 ## What This Is For
 
-Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-in Git source control with a unified **Git + Lakebase** SCM provider. Every code branch gets a paired Databricks Lakebase database branch, code and schema travel together through development, review, CI/CD, and merge.
+Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-in Git source control with a unified **Git + Lakebase** SCM provider. Every code branch gets a paired Databricks Lakebase database branch — code and schema travel together through development, review, CI/CD, and merge.
 
-**The problem it solves:** When applications use Lakebase (Databricks' Postgres-compatible database with copy-on-write branching), developers need to keep code branches and database branches in sync. Without this extension, you manually create database branches, refresh credentials, track schema diffs, and clean up branches, across the CLI, the Databricks console, and GitHub.
+**The problem it solves:** When applications use Lakebase (Databricks' Postgres-compatible database with copy-on-write branching), developers need to keep code branches and database branches in sync. Without this extension, you manually create database branches, refresh credentials, track schema diffs, and clean up branches — across the CLI, the Databricks console, and GitHub.
 
 **What it does:**
-- **Create New Project**: 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
-- **Automatic branch pairing**: `git checkout -b feature/x` automatically creates a Lakebase database branch
-- **Live schema visibility**: see actual database tables on each branch with diff indicators (new/modified/removed vs production)
-- **Two parallel interfaces**: work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
-- **CI Runner management**: deploy, start, stop, and monitor a self-hosted GitHub Actions runner from the sidebar
-- **PR integration**: commit → push → create PR in one flow; CI creates a dedicated Lakebase branch for testing
-- **Merge awareness**: merge PRs from VS Code; CI applies migrations to production and cleans up branches
-- **Branch Review**: multi-diff editor showing all code + schema changes, querying actual database state
-- **Deploy to Databricks Apps**: multi-target deploy wizard with per-file workspace upload, clickable deploy progress, and post-deploy app launch
-- **Full Git SCM parity**: every command from the built-in Git extension is available, plus Lakebase sync
+- **Create New Project** — 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
+- **Automatic branch pairing** — `git checkout -b feature/x` automatically creates a Lakebase database branch
+- **Live schema visibility** — see actual database tables on each branch with diff indicators (new/modified/removed vs production)
+- **Two parallel interfaces** — work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
+- **CI Runner management** — deploy, start, stop, and monitor a self-hosted GitHub Actions runner from the sidebar
+- **PR integration** — commit → push → create PR in one flow; CI creates a dedicated Lakebase branch for testing
+- **Merge awareness** — merge PRs from VS Code; CI applies migrations to production and cleans up branches
+- **Branch Review** — multi-diff editor showing all code + schema changes, querying actual database state
+- **Deploy to Databricks Apps** — multi-target deploy wizard with per-file workspace upload, clickable deploy progress, and post-deploy app launch
+- **Full Git SCM parity** — every command from the built-in Git extension is available, plus Lakebase sync
 
 ## Getting Started: Create a New Project
 
@@ -45,7 +45,7 @@ The wizard walks through 10 steps:
 - Language-specific scaffold (entity, migration, test framework, build tool)
 - 18 shell scripts (hooks, migration, secrets, schema diff, federation, cleanup)
 - `.env` with Databricks connection, `.gitignore`, `.vscode/settings.json`
-- Self-hosted GitHub Actions runner (if selected), deployed and listening
+- Self-hosted GitHub Actions runner (if selected) — deployed and listening
 - Initial commit pushed to main
 
 After creation, the extension offers to open the new project folder.
@@ -61,7 +61,7 @@ After creation, the extension offers to open the new project folder.
 
 Java and Kotlin projects are generated live from Spring Initializr at scaffold time (always the latest stable Spring Boot version). Lakebase-specific configuration (datasource, Flyway plugin, migration placeholder) is overlaid on top. If Initializr is unreachable, the extension falls back to bundled templates. Override the Initializr URL with the `lakebaseSync.springInitializrUrl` setting for private instances.
 
-Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language from `pom.xml`, `pyproject.toml`, or `package.json`. CI workflows are language-aware, they detect the project type and run the correct setup, migration, and test tools automatically.
+Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language from `pom.xml`, `pyproject.toml`, or `package.json`. CI workflows are language-aware — they detect the project type and run the correct setup, migration, and test tools automatically.
 
 ### Runner Types
 
@@ -76,7 +76,7 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 
 | Requirement | Install |
 |-------------|---------|
-| VS Code 1.85+ or Cursor |, |
+| VS Code 1.85+ or Cursor | — |
 | Databricks CLI v0.285+ | `brew install databricks` |
 | GitHub sign-in (VS Code) or PAT | Sign in when prompted, or set `lakebaseSync.githubToken` |
 | PostgreSQL client (psql) | `brew install libpq` |
@@ -113,9 +113,9 @@ A git branch and a Lakebase database branch are created together. The `.env` upd
 ### 2. Write Code, Migration, and Tests
 
 Write your feature:
-- **Entity/model**: JPA entity, SQLAlchemy model, or Knex schema
-- **Migration**: `V{N}__{description}.sql` (Flyway), Alembic migration, or Knex migration
-- **Given/When/Then tests**: integration tests that run against the real Lakebase branch database
+- **Entity/model** — JPA entity, SQLAlchemy model, or Knex schema
+- **Migration** — `V{N}__{description}.sql` (Flyway), Alembic migration, or Knex migration
+- **Given/When/Then tests** — integration tests that run against the real Lakebase branch database
 
 ### 3. Run Tests Locally
 
@@ -174,7 +174,7 @@ The merge workflow (`merge.yml`) automatically:
 
 ### 8. Verify Production
 
-On main, expand the production database node to see all tables. The **Branch Review** queries the actual database state, including ALTER TABLE changes from previous merges.
+On main, expand the production database node to see all tables. The **Branch Review** queries the actual database state — including ALTER TABLE changes from previous merges.
 
 ## Deploy to Databricks Apps
 
@@ -276,10 +276,10 @@ The PAT is refreshed on each deploy. The app reads these via the `LAKEBASE_SECRE
 
 After a successful deploy, the extension checks for seed data scripts in the project:
 
-- **Primary:** `scripts/seed-data/seed_demo_data.py`, runs with `--target <name>` and `--with-partners` (if `sfdc_partners.csv` exists)
+- **Primary:** `scripts/seed-data/seed_demo_data.py` — runs with `--target <name>` and `--with-partners` (if `sfdc_partners.csv` exists)
 - **Fallback:** Lists any `.py` files in `scripts/seed-data/` for manual execution
 
-Seed data is idempotent, existing rows are skipped, changed rows are updated. Failure is non-fatal (the deploy succeeds, a warning is shown).
+Seed data is idempotent — existing rows are skipped, changed rows are updated. Failure is non-fatal (the deploy succeeds, a warning is shown).
 
 To add seed data to a project, create `scripts/seed-data/seed_demo_data.py` with a `--target` argument that reads `deploy-targets.yaml` to connect to the correct database.
 
@@ -311,16 +311,16 @@ Click the Lakebase icon in the activity bar. The sidebar contains:
 
 Expanding a branch's database node queries the actual Lakebase database and shows tables with diff indicators:
 
-- **Green `+`**: new table created on this branch
-- **Yellow `~`**: table with modified columns vs production
-- **Red `-`**: table removed on this branch
-- **White**: unchanged (shown on production only)
+- **Green `+`** — new table created on this branch
+- **Yellow `~`** — table with modified columns vs production
+- **Red `-`** — table removed on this branch
+- **White** — unchanged (shown on production only)
 
 Click any changed table to see a production ↔ branch DDL diff.
 
 ## Database Migration Strategy
 
-The extension supports explicit, versioned migrations, not ORM auto-DDL. Schema changes must go through migration files:
+The extension supports explicit, versioned migrations — not ORM auto-DDL. Schema changes must go through migration files:
 
 | Language | Migration Tool | Migration Files |
 |----------|---------------|----------------|
@@ -328,7 +328,7 @@ The extension supports explicit, versioned migrations, not ORM auto-DDL. Schema 
 | Python | Alembic | `alembic/versions/*.py` |
 | Node.js | Knex | `migrations/*.js` |
 
-**Why:** Versioned migrations are reviewable in PRs, applied deterministically by CI, and diffed between branches. ORM auto-DDL (`ddl-auto=create`, `db.create_all()`) bypasses this, use `validate` mode instead.
+**Why:** Versioned migrations are reviewable in PRs, applied deterministically by CI, and diffed between branches. ORM auto-DDL (`ddl-auto=create`, `db.create_all()`) bypasses this — use `validate` mode instead.
 
 ## Settings
 
@@ -340,12 +340,12 @@ Search `lakebaseSync` in VS Code Settings:
 | `autoRefreshCredentials` | `true` | Background credential refresh (45 min) |
 | `showUnifiedRepo` | `true` | Show Git + Lakebase in Source Control |
 | `productionReadOnly` | `true` | Prevent deleting the production branch |
-| `migrationPath` | _(empty, auto-detect)_ | Migration file path. Leave empty to auto-detect from project language. |
+| `migrationPath` | _(empty — auto-detect)_ | Migration file path. Leave empty to auto-detect from project language. |
 | `trunkBranch` | _(empty)_ | Alternative git branch name to treat as `main` (in addition to `main`/`master`). Also readable from `LAKEBASE_TRUNK_BRANCH` in `.env`. |
 
 ### Trunk Branch Alias
 
-By default the extension and the `post-checkout` hook treat only `main` and `master` as the trunk (and connect `.env` to the project's default Lakebase branch when you're on one of them). If your repo uses a prefixed or otherwise non-standard trunk branch (common in shared-monorepo conventions where each project's "production" branch is a user- or team-prefixed name like `team-alpha/project-foo`) you can opt in by setting either:
+By default the extension and the `post-checkout` hook treat only `main` and `master` as the trunk (and connect `.env` to the project's default Lakebase branch when you're on one of them). If your repo uses a prefixed or otherwise non-standard trunk branch — common in shared-monorepo conventions where each project's "production" branch is a user- or team-prefixed name like `team-alpha/project-foo` — you can opt in by setting either:
 
 - `LAKEBASE_TRUNK_BRANCH=<git-branch-name>` in `.env`, or
 - `lakebaseSync.trunkBranch` in VS Code settings (overrides `.env`).
@@ -362,7 +362,7 @@ npm run test:integration -- --grep "Python Dev Loop"    # 426 integration tests 
 ./test/integration/run-all.sh                           # all suites
 ```
 
-**Tier 1 unit tests** are hermetic, no credentials needed. **Tier 3 integration tests** create real GitHub repos + Lakebase projects under your own accounts; they require `DATABRICKS_TEST_HOST=https://<your-workspace>...`, an authenticated `databricks` CLI against that host, and an authenticated `gh` CLI. Missing env or auth surfaces a copy-paste-ready `IntegrationSetupError` at startup; nothing is silently defaulted to a maintainer's workspace. See `CONTRIBUTING.md` § Testing for the full setup.
+**Tier 1 unit tests** are hermetic — no credentials needed. **Tier 3 integration tests** create real GitHub repos + Lakebase projects under your own accounts; they require `DATABRICKS_TEST_HOST=https://<your-workspace>...`, an authenticated `databricks` CLI against that host, and an authenticated `gh` CLI. Missing env or auth surfaces a copy-paste-ready `IntegrationSetupError` at startup; nothing is silently defaulted to a maintainer's workspace. See `CONTRIBUTING.md` § Testing for the full setup.
 
 **All three tiers (unit, substrate BDD, integration) are mandatory before opening a PR.** Latest release totals: **1554 tests passing**, zero failing.
 
@@ -383,14 +383,14 @@ npm run test:integration -- --grep "Python Dev Loop"    # 426 integration tests 
 
 - **Existing pre-v0.4.0 projects** need manual workflow update (replace `actions/setup-java` with local JDK step) for self-hosted runners
 - **Schema diff** relies on `psql` queries; a native `databricks postgres schema-diff` CLI command would be faster and more complete
-- **Merge conflict resolution**: no special handling for conflicting migration versions across branches
-- **Multi-project support**: assumes one Lakebase project per workspace
-- **Blue action button**: VS Code's SCM action button uses a proposed API not available to third-party extensions
-- **Local branch after merge**: the `post-merge` hook attempts to delete the local feature branch and prune stale remote tracking refs, but this may not succeed in all cases (e.g., squash merges with non-standard commit messages, local uncommitted changes). If the branch persists after merge, delete it manually with `git branch -d <branch>`. Needs investigation, a more reliable approach may be to have the extension explicitly delete the local branch by name (which it already knows from the PR context) after merge, rather than relying on the hook's heuristic parsing of commit messages.
+- **Merge conflict resolution** — no special handling for conflicting migration versions across branches
+- **Multi-project support** — assumes one Lakebase project per workspace
+- **Blue action button** — VS Code's SCM action button uses a proposed API not available to third-party extensions
+- **Local branch after merge** — the `post-merge` hook attempts to delete the local feature branch and prune stale remote tracking refs, but this may not succeed in all cases (e.g., squash merges with non-standard commit messages, local uncommitted changes). If the branch persists after merge, delete it manually with `git branch -d <branch>`. Needs investigation — a more reliable approach may be to have the extension explicitly delete the local branch by name (which it already knows from the PR context) after merge, rather than relying on the hook's heuristic parsing of commit messages.
 
 ## Roadmap
 
-- **Data preview**: Read-only table viewer for branch databases
-- **Conflict detection**: Warn when two branches modify the same tables
-- **Branch comparison**: Diff any two Lakebase branches
-- **Cursor AI context**: Expose database schema to AI-assisted code generation
+- **Data preview** — Read-only table viewer for branch databases
+- **Conflict detection** — Warn when two branches modify the same tables
+- **Branch comparison** — Diff any two Lakebase branches
+- **Cursor AI context** — Expose database schema to AI-assisted code generation

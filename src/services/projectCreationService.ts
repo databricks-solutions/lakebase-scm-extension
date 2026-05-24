@@ -21,7 +21,7 @@ export interface ProjectCreationInput {
   parentDir: string;
   /** Databricks workspace host URL */
   databricksHost: string;
-  /** GitHub owner (user or org), required when createGithubRepo is true */
+  /** GitHub owner (user or org) — required when createGithubRepo is true */
   githubOwner?: string;
   /** Whether to create a GitHub repository (default: true) */
   createGithubRepo?: boolean;
@@ -49,7 +49,7 @@ export interface ProjectCreationResult {
 export type ProgressCallback = (step: string, detail?: string) => void;
 
 /**
- * UI prompt definitions, the caller (extension command) collects these
+ * UI prompt definitions — the caller (extension command) collects these
  * from the user before calling createProject.
  */
 export const PROJECT_CREATION_PROMPTS = {
@@ -96,7 +96,7 @@ export class ProjectCreationService {
    * Create a complete new project. Each step reports progress.
    * On failure, partial resources are preserved (caller can retry or clean up).
    *
-   * Routes to substrate.createProject, the canonical 11-step orchestrator.
+   * Routes to substrate.createProject — the canonical 11-step orchestrator.
    * The class-level DI'd services (gitService, githubService, lakebaseService,
    * scaffoldService) are no longer reached through this method; the substrate
    * uses its own internal pieces, all of which the other services now also
@@ -142,7 +142,7 @@ export class ProjectCreationService {
   }
 
   // (`writeEnvFile` removed: superseded by substrate option 3. Substrate's
-  // createProject no longer writes .env at all, only .env.example ships, and
+  // createProject no longer writes .env at all — only .env.example ships, and
   // the post-checkout hook bootstraps .env on first switch. Reintroducing a
   // local .env writer here would re-open the path that gitleaks correctly
   // rejected: tracked .env + JWT rewrite on checkout → staged credential.)

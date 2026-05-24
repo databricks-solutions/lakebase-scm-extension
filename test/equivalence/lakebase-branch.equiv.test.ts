@@ -25,7 +25,7 @@ describe("equivalence: lakebase branch lifecycle", () => {
     restoreSubstrate();
   });
 
-  it("createBranch, forwards { instance, branch, parentBranch } and adapts result", async () => {
+  it("createBranch — forwards { instance, branch, parentBranch } and adapts result", async () => {
     const tracker = stubSubstrate("createBranch", sampleBranchInfo({ uid: "br-new" }));
 
     const result = await service.createBranch("customer-entity", "main", "main");
@@ -42,7 +42,7 @@ describe("equivalence: lakebase branch lifecycle", () => {
     assert.deepStrictEqual(result, expectedBranchAdapter(sampleBranchInfo({ uid: "br-new" })));
   });
 
-  it("deleteBranch, forwards { instance, branch }", async () => {
+  it("deleteBranch — forwards { instance, branch }", async () => {
     const tracker = stubSubstrate("deleteBranch", { deleted: true });
 
     await service.deleteBranch("customer-entity");
@@ -54,7 +54,7 @@ describe("equivalence: lakebase branch lifecycle", () => {
     });
   });
 
-  it("listBranches, applies adaptBranchInfo over each substrate row", async () => {
+  it("listBranches — applies adaptBranchInfo over each substrate row", async () => {
     const rows = [
       sampleBranchInfo({ uid: "br-1", name: "projects/proj-x/branches/a" }),
       sampleBranchInfo({
@@ -73,7 +73,7 @@ describe("equivalence: lakebase branch lifecycle", () => {
     assert.deepStrictEqual(result, rows.map(expectedBranchAdapter));
   });
 
-  it("getDefaultBranch, adapts when present", async () => {
+  it("getDefaultBranch — adapts when present", async () => {
     const tracker = stubSubstrate("getDefaultBranch", sampleBranchInfo({ isDefault: true }));
     const result = await service.getDefaultBranch();
     assert.strictEqual(tracker.callCount, 1);
@@ -81,13 +81,13 @@ describe("equivalence: lakebase branch lifecycle", () => {
     assert.deepStrictEqual(result, expectedBranchAdapter(sampleBranchInfo({ isDefault: true })));
   });
 
-  it("getDefaultBranch, returns undefined when substrate returns undefined", async () => {
+  it("getDefaultBranch — returns undefined when substrate returns undefined", async () => {
     stubSubstrate("getDefaultBranch", undefined);
     const result = await service.getDefaultBranch();
     assert.strictEqual(result, undefined);
   });
 
-  it("getBranchByName, passes name as first arg, instance via opts", async () => {
+  it("getBranchByName — passes name as first arg, instance via opts", async () => {
     const tracker = stubSubstrate("getBranchByName", sampleBranchInfo());
     const result = await service.getBranchByName("customer-entity");
     assert.strictEqual(tracker.callCount, 1);
@@ -96,7 +96,7 @@ describe("equivalence: lakebase branch lifecycle", () => {
     assert.deepStrictEqual(result, expectedBranchAdapter(sampleBranchInfo()));
   });
 
-  it("waitForBranchReady, single-arg shape { instance, branch, timeoutMs }, 5s × maxAttempts", async () => {
+  it("waitForBranchReady — single-arg shape { instance, branch, timeoutMs }, 5s × maxAttempts", async () => {
     const tracker = stubSubstrate("waitForBranchReady", sampleBranchInfo({ state: "READY" }));
     const result = await service.waitForBranchReady("customer-entity", 12);
     assert.strictEqual(tracker.callCount, 1);

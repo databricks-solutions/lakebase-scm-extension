@@ -10,11 +10,11 @@
 // Bypassing self-referential require: the test/setup.js hook redirects
 // the substrate package name globally, including from inside this
 // module. We resolve the real package by absolute path (built dist/) so
-// the hook doesn't fire, request shape is a filesystem path, not the
+// the hook doesn't fire — request shape is a filesystem path, not the
 // package name.
 //
 // Why getter instead of static value? Compiled-from-TS named imports in
-// the proxy services look like `substrate_1.listBranches(...)`, a
+// the proxy services look like `substrate_1.listBranches(...)` — a
 // property access at every call site, so a getter intercepts each call
 // individually and an updated override is seen immediately.
 

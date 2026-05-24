@@ -1,5 +1,5 @@
 /**
- * Python Dev Loop: Shared Helpers
+ * Python Dev Loop — Shared Helpers
  *
  * Common functions for the Python/React integration test scenarios.
  * Wraps git, gh, Lakebase CLI, Alembic, uv, and psql operations.

@@ -32,7 +32,7 @@ let signalHandlersInstalled = false;
  * derived name. Parallel runs from a botched relaunch produce orphaned
  * project pairs and interleaved logs.
  *
- * @param suiteName, identifies the lock file (e.g. "ecom", "pydev").
+ * @param suiteName — identifies the lock file (e.g. "ecom", "pydev").
  *                    Final lock path: $TMPDIR/lakebase-test-${suiteName}.lock
  *
  * Throws on collision; caller should let the throw propagate out of `before()`
@@ -45,7 +45,7 @@ export function acquireSingleRunLock(suiteName: string): void {
     const otherPid = parseInt(raw, 10);
     if (Number.isFinite(otherPid) && otherPid > 0) {
       // process.kill(pid, 0) throws on both ESRCH (process gone) AND EPERM
-      // (process exists but we can't signal it: e.g. owned by another user).
+      // (process exists but we can't signal it — e.g. owned by another user).
       // Treat EPERM as alive so we don't reclaim a lock held by an unrelated
       // process that just happens to have that pid.
       let alive = false;
@@ -57,7 +57,7 @@ export function acquireSingleRunLock(suiteName: string): void {
           `Lock at ${lockPath}. Wait for it to finish, or run \`kill -9 ${otherPid}\` and \`rm ${lockPath}\` if it's stuck.`,
         );
       }
-      // Stale lock, process gone.
+      // Stale lock — process gone.
       console.log(`  [lock] reclaiming stale ${suiteName} lock (pid ${otherPid} no longer alive)`);
     }
   }

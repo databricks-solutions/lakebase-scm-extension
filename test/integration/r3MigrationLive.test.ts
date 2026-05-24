@@ -32,7 +32,7 @@ function git(cmd: string): string {
   return cp.execSync(`git ${cmd}`, { cwd: repoDir, timeout: 15000 }).toString().trim();
 }
 
-describe('R3 Live Integration, SchemaMigrationService.parseSql through service layer', function () {
+describe('R3 Live Integration — SchemaMigrationService.parseSql through service layer', function () {
   this.timeout(120000);
 
   before(async function () {

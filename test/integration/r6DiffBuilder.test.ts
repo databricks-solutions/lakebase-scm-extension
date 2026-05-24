@@ -87,7 +87,7 @@ function newBuildDiffTuples(files: Array<{status: string; path: string}>, opts: 
   });
 }
 
-describe('R6 Diff Tuple Builder, Parity + Live', function () {
+describe('R6 Diff Tuple Builder — Parity + Live', function () {
   this.timeout(120000);
 
   before(async function () {
@@ -124,7 +124,7 @@ describe('R6 Diff Tuple Builder, Parity + Live', function () {
     console.log('  Setup complete.\n');
   });
 
-  // ── Phase 1: OLD code, inline tuple builders ────────────────────
+  // ── Phase 1: OLD code — inline tuple builders ────────────────────
 
   describe('Phase 1: OLD inline tuple construction', () => {
     it('Pattern 1: reviewBranch builds tuples for added/modified files', () => {

@@ -1,5 +1,5 @@
 /**
- * E-Commerce Scenario: Shared Helpers
+ * E-Commerce Scenario — Shared Helpers
  *
  * Common functions used by all 8 scenario files. Wraps git, gh, Lakebase CLI,
  * and psql operations so each scenario reads like a script.
@@ -13,11 +13,11 @@
  * so the integration tests exercise the same code paths as the VS Code extension.
  *
  * GitService methods (getGitRoot, getCurrentBranch, etc.) cannot be used here because
- * they call getWorkspaceRoot() which returns the VS Code workspace root, not the
+ * they call getWorkspaceRoot() which returns the VS Code workspace root — not the
  * temporary test project directory. There is no cwd override on GitService, so git
  * operations use the local `git()` helper with explicit `cwd: ctx.projectDir`.
  *
- * Direct CLI calls (gh, psql) are kept for the same reason, they need to target
+ * Direct CLI calls (gh, psql) are kept for the same reason — they need to target
  * the test project's repo / connection, not the VS Code workspace.
  * ────────────────────────────────────────────────────────────────────────
  */
@@ -164,7 +164,7 @@ export async function createLakebaseBranchAndConnect(
   ctx: ScenarioContext,
   gitBranchName: string,
 ): Promise<{ branchId: string; host: string; username: string }> {
-  // Use the actual LakebaseService methods, this is what the extension does
+  // Use the actual LakebaseService methods — this is what the extension does
   const branch = await ctx.lakebaseService.createBranch(gitBranchName);
   if (!branch) {
     throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
@@ -291,7 +291,7 @@ export function runMavenTests(ctx: ScenarioContext, timeoutMs = 300000): string 
     console.log('    [mvnw] Tests passed.');
     return output;
   } catch (err: any) {
-    // execSync throws on non-zero exit, capture stdout+stderr from the error
+    // execSync throws on non-zero exit — capture stdout+stderr from the error
     const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
     const lastLines = output.split('\n').slice(-80).join('\n');
     throw new Error(`./mvnw test failed. Last 80 lines:\n${lastLines}`);
@@ -416,6 +416,6 @@ export async function deleteLakebaseBranch(ctx: ScenarioContext, branchName: str
   try {
     await ctx.lakebaseService.deleteBranch(branchName);
   } catch {
-    // Branch may not exist, that's OK
+    // Branch may not exist — that's OK
   }
 }

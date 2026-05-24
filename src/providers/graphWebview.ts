@@ -43,7 +43,7 @@ const CSW = 2;   // CIRCLE_STROKE_WIDTH
 
 // VS Code graph colors + chartsBlue for current branch
 const LANE_COLORS = ['#FFB000', '#DC267F', '#994F00', '#40B0A6', '#B66DFF'];
-const CHARTS_BLUE = '#4FC1FF';  // chartsBlue, used for HEAD/current ref
+const CHARTS_BLUE = '#4FC1FF';  // chartsBlue — used for HEAD/current ref
 
 function rot(i: number): number { return ((i % LANE_COLORS.length) + LANE_COLORS.length) % LANE_COLORS.length; }
 
@@ -337,7 +337,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
     try {
       const lbBranches = await this.lakebaseService.listBranches();
       lakebaseBranchIds = new Set(lbBranches.map(b => b.branchId));
-    } catch { /* no Lakebase connection, skip indicators */ }
+    } catch { /* no Lakebase connection — skip indicators */ }
 
     const viewModels = this.buildViewModels(commits);
     this.view.webview.html = this.html(viewModels, lakebaseBranchIds);
@@ -367,7 +367,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
         for (const node of inputSwimlanes) {
           if (node.id === commit.sha) {
             if (!firstParentAdded) {
-              // First parent inherits lane, use blue for HEAD, otherwise keep lane color
+              // First parent inherits lane — use blue for HEAD, otherwise keep lane color
               const color = commit.isHead ? CHARTS_BLUE : node.color;
               outputSwimlanes.push({ id: commit.parents[0], color });
               firstParentAdded = true;
@@ -397,7 +397,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Render SVG for a single row, matching VS Code's renderSCMHistoryItemGraph.
+   * Render SVG for a single row — matching VS Code's renderSCMHistoryItemGraph.
    */
   private renderRowSvg(vm: RowVM): { svg: string; width: number } {
     const { commit, inputSwimlanes, outputSwimlanes, kind } = vm;
@@ -428,11 +428,11 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
           outputSwimlaneIndex++;
         }
       } else {
-        // Not the current commit, check if it maps to an output lane
+        // Not the current commit — check if it maps to an output lane
         if (outputSwimlaneIndex < outputSwimlanes.length &&
           inputSwimlanes[index].id === outputSwimlanes[outputSwimlaneIndex].id) {
           if (index === outputSwimlaneIndex) {
-            // Same column, straight |
+            // Same column — straight |
             paths.push(`<path d="M ${SLW*(index+1)} 0 V ${SLH}" fill="none" stroke="${color}" stroke-width="1" stroke-linecap="round"/>`);
           } else {
             // Lane shifts column (always left in VS Code): | → / → - → / → |
@@ -447,7 +447,7 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // Additional parents, branch-out: horizontal - then \ arc
+    // Additional parents — branch-out: horizontal - then \ arc
     for (let i = 1; i < commit.parents.length; i++) {
       const parentIdx = this.findLastIndex(outputSwimlanes, commit.parents[i]);
       if (parentIdx === -1) continue;
@@ -471,11 +471,11 @@ export class GraphWebviewProvider implements vscode.WebviewViewProvider {
       paths.push(`<path d="M ${SLW*(circleIndex+1)} ${SLW} V ${SLH}" fill="none" stroke="${circleColor}" stroke-width="1" stroke-linecap="round"/>`);
     }
 
-    // Circle, matches VS Code's renderSCMHistoryItemGraph exactly
+    // Circle — matches VS Code's renderSCMHistoryItemGraph exactly
     const cx = SLW * (circleIndex + 1);
     const cy = SLW;
     if (kind === 'HEAD') {
-      // Hollow ring, stroke only, no fill
+      // Hollow ring — stroke only, no fill
       paths.push(`<circle cx="${cx}" cy="${cy}" r="${CR+2}" fill="none" stroke="${circleColor}" stroke-width="${CSW}" style="stroke-width:${CSW}px"/>`);
     } else if (kind === 'incoming-changes' || kind === 'outgoing-changes') {
       // Filled circle + unfilled stroke ring + dashed outer ring
@@ -687,7 +687,7 @@ document.querySelectorAll('.row').forEach(e=>{
 document.querySelectorAll('.sha').forEach(e=>{
   e.addEventListener('click',(ev)=>{ev.stopPropagation();v.postMessage({type:'copy',sha:e.closest('.row').dataset.s})});
 });
-// Tooltip, positioned to the right of the hovered row
+// Tooltip — positioned to the right of the hovered row
 const tip=document.getElementById('tip');
 let tipTimer=null,tipRow=null;
 function showTip(row){
@@ -700,7 +700,7 @@ function showTip(row){
   else{h+='<span class="tip-name" style="color:var(--vscode-foreground);cursor:default">'+esc(d.au)+'</span>, ';}
   h+='<span class="tip-date">&#x1F551; '+esc(d.rt)+' ('+esc(d.dt)+')</span>';
   h+='</div></div>';
-  // Subject, linkify PR numbers (#N)
+  // Subject — linkify PR numbers (#N)
   var subjectHtml=linkifyPR(esc(d.m));
   h+='<div class="tip-subject">'+subjectHtml+'</div>';
   // Body beyond subject
@@ -709,7 +709,7 @@ function showTip(row){
   if(body&&body!==subj){const extra=body.startsWith(subj)?body.substring(subj.length).trim():body;if(extra)h+='<div class="tip-body">'+esc(extra)+'</div>'}
   // Stats
   if(d.st){h+='<hr class="tip-hr"/><div class="tip-stats">'+colorStats(d.st)+'</div>'}
-  // Schema changes, fetch async from CI comments or migration files
+  // Schema changes — fetch async from CI comments or migration files
   var prMatch=d.m?d.m.match(/#([0-9]+)/):null;
   h+='<div id="tip-schema" class="tip-schema"><span class="tip-schema-loading">Loading schema changes...</span></div>';
   setTimeout(function(){v.postMessage({type:'fetchSchema',pr:prMatch?prMatch[1]:null,sha:d.s})},0);

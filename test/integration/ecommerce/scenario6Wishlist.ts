@@ -106,7 +106,7 @@ class WishlistServiceTest {
         Long itemId = item.getId();
         // When
         wishlistService.removeItem(itemId);
-        // Then, no exception means success
+        // Then — no exception means success
     }
 }
 `,

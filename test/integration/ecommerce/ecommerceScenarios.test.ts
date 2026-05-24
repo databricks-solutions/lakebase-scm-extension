@@ -1,5 +1,5 @@
 /**
- * E-Commerce Backend: Iterative Feature Development Scenarios
+ * E-Commerce Backend — Iterative Feature Development Scenarios
  *
  * Full end-to-end: creates a GitHub repo + Lakebase project via ProjectCreationService,
  * scaffolds a Maven/Spring Boot project, starts an ephemeral self-hosted runner,
@@ -41,7 +41,7 @@ const cp = require('child_process');
 const timestamp = Date.now().toString(36);
 const PROJECT_NAME = `ecom-${timestamp}`;
 
-// Mutable object, scenario files receive this reference during Mocha's synchronous
+// Mutable object — scenario files receive this reference during Mocha's synchronous
 // describe-body processing, then Object.assign populates it in before().
 const ctx = {} as ScenarioContext;
 let created = false;
@@ -52,7 +52,7 @@ let cleanupInFlight = false;
 const dbcli = (cmd: string, dbHost: string, timeoutMs = 30000): string =>
   cp.execSync(cmd, { timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: dbHost } }).toString();
 
-// Shared cleanup entry, used by mocha after-hook AND signal handlers AND
+// Shared cleanup entry — used by mocha after-hook AND signal handlers AND
 // uncaughtException. Idempotent. Drives deletes through retry-aware force*
 // helpers rather than the silently-swallowing ProjectCreationService.cleanupProject.
 async function fullCleanup(reason: string): Promise<void> {
@@ -104,7 +104,7 @@ const installSignalHandlers = (): void =>
 const reapOrphanProjects = (dbHost: string): Promise<void> =>
   libReapOrphans('ecom-', dbHost);
 
-describe('E-Commerce Backend, 8 Iterative Scenarios', function () {
+describe('E-Commerce Backend — 8 Iterative Scenarios', function () {
   this.timeout(7200000); // 2 hours overall (8 scenarios × ~10 min each)
 
   // ── Setup: Project + Maven + Runner ─────────────────────────────────
@@ -124,7 +124,7 @@ describe('E-Commerce Backend, 8 Iterative Scenarios', function () {
     const lakebaseService = new LakebaseService();
     // Pre-flight: requires DATABRICKS_TEST_HOST + authenticated databricks
     // CLI + authenticated gh CLI. Throws IntegrationSetupError with exact
-    // setup commands if any piece is missing. No silent default, the test
+    // setup commands if any piece is missing. No silent default — the test
     // creates real cloud resources under the contributor's account.
     const { databricksHost: dbHost, githubUser: ghUser } = assertIntegrationCredentials();
 
@@ -176,7 +176,7 @@ describe('E-Commerce Backend, 8 Iterative Scenarios', function () {
     // so pom.xml/mvnw/DemoApplication.java are included in the first commit (avoids a second
     // push that triggers merge.yml before the runner is ready).
     const result = await creationService.createProject(input, (step, detail) => {
-      console.log(`    [setup] ${step}${detail ? ', ' + detail : ''}`);
+      console.log(`    [setup] ${step}${detail ? ' — ' + detail : ''}`);
       if (step === 'Creating initial commit...') {
         // Inject Maven files before the commit
         scaffoldMavenProject(projectDir);
@@ -193,7 +193,7 @@ describe('E-Commerce Backend, 8 Iterative Scenarios', function () {
     console.log(`    [setup] Runner started (pid=${runner.pid}).\n`);
 
     created = true;
-    console.log(`    [setup] Ready, 8 scenarios will execute.\n`);
+    console.log(`    [setup] Ready — 8 scenarios will execute.\n`);
   });
 
   // ── Scenarios 1-6: All Entities (one branch, one PR, one merge) ──
@@ -305,7 +305,7 @@ describe('E-Commerce Backend, 8 Iterative Scenarios', function () {
     });
   });
 
-  // Safety net, fires on natural mocha completion. Signal kills are handled
+  // Safety net — fires on natural mocha completion. Signal kills are handled
   // separately by the installed SIGINT/SIGTERM handlers.
   after(async function () {
     this.timeout(600000);

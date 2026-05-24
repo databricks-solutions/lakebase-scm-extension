@@ -49,7 +49,7 @@ async function getDiffFilesLocal(fromRef: string, toRef: string | null): Promise
   } catch { return []; }
 }
 
-describe('R6 DiffService, Live Integration', function () {
+describe('R6 DiffService — Live Integration', function () {
   this.timeout(120000);
 
   before(async function () {

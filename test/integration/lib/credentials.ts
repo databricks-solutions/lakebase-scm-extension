@@ -4,7 +4,7 @@
  * The ecommerce and python-devloop tests create real GitHub repos and
  * Lakebase projects under the running contributor's account. Both must
  * be authenticated, and the contributor must explicitly choose which
- * Databricks workspace the tests run against, there is intentionally
+ * Databricks workspace the tests run against — there is intentionally
  * no default. Defaulting silently to any one maintainer's workspace
  * would (a) silently bill that account for a contributor's runs, and
  * (b) prevent the test from catching workspace-specific regressions
@@ -30,7 +30,7 @@ export function assertIntegrationCredentials(): IntegrationCredentialsAssertion 
     throw new IntegrationSetupError([
       "DATABRICKS_TEST_HOST is not set.",
       "",
-      "The integration suite is destructive, it creates a real Lakebase",
+      "The integration suite is destructive — it creates a real Lakebase",
       "project and GitHub repo under YOUR accounts. You must explicitly",
       "choose the workspace it runs against; there is no default.",
       "",
@@ -49,7 +49,7 @@ export function assertIntegrationCredentials(): IntegrationCredentialsAssertion 
   }
 
   // Verify Databricks auth resolves to a real token for THIS host. We don't
-  // care about the token value, only that the call succeeds, which means
+  // care about the token value — only that the call succeeds, which means
   // the contributor has run `databricks auth login` against this host.
   try {
     execFileSync("databricks", ["auth", "token", "--host", host], {
@@ -100,7 +100,7 @@ export function assertIntegrationCredentials(): IntegrationCredentialsAssertion 
   return { databricksHost: host, githubUser: ghUser };
 }
 
-/** Distinguishable from real test failures, surfaces "setup needed" cleanly. */
+/** Distinguishable from real test failures — surfaces "setup needed" cleanly. */
 export class IntegrationSetupError extends Error {
   constructor(message: string) {
     // Lead with a banner so the message stands out in mocha output.

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to the Lakebase SCM Extension. This is a [Databricks Labs](https://github.com/databrickslabs) project, community-supported, not officially supported by Databricks.
+Thanks for your interest in contributing to the Lakebase SCM Extension. This is a [Databricks Labs](https://github.com/databrickslabs) project — community-supported, not officially supported by Databricks.
 
 ## Development setup
 
@@ -49,18 +49,18 @@ templates/project/common/ # files copied into scaffolded user projects
 ```
 
 The extension has two parallel surfaces that must stay in sync:
-- **Shell hooks** (`templates/project/common/scripts/*.sh`), fire from terminal `git` operations.
-- **TypeScript services** (`src/services/lakebaseService.ts` etc.), invoked by VS Code UI commands.
+- **Shell hooks** (`templates/project/common/scripts/*.sh`) — fire from terminal `git` operations.
+- **TypeScript services** (`src/services/lakebaseService.ts` etc.) — invoked by VS Code UI commands.
 
 When you change branch lifecycle behavior (fork source, connection target, credential mint), update both paths in the same PR.
 
 ## Testing
 
-> **All three tiers, every PR.** That includes the live integration suites in Tier 3, they're the only layer that exercises real CI workflow templates, self-hosted runner setup, Lakebase branch CRUD, and the cleanup pipeline. Bugs that ship through Tier-1+2-only review almost always surface here. If you genuinely can't run Tier 3 (no Databricks workspace access), say so in the PR description so reviewers know exactly what's covered.
+> **All three tiers, every PR.** That includes the live integration suites in Tier 3 — they're the only layer that exercises real CI workflow templates, self-hosted runner setup, Lakebase branch CRUD, and the cleanup pipeline. Bugs that ship through Tier-1+2-only review almost always surface here. If you genuinely can't run Tier 3 (no Databricks workspace access), say so in the PR description so reviewers know exactly what's covered.
 
 Three tiers, ordered by what they require and how long they take:
 
-### Tier 1, Hermetic unit / suite tests (no credentials, ~1 min)
+### Tier 1 — Hermetic unit / suite tests (no credentials, ~1 min)
 
 ```bash
 npm test
@@ -68,9 +68,9 @@ npm test
 
 Runs the mocha `test/suite/` and `test/equivalence/` tests against mocks. **Always run this before pushing.** Catches API breakage, regex/parse logic, scaffold deviations, and drift between extension proxies and the substrate they delegate to.
 
-**Equivalence harness (`test/equivalence/`)**: every extension service method that delegates to `@databricks-solutions/lakebase-app-dev-kit` has an adapter-aware equivalence test (FEIP-7080). Each test stubs the substrate function via `test/mocks/substrate.js` and asserts (a) substrate is called with the args the proxy derived from VS Code context, and (b) the proxy returns the documented adapter applied to the substrate result. When you change a proxy's argument-mapping or its result-adapter, update the matching test in `test/equivalence/`. Run just this slice with `npm run test:equivalence`.
+**Equivalence harness (`test/equivalence/`)** — every extension service method that delegates to `@databricks-solutions/lakebase-app-dev-kit` has an adapter-aware equivalence test (FEIP-7080). Each test stubs the substrate function via `test/mocks/substrate.js` and asserts (a) substrate is called with the args the proxy derived from VS Code context, and (b) the proxy returns the documented adapter applied to the substrate result. When you change a proxy's argument-mapping or its result-adapter, update the matching test in `test/equivalence/`. Run just this slice with `npm run test:equivalence`.
 
-### Tier 2, Hermetic substrate BDD (no credentials, ~10s)
+### Tier 2 — Hermetic substrate BDD (no credentials, ~10s)
 
 ```bash
 cd node_modules/@databricks-solutions/lakebase-app-dev-kit && npx vitest run
@@ -78,9 +78,9 @@ cd node_modules/@databricks-solutions/lakebase-app-dev-kit && npx vitest run
 
 Covers branch-create collision validation, env-file shape, github URL parsing, etc. against mocks. Runs in your editor / pre-commit hook range. Useful when changing anything in `src/services/lakebaseService.ts` or anything that re-exports substrate symbols.
 
-### Tier 3, Full integration (requires your own accounts, ~17 min)
+### Tier 3 — Full integration (requires your own accounts, ~17 min)
 
-The `test/integration/` suites (ecommerce, python-devloop) create **real** Lakebase projects and GitHub repos under YOUR accounts. There is no shared sandbox, you must set this up before the test will run.
+The `test/integration/` suites (ecommerce, python-devloop) create **real** Lakebase projects and GitHub repos under YOUR accounts. There is no shared sandbox — you must set this up before the test will run.
 
 **Required setup (one-time):**
 
@@ -100,9 +100,9 @@ The `test/integration/` suites (ecommerce, python-devloop) create **real** Lakeb
    databricks auth login --host "$DATABRICKS_TEST_HOST"
    ```
 
-   OAuth tokens are ~1h TTL, you may need to re-run this between long sessions.
+   OAuth tokens are ~1h TTL — you may need to re-run this between long sessions.
 
-4. Authenticate the GitHub CLI (any owner, the test creates repos under whoever `gh api user` returns):
+4. Authenticate the GitHub CLI (any owner — the test creates repos under whoever `gh api user` returns):
 
    ```bash
    gh auth status   # if "not logged in", run:
@@ -117,7 +117,7 @@ The `test/integration/` suites (ecommerce, python-devloop) create **real** Lakeb
    npm run test:integration -- --grep "Python Dev Loop"   # just python-devloop (~10 min)
    ```
 
-If any credential is missing or the wrong host is set, the test fails fast at `before()` with an `IntegrationSetupError` that names the exact command to run. The test never falls back to a shared default host, you have to opt into a workspace explicitly.
+If any credential is missing or the wrong host is set, the test fails fast at `before()` with an `IntegrationSetupError` that names the exact command to run. The test never falls back to a shared default host — you have to opt into a workspace explicitly.
 
 ### When to run which tier
 
@@ -143,7 +143,7 @@ For UI / view changes that no suite covers, describe the scenarios you exercised
 - Branch off `main`. Branch names: `fix/<short>`, `feat/<short>`, etc.
 - One logical change per PR. Keep commits small and squashable.
 - Commit messages: short subject (≤72 chars), then a body explaining *why*. Code already shows *what*.
-- **Run all three test tiers** (see § Testing) before opening the PR, including Tier 3 integration. The PR template has a checklist; tick every item or explain in the description what you couldn't run and why.
+- **Run all three test tiers** (see § Testing) before opening the PR — including Tier 3 integration. The PR template has a checklist; tick every item or explain in the description what you couldn't run and why.
 - Run `./node_modules/.bin/vsce package` and confirm it produces `DONE Packaged: ...` (no `ERROR ...` lines) before pushing.
 - Update `CHANGELOG.md` for any user-visible change.
 - If your PR adds a new command, hook event, or setting, also update the relevant section of `README.md`.
@@ -154,4 +154,4 @@ Use the issue templates under `.github/ISSUE_TEMPLATE/`. Include the extension v
 
 ## Code of conduct
 
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/), see `CODE_OF_CONDUCT.md`.
+This project follows the [Contributor Covenant](https://www.contributor-covenant.org/) — see `CODE_OF_CONDUCT.md`.

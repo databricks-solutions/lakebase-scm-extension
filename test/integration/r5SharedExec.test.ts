@@ -89,7 +89,7 @@ function newExec(command: string, opts?: ExecOptions): Promise<string> {
   });
 }
 
-describe('R5 Shared exec Utility, Parity Test', function () {
+describe('R5 Shared exec Utility — Parity Test', function () {
   this.timeout(30000);
   const cwd = process.cwd();
 

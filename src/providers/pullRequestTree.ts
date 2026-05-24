@@ -31,7 +31,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
     });
   }
 
-  /** Force refresh, clears cache and re-fetches PR data immediately */
+  /** Force refresh — clears cache and re-fetches PR data immediately */
   async forceRefresh(): Promise<void> {
     this.cachedPr = undefined;
     const pr = await this.fetchPullRequest();
@@ -88,7 +88,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
     // PR status item
     if (pr) {
       const draftPrefix = pr.isDraft ? 'Draft: ' : '';
-      const label = `${draftPrefix}PR #${pr.number}, ${pr.title}`;
+      const label = `${draftPrefix}PR #${pr.number} — ${pr.title}`;
       const statusItem = new PrTreeItem(label, vscode.TreeItemCollapsibleState.None, 'status');
 
       const ciIcons: Record<string, string> = { pending: 'loading~spin', success: 'pass-filled', failure: 'error', unknown: 'question' };
@@ -114,7 +114,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       items.push(statusItem);
     }
 
-    // CI Checks, collapsible
+    // CI Checks — collapsible
     if (pr && pr.checks.length > 0) {
       const passed = pr.checks.filter(c => c.conclusion === 'SUCCESS' || c.conclusion === 'NEUTRAL' || c.conclusion === 'SKIPPED').length;
       const failed = pr.checks.filter(c => c.conclusion === 'FAILURE' || c.conclusion === 'ERROR').length;
@@ -135,7 +135,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       items.push(checksItem);
     }
 
-    // Changed Files, collapsible
+    // Changed Files — collapsible
     if (pr && pr.changedFiles && pr.changedFiles > 0) {
       const filesItem = new PrTreeItem(
         `Files changed: ${pr.changedFiles}`,
@@ -147,7 +147,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       items.push(filesItem);
     }
 
-    // Reviews, collapsible
+    // Reviews — collapsible
     if (pr) {
       const reviewsItem = new PrTreeItem(
         'Reviews',
@@ -174,7 +174,7 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       items.push(reviewsItem);
     }
 
-    // Lakebase CI branch, from SCM state (second item)
+    // Lakebase CI branch — from SCM state (second item)
     if (states.length > 1) {
       const ciState = states[1];
       const name = decodeURIComponent(ciState.resourceUri.path.split('/').pop() || '');

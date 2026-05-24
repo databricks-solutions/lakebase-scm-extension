@@ -39,7 +39,7 @@ function writeFile(relPath: string, content: string): void {
   fs.writeFileSync(fullPath, content);
 }
 
-describe('GitService Methods, Live Integration', function () {
+describe('GitService Methods — Live Integration', function () {
   this.timeout(180000);
 
   // ── Setup: Build a realistic repo ────────────────────────────────
@@ -108,7 +108,7 @@ describe('GitService Methods, Live Integration', function () {
     writeFile('src/app.ts', 'import { login } from "./auth";\nexport function main() { login("a","b"); console.log("v2"); }\n');
     git('add -A');
     git('commit -m "Prepare v2 release"');
-    // Don't push, main is now 1 ahead of origin/main
+    // Don't push — main is now 1 ahead of origin/main
 
     console.log('  Setup complete.\n');
   });
@@ -222,7 +222,7 @@ describe('GitService Methods, Live Integration', function () {
     });
 
     it('reverts a merge commit automatically detecting -m 1', () => {
-      // User clicks "Revert" on a merge commit, code should handle it
+      // User clicks "Revert" on a merge commit — code should handle it
       const mergeSha = git('log --oneline --merges -1 | cut -d" " -f1');
       git(`checkout -b test-revert "${mergeSha}"`);
       const parents = git(`rev-parse "${mergeSha}^@"`).split('\n').filter(Boolean);

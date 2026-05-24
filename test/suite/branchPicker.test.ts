@@ -106,7 +106,7 @@ describe('Branch Picker', () => {
   });
 });
 
-describe('onBranchChanged, Lakebase connection sync', () => {
+describe('onBranchChanged — Lakebase connection sync', () => {
   async function simulateBranchChange(
     newBranch: string,
     lakebaseService: LakebaseService,
@@ -262,7 +262,7 @@ describe('onBranchChanged, Lakebase connection sync', () => {
   });
 });
 
-describe('GitService, branch operations', () => {
+describe('GitService — branch operations', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });
@@ -426,7 +426,7 @@ describe('GitService, branch operations', () => {
   });
 });
 
-describe('SCM statusBarCommands, branch indicator', () => {
+describe('SCM statusBarCommands — branch indicator', () => {
   it('shows branch name with dirty indicator logic', () => {
     // Test the dirty indicator logic
     const staged = [{ status: 'modified', path: 'a.ts' }];
@@ -464,7 +464,7 @@ describe('SCM statusBarCommands, branch indicator', () => {
   });
 });
 
-describe('GitService, fetch, stash, sync', () => {
+describe('GitService — fetch, stash, sync', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });

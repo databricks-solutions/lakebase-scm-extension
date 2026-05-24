@@ -201,7 +201,7 @@ export class SchemaScmProvider {
     // --- Lakebase: live DB schema diff vs production ---
     // Sourced from schemaDiffService cache. On cache miss, fire a background
     // compare (guarded) and re-refresh when it completes. This surfaces any
-    // drift (committed migrations not yet applied, ad-hoc ALTERs, etc.) not
+    // drift — committed migrations not yet applied, ad-hoc ALTERs, etc. — not
     // just uncommitted migration files.
     this.lakebaseGroup!.resourceStates = this.buildSchemaItemsFromDiff();
 
@@ -218,7 +218,7 @@ export class SchemaScmProvider {
   }
 
   /** Update the SCM status bar with the current branch name and dirty indicator */
-  /** Show production status when on main, migrations, Lakebase state, recent merges */
+  /** Show production status when on main — migrations, Lakebase state, recent merges */
   private async refreshMainBranch(currentBranch: string): Promise<void> {
     if (!this.scm) { return; }
 
@@ -417,7 +417,7 @@ export class SchemaScmProvider {
 
         const syncTooltip = ahead === 0 && behind === 0
           ? `Sync Changes; ${upstream} is up to date`
-          : `Sync Changes; ${upstream}${behind > 0 ? ` (${behind} to pull` : ''}${ahead > 0 ? `) ${ahead} to push` : ''}`;
+          : `Sync Changes; ${upstream}${behind > 0 ? ` — ${behind} to pull` : ''}${ahead > 0 ? ` — ${ahead} to push` : ''}`;
 
         commands.push({
           command: 'lakebaseSync.sync',
@@ -425,14 +425,14 @@ export class SchemaScmProvider {
           tooltip: syncTooltip,
         });
       } else {
-        // No upstream, show publish instead
+        // No upstream — show publish instead
         commands.push({
           command: 'lakebaseSync.publishBranch',
           title: '$(cloud-upload)',
           tooltip: 'Publish Branch...',
         });
       }
-    } catch { /* ignore, just show branch without sync */ }
+    } catch { /* ignore — just show branch without sync */ }
 
     this.scm.statusBarCommands = commands;
 
@@ -483,7 +483,7 @@ export class SchemaScmProvider {
     const ciBranchName = `ci-pr-${pr.number}`;
     const items: vscode.SourceControlResourceState[] = [];
 
-    // PR status item, label: "PR #42 - Feature description"
+    // PR status item — label: "PR #42 - Feature description"
     const prLabel = `PR #${pr.number} - ${pr.title}`;
     items.push({
       resourceUri: vscode.Uri.parse(`lakebase-pr://status/${encodeURIComponent(prLabel)}`),
@@ -498,7 +498,7 @@ export class SchemaScmProvider {
       },
     });
 
-    // CI Lakebase branch item, look up the actual UID for the console URL
+    // CI Lakebase branch item — look up the actual UID for the console URL
     const lbLabel = `Lakebase Branch for ${ciBranchName}`;
     let ciBranchCommand: vscode.Command = {
       command: 'lakebaseSync.showBranchStatus',
@@ -523,7 +523,7 @@ export class SchemaScmProvider {
       decorations: {
         tooltip: ciBranchFound
           ? `${lbLabel}\nCreated automatically by PR workflow\nClick to open in Databricks Console`
-          : `${lbLabel}\nBranch not yet created, CI may still be running`,
+          : `${lbLabel}\nBranch not yet created — CI may still be running`,
         iconPath: new vscode.ThemeIcon(
           ciBranchFound ? 'database' : 'loading~spin',
           new vscode.ThemeColor(ciBranchFound ? ciColors[pr.ciStatus] : 'charts.yellow')
