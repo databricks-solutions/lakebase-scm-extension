@@ -1,4 +1,4 @@
-// GitHubService — thin proxy over @databricks-solutions/lakebase-scm-workflow-scripts.
+// GitHubService — thin proxy over @databricks-solutions/lakebase-app-dev-kit.
 //
 // All operations except `listCommits` (extension-specific avatar enrichment
 // for the graph view) and the local `octokit` cache for it now delegate to
@@ -33,7 +33,7 @@ import {
   listIssueComments as substrateListIssueComments,
   listWorkflowRuns as substrateListWorkflowRuns,
   mergePullRequest as substrateMergePullRequest,
-} from "@databricks-solutions/lakebase-scm-workflow-scripts";
+} from "@databricks-solutions/lakebase-app-dev-kit";
 import type {
   PullRequestFile,
   PullRequestInfo,

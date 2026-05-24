@@ -1,4 +1,4 @@
-// Thin proxy over @databricks-solutions/lakebase-scm-workflow-scripts.
+// Thin proxy over @databricks-solutions/lakebase-app-dev-kit.
 //
 // Substrate source: scripts/lakebase/scaffold.ts (+ scaffold-language.ts,
 // spring-initializr.ts, project-verify.ts). The extension keeps the
@@ -25,7 +25,7 @@ import {
   deployLanguageProject as substrateDeployLanguageProject,
   verifyHooks as substrateVerifyHooks,
   verifyWorkflows as substrateVerifyWorkflows,
-} from "@databricks-solutions/lakebase-scm-workflow-scripts";
+} from "@databricks-solutions/lakebase-app-dev-kit";
 
 export type ProjectLanguage = "java" | "kotlin" | "python" | "nodejs";
 

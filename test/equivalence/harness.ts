@@ -18,7 +18,7 @@
 // map; restoreSubstrate clears it.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const substrate = require("@databricks-solutions/lakebase-scm-workflow-scripts");
+const substrate = require("@databricks-solutions/lakebase-app-dev-kit");
 
 interface SubstrateMock {
   __overrides: Record<string, unknown>;

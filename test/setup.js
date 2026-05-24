@@ -8,7 +8,7 @@ Module._resolveFilename = function (request, parent, isMain, options) {
   if (request === 'vscode') {
     return require.resolve('./mocks/vscode');
   }
-  if (request === '@databricks-solutions/lakebase-scm-workflow-scripts') {
+  if (request === '@databricks-solutions/lakebase-app-dev-kit') {
     return require.resolve('./mocks/substrate');
   }
   return originalResolveFilename.call(this, request, parent, isMain, options);

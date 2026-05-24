@@ -2,7 +2,7 @@
 //
 // FEIP-7065 (publish_and_consume): runner binary download, configure, start,
 // stop, deregister, status all live in
-// @databricks-solutions/lakebase-scm-workflow-scripts. This service keeps:
+// @databricks-solutions/lakebase-app-dev-kit. This service keeps:
 //   - `preflightDatabricksAuth` — reads workspace .env, surfaces a re-auth
 //     hint via the progress callback before substrate.setupRunner runs.
 //   - Log scanning helpers (getLatestLogFile / getLatestWorkerLog) for the
@@ -23,7 +23,7 @@ import {
   runnerDir as substrateRunnerDir,
   runnerName as substrateRunnerName,
   type RunnerInfo as SubstrateRunnerInfo,
-} from "@databricks-solutions/lakebase-scm-workflow-scripts";
+} from "@databricks-solutions/lakebase-app-dev-kit";
 
 export type RunnerInfo = SubstrateRunnerInfo;
 
