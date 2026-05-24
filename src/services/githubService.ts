@@ -6,8 +6,8 @@
 
 import { Octokit, RequestError } from "octokit";
 import { getGitHubToken, GITHUB_SCOPES } from "../utils/githubAuth";
-import { parseOwnerRepo } from "../utils/parseRepo";
 import {
+  parseOwnerRepo,
   // Repo
   createRepo as substrateCreateRepo,
   deleteRepo as substrateDeleteRepo,

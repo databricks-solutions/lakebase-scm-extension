@@ -1,4 +1,16 @@
-import * as cp from 'child_process';
+// Extension exec — thin wrapper over substrate's `exec` that adds
+// Databricks auth-error tagging (lakebaseService uses this to surface
+// "you're not signed in" diagnostics on auth failures).
+//
+// Substrate's `exec` handles cwd/env/timeout + wraps errors as
+// `${command}: ${msg}`. We catch its rejection, inspect the message for
+// Databricks auth signatures, and tag the thrown Error so call sites
+// can route to a sign-in prompt instead of a generic failure.
+//
+// FEIP-7089: collapses the previous duplicate exec implementation in
+// the extension. The only behavior beyond substrate is the auth-tagging.
+
+import { exec as substrateExec } from "@databricks-solutions/lakebase-scm-workflow-scripts";
 
 export interface ExecOptions {
   cwd?: string;
@@ -7,43 +19,41 @@ export interface ExecOptions {
   tagAuthErrors?: boolean;
 }
 
-/**
- * Shared async exec wrapper. Replaces the 3 module-level exec functions
- * in gitService, lakebaseService, and schemaDiffService.
- */
+const AUTH_ERROR_SIGNATURES = [
+  "project id not found",
+  "not authenticated",
+  "PERMISSION_DENIED",
+  "401",
+  "invalid token",
+  "no configuration",
+  "cannot configure default credentials",
+];
+
 export function exec(command: string, opts?: ExecOptions): Promise<string>;
 export function exec(command: string, cwd?: string, env?: Record<string, string>): Promise<string>;
-export function exec(command: string, cwdOrOpts?: string | ExecOptions, env?: Record<string, string>): Promise<string> {
-  const opts: ExecOptions = typeof cwdOrOpts === 'string'
-    ? { cwd: cwdOrOpts, env }
-    : cwdOrOpts || {};
+export async function exec(
+  command: string,
+  cwdOrOpts?: string | ExecOptions,
+  env?: Record<string, string>
+): Promise<string> {
+  const opts: ExecOptions =
+    typeof cwdOrOpts === "string" ? { cwd: cwdOrOpts, env } : cwdOrOpts || {};
 
-  return new Promise((resolve, reject) => {
-    const options: cp.ExecOptions = {
+  try {
+    return await substrateExec(command, {
       cwd: opts.cwd,
-      timeout: opts.timeout || 60000,
-    };
-    if (opts.env) {
-      options.env = { ...process.env, ...opts.env };
-    }
-    cp.exec(command, options, (err, stdout, stderr) => {
-      if (err) {
-        const msg = String(stderr || err.message);
-        if (opts.tagAuthErrors) {
-          if (msg.includes('project id not found') || msg.includes('not authenticated') ||
-              msg.includes('PERMISSION_DENIED') || msg.includes('401') ||
-              msg.includes('invalid token') || msg.includes('no configuration') ||
-              msg.includes('cannot configure default credentials')) {
-            const authErr = new Error(msg);
-            (authErr as any).isAuthError = true;
-            reject(authErr);
-            return;
-          }
-        }
-        reject(new Error(`${command}: ${msg}`));
-        return;
-      }
-      resolve(String(stdout).trim());
+      env: opts.env,
+      timeout: opts.timeout,
     });
-  });
+  } catch (err) {
+    if (opts.tagAuthErrors) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (AUTH_ERROR_SIGNATURES.some((sig) => msg.includes(sig))) {
+        const authErr = new Error(msg);
+        (authErr as Error & { isAuthError?: boolean }).isAuthError = true;
+        throw authErr;
+      }
+    }
+    throw err;
+  }
 }
