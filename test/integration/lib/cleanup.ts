@@ -11,7 +11,7 @@
 import {
   deleteLakebaseProject as substrateDeleteLakebaseProject,
   deleteRepo as substrateDeleteRepo,
-} from '@databricks-solutions/lakebase-scm-workflow-scripts';
+} from '@databricks-solutions/lakebase-app-dev-kit';
 import * as cp from 'child_process';
 import { delay } from './github';
 

@@ -1,7 +1,7 @@
 // SchemaDiffService — VS Code-aware shell over the substrate's schema-diff.
 //
 // FEIP-7065 (publish_and_consume): the core "compare two Lakebase branches"
-// logic lives in @databricks-solutions/lakebase-scm-workflow-scripts. This
+// logic lives in @databricks-solutions/lakebase-app-dev-kit. This
 // service keeps:
 //   - Per-branch cache (mtime + age) — pure VS Code perf optimization
 //   - parseMarkdownDiff / generateDiff / readCachedDiff — legacy schema-diff.md
@@ -15,7 +15,7 @@ import * as path from "path";
 import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
 import { exec } from "../utils/exec";
 import { LakebaseService } from "./lakebaseService";
-import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-scm-workflow-scripts";
+import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 
 export interface SchemaObject {
   type: "TABLE" | "INDEX";

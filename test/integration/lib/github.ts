@@ -8,7 +8,7 @@
 
 import {
   createPullRequest, mergePullRequest, listIssueComments, listWorkflowRuns,
-} from '@databricks-solutions/lakebase-scm-workflow-scripts';
+} from '@databricks-solutions/lakebase-app-dev-kit';
 import * as cp from 'child_process';
 
 export const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

@@ -10,7 +10,7 @@ import {
   cloneRepo as substrateCloneRepo,
   getGitHubUrl as substrateGetGitHubUrl,
   getOwnerRepo as substrateGetOwnerRepo,
-} from '@databricks-solutions/lakebase-scm-workflow-scripts';
+} from '@databricks-solutions/lakebase-app-dev-kit';
 
 export interface PullRequestCheck {
   name: string;

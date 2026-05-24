@@ -10,7 +10,7 @@
 // FEIP-7089: collapses the previous duplicate exec implementation in
 // the extension. The only behavior beyond substrate is the auth-tagging.
 
-import { exec as substrateExec } from "@databricks-solutions/lakebase-scm-workflow-scripts";
+import { exec as substrateExec } from "@databricks-solutions/lakebase-app-dev-kit";
 
 export interface ExecOptions {
   cwd?: string;

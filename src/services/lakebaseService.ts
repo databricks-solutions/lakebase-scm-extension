@@ -2,7 +2,7 @@
 //
 // FEIP-7065 (publish_and_consume): branch CRUD, endpoint lookup, credential
 // minting, schema introspection, and project CRUD live in
-// @databricks-solutions/lakebase-scm-workflow-scripts. This service keeps:
+// @databricks-solutions/lakebase-app-dev-kit. This service keeps:
 //   - Per-session host + projectId overrides (set by the VS Code workspace
 //     picker; substrate's CLI calls honor process.env.DATABRICKS_HOST so we
 //     mutate that around each substrate call).
@@ -33,7 +33,7 @@ import {
   queryBranchTables as substrateQueryBranchTables,
   sanitizeBranchName as substrateSanitizeBranchName,
   type LakebaseBranchInfo,
-} from "@databricks-solutions/lakebase-scm-workflow-scripts";
+} from "@databricks-solutions/lakebase-app-dev-kit";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */

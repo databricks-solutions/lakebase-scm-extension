@@ -8,7 +8,7 @@
  * without changes.
  */
 
-import { getConnection, getDefaultBranch } from '@databricks-solutions/lakebase-scm-workflow-scripts';
+import { getConnection, getDefaultBranch } from '@databricks-solutions/lakebase-app-dev-kit';
 
 export function formatPsqlCompatRows(rows: Array<Record<string, unknown>>, fields: Array<{ name: string }>): string {
   return rows

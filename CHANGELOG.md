@@ -31,7 +31,7 @@ The headline theme is **substrate `v0.1.0-alpha.0`** — the workflow-scripts de
 
 ### Repo / governance
 
-- **Substrate is now version-tagged.** `databricks-solutions/lakebase-scm-workflows#v0.1.0-alpha.0` (annotated tag at `f61af250`). The extension's `@databricks-solutions/lakebase-scm-workflow-scripts` dep references the tag, not a bare SHA — reproducible installs, bisect-friendly, and a clear forward path for future bumps (`v0.1.0-alpha.1`, etc.).
+- **Substrate is now version-tagged.** `databricks-solutions/lakebase-app-dev-kit#v0.1.0-alpha.0` (annotated tag at `f61af250`). The extension's `@databricks-solutions/lakebase-app-dev-kit` dep references the tag, not a bare SHA — reproducible installs, bisect-friendly, and a clear forward path for future bumps (`v0.1.0-alpha.1`, etc.).
 - **Test coverage at this release:** hermetic substrate BDD 175 passing / 22 skipped; full live substrate BDD 197 / 0 (with `LAKEBASE_TEST_E2E=1` + `LAKEBASE_TEST_INITIALIZR=1`); extension unit suite 343 / 0; extension ecom integration 413 / 0; extension python-devloop integration 426 / 0. **1554 tests, zero failing.**
 
 ## 0.5.5 (2026-05-13)
