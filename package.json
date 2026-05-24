@@ -2,7 +2,7 @@
   "name": "lakebase-scm-extension",
   "displayName": "Lakebase SCM Extension",
   "description": "Unified visibility into code and database branch changes for Databricks Lakebase",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "publisher": "kevin-hartman",
   "icon": "resources/icons/extension-icon.png",
   "repository": {
@@ -454,7 +454,7 @@
         "title": "Rebase Branch..."
       },
       {
-        "command": "lakebaseSync.createBranchFrom",
+        "command": "lakebaseSync.createUnifiedBranchFrom",
         "title": "Create Branch From..."
       },
       {
@@ -776,7 +776,7 @@
           "group": "2_create@1"
         },
         {
-          "command": "lakebaseSync.createBranchFrom",
+          "command": "lakebaseSync.createUnifiedBranchFrom",
           "group": "2_create@2"
         },
         {
@@ -1432,7 +1432,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-scm-workflow-scripts": "github:databricks-solutions/lakebase-scm-workflows#913fe20",
+    "@databricks-solutions/lakebase-scm-workflow-scripts": "github:databricks-solutions/lakebase-scm-workflows#v0.1.0-alpha.0",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

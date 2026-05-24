@@ -33,5 +33,5 @@ assignees: ''
      - .env (LAKEBASE_PROJECT_ID, LAKEBASE_TRUNK_BRANCH, LAKEBASE_BASE_BRANCH, etc.)
      - `databricks postgres list-branches "<project-path>"` output
      - Output panel: View → Output → "Lakebase SCM Extension"
-     - The exact command name from the Command Palette (e.g. lakebaseSync.createBranchFrom)
+     - The exact command name from the Command Palette (e.g. lakebaseSync.createUnifiedBranchFrom)
 -->

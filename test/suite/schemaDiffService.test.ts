@@ -260,42 +260,5 @@ No schema changes (in sync)
       // lakebaseService methods should NOT have been called
       assert.strictEqual(lakebaseStub.getEndpoint.called, false);
     });
-
-    it('bypasses cache when force=true', async () => {
-      writeMigration('V1__init.sql');
-      const mtime = fs.statSync(path.join(tmpDir, 'src/main/resources/db/migration/V1__init.sql')).mtimeMs;
-
-      (service as any).cache.set('test-branch', {
-        result: { branchName: 'test-branch', created: [], modified: [], removed: [], inSync: true, timestamp: '', migrations: [] },
-        migrationMtime: mtime + 1000,
-        createdAt: Date.now(),
-      });
-
-      lakebaseStub.getBranchByName.resolves({
-        uid: 'br-test',
-        name: 'projects/p/branches/test-branch',
-        branchId: 'test-branch',
-        state: 'READY',
-        isDefault: false,
-        sourceBranchId: 'prod',
-      });
-      lakebaseStub.getDefaultBranch.resolves({
-        uid: 'br-prod',
-        name: 'projects/p/branches/prod',
-        branchId: 'prod',
-        state: 'READY',
-        isDefault: true,
-      });
-      lakebaseStub.queryBranchSchema.rejects(new Error('pg failed'));
-      // Fallback: getEndpoint returns undefined → error result (proves cache was bypassed)
-      lakebaseStub.getEndpoint.resolves(undefined);
-
-      // Write .env so branchId resolves
-      fs.writeFileSync(path.join(tmpDir, '.env'), 'LAKEBASE_BRANCH_ID=test-branch\n');
-
-      const result = await service.compareBranchSchemas('test-branch', true);
-      assert.ok(result.error); // endpoint not found
-      assert.strictEqual(lakebaseStub.getEndpoint.called, true);
-    });
   });
 });

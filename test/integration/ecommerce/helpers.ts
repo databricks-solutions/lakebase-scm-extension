@@ -25,6 +25,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
+import * as lib from '../lib';
+export { forceDeleteLakebaseProject, forceDeleteGithubRepo } from '../lib';
+export type { WorkflowRunResult, WaitForWorkflowOptions } from '../lib';
 import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
@@ -131,31 +134,8 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
   }).toString().trim();
 }
 
-/** Run a psql command against a connection string */
-function psql(connStr: string, sql: string, timeout = 30000): string {
-  // Escape single quotes in SQL for the shell
-  const escaped = sql.replace(/'/g, "'\\''");
-  return cp.execSync(
-    `psql "${connStr}" -t -A -c '${escaped}'`,
-    { timeout }
-  ).toString().trim();
-}
-
-// ── Lakebase helpers (routed through LakebaseService) ────────────────
-
-/** Get a psql connection string for the production (default) branch */
-async function getProductionConnStr(ctx: ScenarioContext): Promise<string> {
-  const def = await ctx.lakebaseService.getDefaultBranch();
-  if (!def) { throw new Error('No default Lakebase branch found'); }
-
-  const ep = await ctx.lakebaseService.getEndpoint(def.uid);
-  if (!ep?.host) { throw new Error(`No endpoint for default branch ${def.uid}`); }
-
-  const cred = await ctx.lakebaseService.getCredential(def.uid);
-  if (!cred.token || !cred.email) { throw new Error('Empty credentials for default branch'); }
-
-  return `postgresql://${encodeURIComponent(cred.email)}:${encodeURIComponent(cred.token)}@${ep.host}:5432/databricks_postgres?sslmode=require`;
-}
+// Format a query result row the way psql `-t -A` did: field separator '|',
+// ── Lakebase helpers (routed through substrate via ../lib) ──────────
 
 // ── Phase A: Developer (Local) ───────────────────────────────────────
 
@@ -327,26 +307,13 @@ export function commitAndPush(ctx: ScenarioContext, message: string, branchName:
 
 // ── Phase B/C: PR + Merge ────────────────────────────────────────────
 
-/** Create a PR and return the PR number */
-export function createPR(ctx: ScenarioContext, title: string, branchName: string): number {
-  const raw = cp.execSync(
-    `gh pr create --repo "${ctx.fullRepoName}" --title "${title}" --body "Automated e-commerce scenario test" --head "${branchName}" --base main`,
-    { cwd: ctx.projectDir, timeout: 30000 }
-  ).toString().trim();
-  const match = raw.match(/\/pull\/(\d+)/);
-  if (!match) {
-    throw new Error(`Could not extract PR number from: ${raw}`);
-  }
-  return parseInt(match[1], 10);
-}
+/** Create a PR; returns the PR number. */
+export const createPR = (ctx: ScenarioContext, title: string, branchName: string): Promise<number> =>
+  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated e-commerce scenario test');
 
-/** Merge a PR by number */
-export function mergePR(ctx: ScenarioContext, prNumber: number): void {
-  cp.execSync(
-    `gh pr merge ${prNumber} --repo "${ctx.fullRepoName}" --merge --admin`,
-    { cwd: ctx.projectDir, timeout: 60000 }
-  );
-}
+/** Merge a PR (merge-commit, deletes remote head branch). */
+export const mergePR = (ctx: ScenarioContext, prNumber: number): Promise<void> =>
+  lib.mergePR(ctx.fullRepoName, prNumber);
 
 /** Update local main after merge */
 export function pullMain(ctx: ScenarioContext): void {
@@ -354,17 +321,9 @@ export function pullMain(ctx: ScenarioContext): void {
   git(ctx, 'pull origin main');
 }
 
-/**
- * Get PR comments and return them as an array of { author, body } objects.
- * Used to verify the schema diff comment posted by pr.yml.
- */
-export function getPRComments(ctx: ScenarioContext, prNumber: number): Array<{ author: string; body: string }> {
-  const raw = cp.execSync(
-    `gh api repos/${ctx.fullRepoName}/issues/${prNumber}/comments --jq '[.[] | {author: .user.login, body: .body}]'`,
-    { timeout: 15000 }
-  ).toString().trim();
-  return JSON.parse(raw || '[]');
-}
+/** Get PR comment bodies. Used to verify the schema-diff comment posted by pr.yml. */
+export const getPRComments = (ctx: ScenarioContext, prNumber: number): Promise<string[]> =>
+  lib.getPRComments(ctx.fullRepoName, prNumber);
 
 /** Delete the feature branch locally and remotely */
 export function cleanupBranch(ctx: ScenarioContext, branchName: string): void {
@@ -380,124 +339,27 @@ export interface WorkflowRunResult {
   runId: number;
 }
 
-export interface WaitForWorkflowOptions {
-  branch?: string;
-  event?: string;           // 'pull_request' | 'push'
-  afterRunId?: number;      // only consider runs with databaseId > this
-  timeoutMs?: number;       // default 360000 (6 min)
-  pollIntervalMs?: number;  // default 15000 (15 sec)
-}
+// ── Workflow polling (delegated to lib) ──────────────────────────────
 
-/**
- * Get the latest workflow run ID for a given workflow file.
- * Used to establish a "before" marker so we can detect new runs after a merge.
- */
-export function getLatestRunId(ctx: ScenarioContext, workflowFile: string): number {
-  try {
-    const raw = cp.execSync(
-      `gh run list --repo "${ctx.fullRepoName}" --workflow="${workflowFile}" --limit=1 --json databaseId --jq '.[0].databaseId'`,
-      { timeout: 15000 }
-    ).toString().trim();
-    return raw ? parseInt(raw, 10) : 0;
-  } catch {
-    return 0;
-  }
-}
+export const getLatestRunId = (ctx: ScenarioContext, workflowFile: string): Promise<number> =>
+  lib.getLatestRunId(ctx.fullRepoName, workflowFile);
 
-/**
- * Wait for a workflow run to complete. Polls gh run list until the run finishes.
- * Returns the conclusion and run ID. On failure, includes last 50 lines of logs.
- */
-export function waitForWorkflowRun(
-  ctx: ScenarioContext,
-  workflowFile: string,
-  opts: WaitForWorkflowOptions = {},
-): WorkflowRunResult {
-  const timeoutMs = opts.timeoutMs ?? 360000;
-  const pollIntervalMs = opts.pollIntervalMs ?? 15000;
-  const afterRunId = opts.afterRunId ?? 0;
-  const startTime = Date.now();
+export const waitForWorkflowRun = (ctx: ScenarioContext, workflowFile: string, opts: lib.WaitForWorkflowOptions = {}): Promise<lib.WorkflowRunResult> =>
+  lib.waitForWorkflowRun(ctx.fullRepoName, workflowFile, opts);
 
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const raw = cp.execSync(
-        `gh run list --repo "${ctx.fullRepoName}" --workflow="${workflowFile}" --limit=5 --json databaseId,status,conclusion,headBranch,event`,
-        { timeout: 15000 }
-      ).toString().trim();
+export const getWorkflowLogs = (ctx: ScenarioContext, runId: number, lines = 50): string =>
+  lib.getWorkflowLogs(ctx.fullRepoName, runId, lines);
 
-      const runs = JSON.parse(raw || '[]');
+export const waitForRunnerIdle = (ctx: ScenarioContext, timeoutMs = 300000, opts: { notBefore?: number; stuckAfterMs?: number } = {}): Promise<void> =>
+  lib.waitForRunnerIdle(ctx.fullRepoName, timeoutMs, opts);
 
-      // Find a matching run
-      for (const run of runs) {
-        // Skip runs before our marker
-        if (afterRunId && run.databaseId <= afterRunId) { continue; }
-
-        // Filter by branch if specified
-        if (opts.branch && run.headBranch !== opts.branch) { continue; }
-
-        // Filter by event if specified
-        if (opts.event && run.event !== opts.event) { continue; }
-
-        if (run.status === 'completed') {
-          return { conclusion: run.conclusion, runId: run.databaseId };
-        }
-
-        // Found a matching in-progress run — wait for it
-        break;
-      }
-    } catch {
-      // gh CLI may fail transiently
-    }
-
-    cp.execSync(`sleep ${Math.floor(pollIntervalMs / 1000)}`);
-  }
-
-  throw new Error(
-    `Workflow ${workflowFile} did not complete within ${timeoutMs / 1000}s ` +
-    `(branch: ${opts.branch || 'any'}, event: ${opts.event || 'any'}, afterRunId: ${afterRunId})`
-  );
-}
-
-/**
- * Get the last N lines of logs from a workflow run (for debugging failures).
- */
-export function getWorkflowLogs(ctx: ScenarioContext, runId: number, lines = 50): string {
-  try {
-    return cp.execSync(
-      `gh run view ${runId} --repo "${ctx.fullRepoName}" --log 2>&1 | tail -${lines}`,
-      { timeout: 30000 }
-    ).toString().trim();
-  } catch {
-    return '(could not fetch workflow logs)';
-  }
-}
-
-/**
- * Wait until all queued/in-progress workflow runs have completed.
- * Call between scenarios to ensure the runner is idle before starting the next one.
- */
-export function waitForRunnerIdle(ctx: ScenarioContext, timeoutMs = 300000): void {
-  const startTime = Date.now();
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const raw = cp.execSync(
-        `gh run list --repo "${ctx.fullRepoName}" --status=queued --status=in_progress --json databaseId --jq 'length'`,
-        { timeout: 15000 }
-      ).toString().trim();
-      const active = parseInt(raw, 10) || 0;
-      if (active === 0) { return; }
-    } catch {}
-    cp.execSync('sleep 10');
-  }
-}
+// (forceDeleteLakebaseProject + forceDeleteGithubRepo re-exported at top.)
 
 // ── Phase D: Production Verification ─────────────────────────────────
 
-/** Run a SQL query on the production database and return raw output */
-export async function queryProduction(ctx: ScenarioContext, sql: string): Promise<string> {
-  const connStr = await getProductionConnStr(ctx);
-  return psql(connStr, sql);
-}
+/** Run a SQL query on the production database via lib (substrate pg.Pool). */
+export const queryProduction = (ctx: ScenarioContext, sql: string): Promise<string> =>
+  lib.queryProduction(ctx.projectName, sql);
 
 /** Verify a table exists on the production database */
 export async function verifyTableExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {

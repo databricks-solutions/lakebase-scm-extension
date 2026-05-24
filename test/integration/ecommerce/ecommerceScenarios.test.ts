@@ -16,9 +16,22 @@ import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
-import { ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction } from './helpers';
+import {
+  ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
+  forceDeleteLakebaseProject, forceDeleteGithubRepo,
+} from './helpers';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
+
+// Force substrate's static fallback Java scaffold instead of Spring Initializr.
+// The Initializr-extracted project would carry a dynamic ${ProjectName}Application
+// class (colliding with the test's deterministic DemoApplication.java) and its
+// stock .gitignore (clobbering substrate's .gitignore.base which has .env/
+// application-local.properties). The fallback ships exactly the files we need
+// (matching pom.xml deps, application.properties with spring.config.import,
+// DemoApplication, DemoApplicationTests, V1 placeholder migration), so this
+// single env-var flip drops ~400 lines of overlay from mavenProject.ts.
+process.env.LAKEBASE_SCAFFOLD_FALLBACK = '1';
 
 import { runScenario as scenario1_6 } from './scenario1_6_AllEntities';
 import { runScenario as scenario7 } from './scenario7AlterProduct';
@@ -33,6 +46,63 @@ const PROJECT_NAME = `ecom-${timestamp}`;
 const ctx = {} as ScenarioContext;
 let created = false;
 let runner: RunnerHandle | undefined;
+let signalHandlersInstalled = false;
+let cleanupInFlight = false;
+
+const dbcli = (cmd: string, dbHost: string, timeoutMs = 30000): string =>
+  cp.execSync(cmd, { timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: dbHost } }).toString();
+
+// Shared cleanup entry — used by mocha after-hook AND signal handlers AND
+// uncaughtException. Idempotent. Drives deletes through retry-aware force*
+// helpers rather than the silently-swallowing ProjectCreationService.cleanupProject.
+async function fullCleanup(reason: string): Promise<void> {
+  if (cleanupInFlight) {
+    console.log(`  [cleanup:${reason}] already in-flight, skipping`);
+    return;
+  }
+  cleanupInFlight = true;
+  if (process.env.ECOM_NO_TEARDOWN) {
+    console.log(`  [cleanup:${reason}] ECOM_NO_TEARDOWN=1 set, skipping`);
+    cleanupInFlight = false;
+    return;
+  }
+  if (runner) {
+    try { runner.cleanup(ctx as any); console.log(`  [cleanup:runner] OK`); }
+    catch (e: any) { console.log(`  [cleanup:runner] FAILED: ${e?.message || e}`); }
+    runner = undefined;
+  }
+  if (created && ctx.fullRepoName) {
+    await forceDeleteGithubRepo(ctx.fullRepoName);
+  }
+  if (created && ctx.projectName) {
+    await forceDeleteLakebaseProject(ctx.projectName);
+  }
+  if (ctx.projectDir) {
+    try {
+      if (fs.existsSync(ctx.projectDir)) {
+        fs.rmSync(ctx.projectDir, { recursive: true, force: true });
+        console.log(`  [cleanup:dir] removed ${ctx.projectDir}`);
+      }
+    } catch (e: any) {
+      console.log(`  [cleanup:dir] FAILED: ${e?.message || e}`);
+    }
+  }
+  created = false;
+  cleanupInFlight = false;
+}
+
+// Signal handlers + reaper delegated to test/integration/lib/lifecycle.
+import { installSignalHandlers as libInstallSignalHandlers, reapOrphanProjects as libReapOrphans, acquireSingleRunLock, assertIntegrationCredentials } from '../lib';
+
+const installSignalHandlers = (): void =>
+  libInstallSignalHandlers({
+    inFlight: () => cleanupInFlight,
+    setInFlight: (v) => { cleanupInFlight = v; },
+    run: fullCleanup,
+  });
+
+const reapOrphanProjects = (dbHost: string): Promise<void> =>
+  libReapOrphans('ecom-', dbHost);
 
 describe('E-Commerce Backend — 8 Iterative Scenarios', function () {
   this.timeout(7200000); // 2 hours overall (8 scenarios × ~10 min each)
@@ -42,19 +112,35 @@ describe('E-Commerce Backend — 8 Iterative Scenarios', function () {
   before(async function () {
     this.timeout(300000); // 5 min for setup
 
+    // Refuse to start if another ecom integration run is already in progress.
+    // Throws before any cloud resources are created, so a stray parallel
+    // launch can't create orphaned Lakebase project + GitHub repo pairs.
+    acquireSingleRunLock('ecom');
+
     // Kill any leftover runners from previous failed runs
     cleanupStaleRunners();
 
     const gitService = new GitService();
     const lakebaseService = new LakebaseService();
-    const dbHost = process.env.DATABRICKS_HOST || 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    // Pre-flight: requires DATABRICKS_TEST_HOST + authenticated databricks
+    // CLI + authenticated gh CLI. Throws IntegrationSetupError with exact
+    // setup commands if any piece is missing. No silent default — the test
+    // creates real cloud resources under the contributor's account.
+    const { databricksHost: dbHost, githubUser: ghUser } = assertIntegrationCredentials();
+
+    // Install OS signal handlers before any resources are created so a
+    // ctrl-c during create-project still triggers cleanup.
+    installSignalHandlers();
+
+    // Reap any ecom-* projects leaked by prior runs (older than 1 hour).
+    await reapOrphanProjects(dbHost);
+
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
     lakebaseService.setProjectIdOverride(PROJECT_NAME);
 
     const scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../../'));
     const creationService = new ProjectCreationService(gitService, lakebaseService, scaffoldService);
-    const ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     const parentDir = require('os').homedir();
     const projectDir = path.join(parentDir, PROJECT_NAME);
 
@@ -202,7 +288,7 @@ describe('E-Commerce Backend — 8 Iterative Scenarios', function () {
   // Set ECOM_NO_TEARDOWN=1 to skip cleanup (for manual review of resources)
 
   describe('Teardown', () => {
-    it('stops runner and cleans up project', async function () {
+    it('stops runner and cleans up project (verified)', async function () {
       if (!created) { this.skip(); return; }
       if (process.env.ECOM_NO_TEARDOWN) {
         console.log(`\n    Teardown SKIPPED (ECOM_NO_TEARDOWN=1).`);
@@ -212,26 +298,17 @@ describe('E-Commerce Backend — 8 Iterative Scenarios', function () {
         this.skip();
         return;
       }
-      this.timeout(120000);
+      this.timeout(600000); // up to 10 min: Lakebase delete + verify can take several minutes
       console.log('\n    Cleaning up...');
-      if (runner) { runner.cleanup(ctx); }
-      await ctx.creationService.cleanupProject(ctx.input);
-      created = false;
+      await fullCleanup('teardown');
       console.log('    Done.\n');
     });
   });
 
-  // Safety net: always clean up (unless ECOM_NO_TEARDOWN)
+  // Safety net — fires on natural mocha completion. Signal kills are handled
+  // separately by the installed SIGINT/SIGTERM handlers.
   after(async function () {
-    this.timeout(120000);
-    if (process.env.ECOM_NO_TEARDOWN) { return; }
-    if (runner) {
-      try { runner.cleanup(ctx); } catch (e: any) { console.log(`  [cleanup:runner] ${e.message}`); }
-    }
-    if (created) {
-      try { await ctx.creationService.cleanupProject(ctx.input); } catch (e: any) {
-        console.log(`  [cleanup:project] ${e.message}`);
-      }
-    }
+    this.timeout(600000);
+    await fullCleanup('after');
   });
 });

@@ -56,19 +56,93 @@ When you change branch lifecycle behavior (fork source, connection target, crede
 
 ## Testing
 
-There's no automated test suite at the moment. PRs that change behavior should describe the manual scenarios you exercised:
+> **All three tiers, every PR.** That includes the live integration suites in Tier 3 — they're the only layer that exercises real CI workflow templates, self-hosted runner setup, Lakebase branch CRUD, and the cleanup pipeline. Bugs that ship through Tier-1+2-only review almost always surface here. If you genuinely can't run Tier 3 (no Databricks workspace access), say so in the PR description so reviewers know exactly what's covered.
+
+Three tiers, ordered by what they require and how long they take:
+
+### Tier 1 — Hermetic unit / suite tests (no credentials, ~1 min)
+
+```bash
+npm test
+```
+
+Runs the mocha `test/suite/` tests against mocks. **Always run this before pushing.** Catches API breakage, regex/parse logic, scaffold deviations.
+
+### Tier 2 — Hermetic substrate BDD (no credentials, ~10s)
+
+```bash
+cd node_modules/@databricks-solutions/lakebase-scm-workflow-scripts && npx vitest run
+```
+
+Covers branch-create collision validation, env-file shape, github URL parsing, etc. against mocks. Runs in your editor / pre-commit hook range. Useful when changing anything in `src/services/lakebaseService.ts` or anything that re-exports substrate symbols.
+
+### Tier 3 — Full integration (requires your own accounts, ~17 min)
+
+The `test/integration/` suites (ecommerce, python-devloop) create **real** Lakebase projects and GitHub repos under YOUR accounts. There is no shared sandbox — you must set this up before the test will run.
+
+**Required setup (one-time):**
+
+1. Pick a Databricks workspace where you can create Lakebase projects. **This will be billed to that workspace.**
+
+2. Set the workspace URL as an env var:
+
+   ```bash
+   export DATABRICKS_TEST_HOST=https://<your-workspace>.cloud.databricks.com
+   ```
+
+   Add it to your shell rc file (`~/.zshrc` / `~/.bashrc`) so it survives new terminals.
+
+3. Authenticate the Databricks CLI to that host:
+
+   ```bash
+   databricks auth login --host "$DATABRICKS_TEST_HOST"
+   ```
+
+   OAuth tokens are ~1h TTL — you may need to re-run this between long sessions.
+
+4. Authenticate the GitHub CLI (any owner — the test creates repos under whoever `gh api user` returns):
+
+   ```bash
+   gh auth status   # if "not logged in", run:
+   gh auth login
+   ```
+
+5. Run the integration tests:
+
+   ```bash
+   npm run test:integration                                # both suites (~30 min)
+   npm run test:integration -- --grep "E-Commerce"        # just ecommerce (~17 min)
+   npm run test:integration -- --grep "Python Dev Loop"   # just python-devloop (~10 min)
+   ```
+
+If any credential is missing or the wrong host is set, the test fails fast at `before()` with an `IntegrationSetupError` that names the exact command to run. The test never falls back to a shared default host — you have to opt into a workspace explicitly.
+
+### When to run which tier
+
+| Change scope | Minimum |
+|---|---|
+| Docs / comments | Tier 1 |
+| `src/services/*.ts` | Tier 1 + Tier 2 |
+| `src/extension.ts` command registrations | Tier 1 + 2 + manual test in Extension Host (F5) |
+| Branch lifecycle, project creation, CI templates | **Tier 3 mandatory before PR** |
+| `templates/project/common/.github/workflows/*.yml` | **Tier 3 mandatory** (this is what the integration suite actually exercises) |
+
+PRs that change Tier-3-impacting code without a Tier 3 run should say so explicitly so reviewers know what was and wasn't covered.
+
+### Manual scenarios
+
+For UI / view changes that no suite covers, describe the scenarios you exercised:
 - Which extension command(s) you triggered
 - Which view(s) you observed (Project tree, Branch Diff Summary, Changes panel, etc.)
 - What you saw before and after
-
-If your change touches CI templates (`templates/project/common/.github/workflows/*.yml`), it's helpful to run a PR through them in a downstream project that's already scaffolded.
 
 ## Pull requests
 
 - Branch off `main`. Branch names: `fix/<short>`, `feat/<short>`, etc.
 - One logical change per PR. Keep commits small and squashable.
 - Commit messages: short subject (≤72 chars), then a body explaining *why*. Code already shows *what*.
-- Run `./node_modules/.bin/vsce package` and confirm it produces `DONE Packaged: ...` (no `ERROR ...` lines) before pushing. The build is the only automated check today.
+- **Run all three test tiers** (see § Testing) before opening the PR — including Tier 3 integration. The PR template has a checklist; tick every item or explain in the description what you couldn't run and why.
+- Run `./node_modules/.bin/vsce package` and confirm it produces `DONE Packaged: ...` (no `ERROR ...` lines) before pushing.
 - Update `CHANGELOG.md` for any user-visible change.
 - If your PR adds a new command, hook event, or setting, also update the relevant section of `README.md`.
 

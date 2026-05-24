@@ -265,23 +265,23 @@ export function runScenario(ctx: ScenarioContext): void {
     this.timeout(420000);
     before(function () { if (phaseAFailed) { this.skip(); } });
 
-    it('B1: creates PR', () => {
-      prNumber = createPR(ctx, 'Add customer registration', BRANCH);
+    it('B1: creates PR', async () => {
+      prNumber = await createPR(ctx, 'Add customer registration', BRANCH);
       assert.ok(prNumber > 0, `PR number should be positive, got ${prNumber}`);
     });
 
-    it('B2: pr.yml succeeds (Flyway + tests on branch DB)', () => {
-      const result = waitForWorkflowRun(ctx, 'pr.yml', { branch: BRANCH, event: 'pull_request' });
+    it('B2: pr.yml succeeds (Flyway + tests on branch DB)', async () => {
+      const result = await waitForWorkflowRun(ctx, 'pr.yml', { branch: BRANCH, event: 'pull_request' });
       if (result.conclusion !== 'success') {
         const logs = getWorkflowLogs(ctx, result.runId);
         assert.fail(`pr.yml failed (${result.conclusion}). Run ${result.runId}. Logs:\n${logs}`);
       }
     });
 
-    it('B3: PR comment contains schema diff', () => {
-      const comments = getPRComments(ctx, prNumber);
+    it('B3: PR comment contains schema diff', async () => {
+      const comments = await getPRComments(ctx, prNumber);
       assert.ok(comments.length > 0, 'PR should have at least one comment');
-      const schemaDiffComment = comments.find(c => c.body.includes('customer'));
+      const schemaDiffComment = comments.find(c => c.includes('customer'));
       assert.ok(schemaDiffComment, 'PR comment should mention customer table');
     });
   });
@@ -291,16 +291,16 @@ export function runScenario(ctx: ScenarioContext): void {
     before(function () { if (phaseAFailed) { this.skip(); } });
     let beforeMergeRunId: number;
 
-    it('C1: records latest merge.yml run ID', () => {
-      beforeMergeRunId = getLatestRunId(ctx, 'merge.yml');
+    it('C1: records latest merge.yml run ID', async () => {
+      beforeMergeRunId = await getLatestRunId(ctx, 'merge.yml');
     });
 
-    it('C2: merges PR', () => {
-      mergePR(ctx, prNumber);
+    it('C2: merges PR', async () => {
+      await mergePR(ctx, prNumber);
     });
 
-    it('C3: merge.yml succeeds (Flyway on production)', () => {
-      const result = waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
+    it('C3: merge.yml succeeds (Flyway on production)', async () => {
+      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
       if (result.conclusion !== 'success') {
         const logs = getWorkflowLogs(ctx, result.runId);
         assert.fail(`merge.yml failed (${result.conclusion}). Run ${result.runId}. Logs:\n${logs}`);
@@ -325,9 +325,9 @@ export function runScenario(ctx: ScenarioContext): void {
       await deleteLakebaseBranch(ctx, BRANCH);
     });
 
-    it('D5: wait for runner idle', function () {
+    it('D5: wait for runner idle', async function () {
       this.timeout(300000);
-      waitForRunnerIdle(ctx);
+      await waitForRunnerIdle(ctx);
     });
   });
 }

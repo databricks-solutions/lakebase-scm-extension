@@ -120,13 +120,13 @@ export function runScenario(ctx: ScenarioContext): void {
     this.timeout(420000);
     before(function () { if (phaseAFailed) { this.skip(); } });
 
-    it('B1: creates PR', () => {
-      prNumber = createPR(ctx, 'Drop partner and asset tables', BRANCH);
+    it('B1: creates PR', async () => {
+      prNumber = await createPR(ctx, 'Drop partner and asset tables', BRANCH);
       assert.ok(prNumber > 0);
     });
 
-    it('B2: pr.yml succeeds', () => {
-      const result = waitForWorkflowRun(ctx, 'pr.yml', { branch: BRANCH, event: 'pull_request' });
+    it('B2: pr.yml succeeds', async () => {
+      const result = await waitForWorkflowRun(ctx, 'pr.yml', { branch: BRANCH, event: 'pull_request' });
       if (result.conclusion !== 'success') {
         assert.fail(`pr.yml failed (${result.conclusion}). Logs:\n${getWorkflowLogs(ctx, result.runId)}`);
       }
@@ -138,14 +138,14 @@ export function runScenario(ctx: ScenarioContext): void {
     before(function () { if (phaseAFailed) { this.skip(); } });
     let beforeMergeRunId: number;
 
-    it('C1: records latest merge.yml run ID', () => {
-      beforeMergeRunId = getLatestRunId(ctx, 'merge.yml');
+    it('C1: records latest merge.yml run ID', async () => {
+      beforeMergeRunId = await getLatestRunId(ctx, 'merge.yml');
     });
 
-    it('C2: merges PR', () => { mergePR(ctx, prNumber); });
+    it('C2: merges PR', async () => { await mergePR(ctx, prNumber); });
 
-    it('C3: merge.yml succeeds', () => {
-      const result = waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
+    it('C3: merge.yml succeeds', async () => {
+      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
       if (result.conclusion !== 'success') {
         assert.fail(`merge.yml failed (${result.conclusion}). Logs:\n${getWorkflowLogs(ctx, result.runId)}`);
       }
@@ -182,9 +182,9 @@ export function runScenario(ctx: ScenarioContext): void {
       await deleteLakebaseBranch(ctx, BRANCH);
     });
 
-    it('D6: wait for runner idle', function () {
+    it('D6: wait for runner idle', async function () {
       this.timeout(300000);
-      waitForRunnerIdle(ctx);
+      await waitForRunnerIdle(ctx);
     });
   });
 }
