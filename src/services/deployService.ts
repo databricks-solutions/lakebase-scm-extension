@@ -66,7 +66,7 @@ export class DeployService {
       const trimmed = line.trimEnd();
       if (!trimmed || trimmed.startsWith('#')) { continue; }
 
-      // Top-level "targets:" — skip
+      // Top-level "targets:", skip
       if (trimmed === 'targets:') { continue; }
 
       // Target name (2-space indent, ends with colon)
@@ -156,7 +156,7 @@ export class DeployService {
         p.name === `projects/${projectId}` || p.uid === projectId || p.displayName === projectId
       );
     } catch {
-      // list-projects failed — try creating anyway
+      // list-projects failed, try creating anyway
     }
 
     if (!projectExists) {
@@ -181,7 +181,7 @@ export class DeployService {
         return id === branchId || b.branchId === branchId;
       });
     } catch {
-      // list-branches failed — branch might still exist
+      // list-branches failed, branch might still exist
     }
 
     if (!branchExists) {
@@ -227,7 +227,7 @@ export class DeployService {
   ): Promise<void> {
     const spClientId = await DeployService.getAppSpClientId(profile, appName);
     if (!spClientId) {
-      progress?.('⚠ Could not resolve app service principal — skipping permission grants', 'infra');
+      progress?.('⚠ Could not resolve app service principal, skipping permission grants', 'infra');
       return;
     }
 
@@ -238,7 +238,7 @@ export class DeployService {
         access_control_list: [{ service_principal_name: spClientId, permission_level: 'CAN_MANAGE' }]
       })}'`);
     } catch {
-      progress?.('⚠ Could not grant Lakebase project access — you may need to grant manually', 'infra');
+      progress?.('⚠ Could not grant Lakebase project access, you may need to grant manually', 'infra');
     }
 
     // Grant USE CATALOG + volume access on UC catalog
@@ -249,7 +249,7 @@ export class DeployService {
           changes: [{ principal: spClientId, add: ['USE_CATALOG', 'USE_SCHEMA', 'READ_VOLUME', 'WRITE_VOLUME'] }]
         })}'`);
       } catch {
-        progress?.('⚠ Could not grant UC catalog access — you may need to grant manually', 'infra');
+        progress?.('⚠ Could not grant UC catalog access, you may need to grant manually', 'infra');
       }
     }
   }
@@ -272,7 +272,7 @@ export class DeployService {
   ): Promise<{ scope: string; key: string }> {
     const spClientId = await DeployService.getAppSpClientId(profile, appName);
 
-    // 1. Create secret scope (idempotent — ignore "already exists" errors)
+    // 1. Create secret scope (idempotent, ignore "already exists" errors)
     progress?.(`Creating secret scope: ${scopeName}...`, 'infra');
     try {
       await exec(`databricks secrets create-scope "${scopeName}" --profile "${profile}"`);
@@ -309,7 +309,7 @@ export class DeployService {
           `databricks secrets put-acl "${scopeName}" "${spClientId}" READ --profile "${profile}"`
         );
       } catch {
-        progress?.('⚠ Could not grant SP access to secret scope — you may need to grant manually', 'infra');
+        progress?.('⚠ Could not grant SP access to secret scope, you may need to grant manually', 'infra');
       }
     }
 
@@ -412,7 +412,7 @@ export class DeployService {
     try {
       workspaceHost = await DeployService.resolveWorkspaceHost(profile);
     } catch {
-      // Non-critical — deploy still works without clickable links
+      // Non-critical, deploy still works without clickable links
     }
 
     // Save original app.yaml before modification so we can restore after deploy
@@ -459,10 +459,10 @@ export class DeployService {
         const catalogOk = await DeployService.catalogExists(profile, target.uc_catalog);
         if (!catalogOk) {
           // Try to create it programmatically (works on non-Default-Storage workspaces)
-          progress?.(`Catalog not found — attempting to create ${target.uc_catalog}...`, 'infra');
+          progress?.(`Catalog not found, attempting to create ${target.uc_catalog}...`, 'infra');
           const created = await DeployService.tryCreateCatalog(profile, target.uc_catalog);
           if (!created) {
-            // Default Storage workspace — need manual creation
+            // Default Storage workspace, need manual creation
             // Return a specific error so the caller can handle the interactive flow
             return {
               success: false,
@@ -488,7 +488,7 @@ export class DeployService {
       try {
         await exec(`databricks apps get "${appName}" --profile "${profile}"`);
       } catch {
-        progress?.(`App "${appName}" not found — creating...`, 'deploy');
+        progress?.(`App "${appName}" not found, creating...`, 'deploy');
         await exec(
           `databricks apps create "${appName}" --description "Deployed by Lakebase SCM" --no-wait --profile "${profile}"`,
           { timeout: 60000 }
@@ -507,7 +507,7 @@ export class DeployService {
         );
       }
 
-      // Step 5: Deploy the app (apps deploy waits for completion — allow 10 minutes)
+      // Step 5: Deploy the app (apps deploy waits for completion, allow 10 minutes)
       progress?.(`Deploying ${appName}...`, 'deploy');
       await exec(
         `databricks apps deploy "${appName}" --source-code-path "${wsPath}" --profile "${profile}"`,
@@ -572,7 +572,7 @@ export class DeployService {
         );
         progress?.('Seed data applied', 'done');
       } catch {
-        progress?.('⚠ Seed data failed — you may need to run it manually', 'done');
+        progress?.('⚠ Seed data failed, you may need to run it manually', 'done');
       }
       return;
     }
@@ -580,7 +580,7 @@ export class DeployService {
     // Fallback: run any .py files in seed-data/ directory
     const seedFiles = fs.readdirSync(seedDir).filter(f => f.endsWith('.py'));
     if (seedFiles.length > 0) {
-      progress?.(`Found ${seedFiles.length} seed file(s) — run manually: uv run python scripts/seed-data/<file> --target ${targetName}`, 'done');
+      progress?.(`Found ${seedFiles.length} seed file(s), run manually: uv run python scripts/seed-data/<file> --target ${targetName}`, 'done');
     }
   }
 

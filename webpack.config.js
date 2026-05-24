@@ -16,7 +16,7 @@ const config = {
     vscode: 'commonjs vscode',
     // pg has an optional native binding (via 'pg-native') that needs a
     // compiled C library. The extension only uses the pure-JS driver, so
-    // the native path is never hit — but webpack still tries to resolve it.
+    // the native path is never hit, but webpack still tries to resolve it.
     // Mark it external so the bundle doesn't warn, and nothing loads it at
     // runtime unless pg.native is explicitly imported (which we don't).
     'pg-native': 'commonjs pg-native',

@@ -256,10 +256,10 @@ export class GitService {
   /** Get files changed between current branch and main/master */
   /**
    * List files changed between a branch (default: HEAD / current working tree)
-   * and a base branch (default: trunk — `config.trunkBranch` if set, else
+   * and a base branch (default: trunk, `config.trunkBranch` if set, else
    * `main`/`master`).
    *
-   * @param branch    Branch to compute changes FOR. Default `HEAD` — include
+   * @param branch    Branch to compute changes FOR. Default `HEAD`, include
    *                  uncommitted + untracked files in the working tree. Pass
    *                  an explicit branch name to compute that branch's diff
    *                  against the base, ignoring the working tree.
@@ -274,8 +274,8 @@ export class GitService {
 
     // Resolve base branch:
     //   1. explicit override arg
-    //   2. LAKEBASE_BASE_BRANCH (config.baseBranch) — explicit project pin
-    //      ("features fork from staging — diff against staging").
+    //   2. LAKEBASE_BASE_BRANCH (config.baseBranch), explicit project pin
+    //      ("features fork from staging, diff against staging").
     //   3. NEAREST PARENT via merge-base. Across known parent candidates
     //      (config.trunkBranch || main, master, config.stagingBranch ||
     //      staging), pick the one whose merge-base with the tip has the
@@ -305,7 +305,7 @@ export class GitService {
             bestTs = ts;
             baseBranch = c;
           }
-        } catch { /* candidate not present locally — skip */ }
+        } catch { /* candidate not present locally, skip */ }
       }
     }
     if (!baseBranch) {
@@ -369,7 +369,7 @@ export class GitService {
             }
           }
         } catch {
-          // Ignore — untracked listing is optional
+          // Ignore, untracked listing is optional
         }
       }
 
@@ -494,10 +494,10 @@ export class GitService {
     // Check if file is untracked
     try {
       await exec(`git ls-files --error-unmatch "${filePath}"`, root);
-      // Tracked file — restore from HEAD
+      // Tracked file, restore from HEAD
       await exec(`git checkout -- "${filePath}"`, root);
     } catch {
-      // Untracked file — delete it
+      // Untracked file, delete it
       const fs = require('fs');
       const path = require('path');
       const fullPath = path.join(root, filePath);
@@ -566,7 +566,7 @@ export class GitService {
   /**
    * Ensure the current branch is pushed to origin before PR creation.
    * Publishes with `-u origin` when no upstream exists; otherwise pushes
-   * latest commits. Pair with {@link GitHubService.createPullRequest} — git
+   * latest commits. Pair with {@link GitHubService.createPullRequest}, git
    * handles push, GitHubService handles the REST API (formerly `gh pr create`).
    */
   async pushCurrentBranchForPr(): Promise<void> {

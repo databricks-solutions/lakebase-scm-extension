@@ -1,4 +1,4 @@
-// LakebaseService — thin VS Code-aware shell over the substrate.
+// LakebaseService, thin VS Code-aware shell over the substrate.
 //
 // FEIP-7065 (publish_and_consume): branch CRUD, endpoint lookup, credential
 // minting, schema introspection, and project CRUD live in
@@ -98,9 +98,9 @@ function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {
 }
 
 export class LakebaseService {
-  /** Runtime host override — set when user selects a workspace via the picker */
+  /** Runtime host override, set when user selects a workspace via the picker */
   private hostOverride: string | undefined;
-  /** Runtime project ID override — set for integration tests or when workspace .env is not available */
+  /** Runtime project ID override, set for integration tests or when workspace .env is not available */
   private projectIdOverride: string | undefined;
 
   private projectInstance(): string {
@@ -129,7 +129,7 @@ export class LakebaseService {
    * Run a substrate call with DATABRICKS_HOST mutated to the effective host.
    * Substrate's CLI invocations read process.env.DATABRICKS_HOST directly, so
    * mutating it around each call gives them the same host the extension is
-   * using. Restores the prior value after — even on throw.
+   * using. Restores the prior value after, even on throw.
    */
   private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
@@ -205,7 +205,7 @@ export class LakebaseService {
     const expectedHost = this.getEffectiveHost().replace(/\/+$/, "");
     // Fail fast when no host is configured. Otherwise the CLI runs against
     // whatever ambient profile the user has, which may not be the project's
-    // intended workspace — silent cross-workspace operations are confusing.
+    // intended workspace, silent cross-workspace operations are confusing.
     if (!expectedHost) {
       return {
         authenticated: false,
@@ -472,16 +472,16 @@ export class LakebaseService {
  * up the full LakebaseService dependency graph.
  *
  * Precedence:
- *   1. `configuredBase` — explicit override (caller-supplied or VS Code
+ *   1. `configuredBase`, explicit override (caller-supplied or VS Code
  *      config pinning a base like "staging").
- *   2. `currentGitBranch` (sanitized) — the actual git HEAD the caller
+ *   2. `currentGitBranch` (sanitized), the actual git HEAD the caller
  *      just observed. Preferred over `envBranchId` when both are present;
  *      if they disagree, `envBranchId` was stale (post-checkout hook
  *      didn't fire, or `git checkout` ran with hooks disabled). Emits a
  *      `warn` so the drift is visible.
- *   3. `envBranchId` — fallback from `.env`'s `LAKEBASE_BRANCH_ID`,
+ *   3. `envBranchId`, fallback from `.env`'s `LAKEBASE_BRANCH_ID`,
  *      used when the caller can't observe git HEAD (agent/headless flows).
- *   4. `undefined` — substrate falls through to project default.
+ *   4. `undefined`, substrate falls through to project default.
  *
  * Returns `undefined` when the resolved parent equals `sanitized` itself
  * (no-op fork), letting substrate handle the same-name case downstream.

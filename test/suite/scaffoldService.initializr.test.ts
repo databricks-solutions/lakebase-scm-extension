@@ -19,7 +19,7 @@ function makeInitializrZip(): Buffer {
   return zip.toBuffer();
 }
 
-describe('ScaffoldService — Spring Initializr', () => {
+describe('ScaffoldService, Spring Initializr', () => {
   const extensionPath = path.resolve(__dirname, '../..');
 
   afterEach(() => {

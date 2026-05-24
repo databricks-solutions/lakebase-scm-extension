@@ -18,7 +18,7 @@ describe("equivalence: schema diff", () => {
 
   beforeEach(() => {
     // SchemaDiffService reads `lakebaseProjectId` from VS Code's
-    // workspace config via getConfig() — plant a value so it sees
+    // workspace config via getConfig(), plant a value so it sees
     // the test instance.
     restoreConfig = plantConfig({ lakebaseProjectId: "proj-x" });
     const ctx = plantWorkspace();
@@ -33,7 +33,7 @@ describe("equivalence: schema diff", () => {
     restoreConfig();
   });
 
-  it("compareBranchSchemas — forwards { instance, branch } and preserves substrate result + timestamp", async () => {
+  it("compareBranchSchemas, forwards { instance, branch } and preserves substrate result + timestamp", async () => {
     const tracker = stubSubstrate("getSchemaDiff", {
       branchName: "br-feature",
       timestamp: "2026-05-01T00:00:00Z",
@@ -53,7 +53,7 @@ describe("equivalence: schema diff", () => {
     assert.strictEqual(result.timestamp, "2026-05-01T00:00:00Z");
   });
 
-  it("compareBranchSchemas — fills in timestamp when substrate omits it", async () => {
+  it("compareBranchSchemas, fills in timestamp when substrate omits it", async () => {
     stubSubstrate("getSchemaDiff", {
       branchName: "br-feature",
       timestamp: "",

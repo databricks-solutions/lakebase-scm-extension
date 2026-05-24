@@ -2,12 +2,12 @@
  * Integration test: Project Lifecycle (Create + Teardown)
  *
  * Tests against LIVE APIs:
- * - GitHub (via gh CLI) — create and delete a private repo
- * - Databricks Lakebase (via databricks CLI) — create and delete a project
+ * - GitHub (via gh CLI), create and delete a private repo
+ * - Databricks Lakebase (via databricks CLI), create and delete a project
  *
  * Prerequisites:
- * - `gh auth status` — logged in with delete_repo scope
- * - `databricks auth login` — authenticated to a workspace with Lakebase
+ * - `gh auth status`, logged in with delete_repo scope
+ * - `databricks auth login`, authenticated to a workspace with Lakebase
  * - DATABRICKS_HOST env var or ~/.databrickscfg configured
  *
  * Run: npm run test:integration
@@ -60,7 +60,7 @@ describe('Project Lifecycle Integration', function () {
       const result = await gitService.createRepo(fullRepoName, {
         private: true,
         clone: false,
-        description: 'Integration test — auto-created, safe to delete',
+        description: 'Integration test, auto-created, safe to delete',
       });
       console.log(`    Created: ${result}`);
       githubRepoCreated = true;
@@ -74,7 +74,7 @@ describe('Project Lifecycle Integration', function () {
 
     it('can set a secret on the repo', async () => {
       await gitService.setRepoSecret(fullRepoName, 'TEST_SECRET', 'test-value-12345');
-      // No error means success — gh secret set doesn't return output
+      // No error means success, gh secret set doesn't return output
     });
 
     it('verifies non-existent repo returns false', async () => {

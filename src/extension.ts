@@ -201,7 +201,7 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBarProvider = new StatusBarProvider(gitService, lakebaseService, migrationService);
   branchTreeProvider = new BranchTreeProvider(gitService, lakebaseService, migrationService, schemaDiffService);
 
-  // Initialize SCM provider — compares actual Lakebase branch schemas
+  // Initialize SCM provider, compares actual Lakebase branch schemas
   schemaScmProvider = new SchemaScmProvider(gitService, migrationService, schemaDiffService, lakebaseService, githubService);
 
   // Register schema DDL content provider for multi-diff editor
@@ -265,7 +265,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const updateBadge = () => {
     const count = changesTreeProvider.getChangeCount();
     changesView.badge = count > 0
-      ? { value: count, tooltip: `Lakebase SCM Extension — ${count} pending changes` }
+      ? { value: count, tooltip: `Lakebase SCM Extension, ${count} pending changes` }
       : undefined;
   };
   schemaScmProvider.onDidRefresh(() => {
@@ -282,7 +282,7 @@ export async function activate(context: vscode.ExtensionContext) {
   updateBadge();
 
   // Watch migration files for status bar + tree updates
-  // (SCM provider has its own migration watcher — don't duplicate)
+  // (SCM provider has its own migration watcher, don't duplicate)
   const migrationWatcher = migrationService.watchMigrations(() => {
     statusBarProvider.refresh();
     branchTreeProvider.refresh();
@@ -310,7 +310,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (!newBranch || isMainBranch(newBranch, trunkAlias) || isStagingBranch(newBranch, stagingAlias)) { return; }
 
-    // Clear schema cache — new branch may have different schema
+    // Clear schema cache, new branch may have different schema
     schemaDiffService.clearCache();
 
     const cfg = getConfig();
@@ -319,7 +319,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // Always check if Lakebase branch exists and sync .env connection
       const existing = await lakebaseService.getBranchByName(newBranch);
       if (existing) {
-        // Branch exists — just refresh credentials and update .env
+        // Branch exists, just refresh credentials and update .env
         const conn = await lakebaseService.syncConnection(existing.branchId);
         if (!conn) {
           vscode.window.showWarningMessage(
@@ -329,7 +329,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // No existing branch — only create if autoCreateBranch is enabled
+      // No existing branch, only create if autoCreateBranch is enabled
       if (!cfg.autoCreateBranch) { return; }
 
       // Create new Lakebase branch
@@ -364,7 +364,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     } catch (err: any) {
       if (!await handleAuthError(lakebaseService, err)) {
-        // Silently log — don't block the user's checkout
+        // Silently log, don't block the user's checkout
         console.warn(`Auto-branch creation failed for ${newBranch}: ${err.message}`);
       }
     }
@@ -442,7 +442,7 @@ export async function activate(context: vscode.ExtensionContext) {
           (graphWebviewProvider as any).showAllRefs = false;
           (graphWebviewProvider as any).graphFilterRefs = null;
         } else {
-          // Specific branches selected — show all refs but filter in display
+          // Specific branches selected, show all refs but filter in display
           (graphWebviewProvider as any).showAllRefs = true;
           (graphWebviewProvider as any).graphFilterRefs = picks.map(p =>
             p.label.replace('$(git-branch) ', '').replace('$(cloud) ', '')
@@ -520,7 +520,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (isStagingBranch(gitBranch, cfgCb.stagingBranch)) {
-        vscode.window.showWarningMessage('Cannot create a Lakebase branch for staging — staging is a persistent branch.');
+        vscode.window.showWarningMessage('Cannot create a Lakebase branch for staging, staging is a persistent branch.');
         return;
       }
 
@@ -591,7 +591,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // ── Step 2: GitHub (optional) ────────────────────────────────
       const githubPick = await vscode.window.showQuickPick([
         { label: '$(github) Create GitHub repository', description: 'Create repo, push scaffold, and set up CI', value: true },
-        { label: '$(folder) Local project only', description: 'Scaffold locally — add GitHub later', value: false },
+        { label: '$(folder) Local project only', description: 'Scaffold locally, add GitHub later', value: false },
       ], { title: 'Lakebase: GitHub Repository (2/10)', placeHolder: 'Create a GitHub repo or work locally?' });
       if (!githubPick) { return; }
       const createGithubRepo = githubPick.value;
@@ -783,7 +783,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 runnerType: runnerPick.value,
               },
               (step, detail) => {
-                progress.report({ message: `${step}${detail ? ' — ' + detail : ''}` });
+                progress.report({ message: `${step}${detail ? ', ' + detail : ''}` });
               }
             );
           }
@@ -974,7 +974,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
             if (conn) {
               vscode.window.showInformationMessage(
-                `Branch "${branchName}" created — code + database ready.`
+                `Branch "${branchName}" created, code + database ready.`
               );
             } else {
               vscode.window.showWarningMessage(
@@ -1115,7 +1115,7 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           await gitService.checkoutBranch(parentBranch);
         } catch (err: any) {
-          vscode.window.showErrorMessage(`Could not check out "${parentBranch}": ${err.message}. Aborted — nothing deleted.`);
+          vscode.window.showErrorMessage(`Could not check out "${parentBranch}": ${err.message}. Aborted, nothing deleted.`);
           return;
         }
       }
@@ -1335,7 +1335,7 @@ export async function activate(context: vscode.ExtensionContext) {
         items.push({
           label: `${isConnected ? '$(check)' : '$(plug)'} Project workspace`,
           description: effectiveHost,
-          detail: isConnected ? 'Connected' : 'Not authenticated — select to connect',
+          detail: isConnected ? 'Connected' : 'Not authenticated, select to connect',
           host: effectiveHost,
           valid: isConnected,
         });
@@ -1411,14 +1411,14 @@ export async function activate(context: vscode.ExtensionContext) {
       lakebaseService.setHostOverride(targetHost);
 
       if (pick.valid && targetHost === effectiveHost) {
-        // Already connected — just refresh
+        // Already connected, just refresh
         vscode.window.showInformationMessage(`Already connected to ${targetHost}`);
         statusBarProvider.refresh();
         branchTreeProvider.refresh();
         return;
       }
 
-      // Need to authenticate — open terminal
+      // Need to authenticate, open terminal
       const loginCmd = lakebaseService.getLoginCommand(targetHost);
       const terminal = vscode.window.createTerminal('Databricks Connect');
       terminal.show();
@@ -1571,7 +1571,7 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         // If invoked on main/production, there's nothing to diff
         if (item?.lakebaseBranch?.isDefault || (item?.gitBranch && isMainBranch(item.gitBranch.name, getConfig().trunkBranch))) {
-          vscode.window.showInformationMessage('This is the production branch — no diff to show.');
+          vscode.window.showInformationMessage('This is the production branch, no diff to show.');
           return;
         }
         const fileChanges = await gitService.getChangedFiles();
@@ -1613,7 +1613,7 @@ export async function activate(context: vscode.ExtensionContext) {
             branchUid = defaultBranch?.uid;
           }
         } catch {
-          // Fall through — url will be project-level
+          // Fall through, url will be project-level
         }
       }
       const url = await lakebaseService.getConsoleUrl(branchUid);
@@ -1655,7 +1655,7 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
           }
         } else {
-          // Dismissed / Cancel — abort.
+          // Dismissed / Cancel, abort.
           return;
         }
       }
@@ -1761,7 +1761,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const msg = err.message || '';
             if (msg.includes('local changes') && msg.includes('overwritten by checkout')) {
               const action = await vscode.window.showWarningMessage(
-                `Cannot switch to ${targetGitBranch} — you have uncommitted changes that would be overwritten.`,
+                `Cannot switch to ${targetGitBranch}, you have uncommitted changes that would be overwritten.`,
                 'Stash & Switch', 'Commit First', 'Cancel'
               );
               if (action === 'Stash & Switch') {
@@ -1801,7 +1801,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const currentBranch = await gitService.getCurrentBranch();
         const title = `Branch Review: ${currentBranch}`;
 
-        // vscode.changes expects [labelUri, originalUri, modifiedUri][] — 3-element tuples
+        // vscode.changes expects [labelUri, originalUri, modifiedUri][], 3-element tuples
         const changes: DiffTuple[] = [];
 
         // Collect code diffs
@@ -1968,7 +1968,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.commitStaged', async () => {
-      // Same as commit — commits whatever is staged
+      // Same as commit, commits whatever is staged
       vscode.commands.executeCommand('lakebaseSync.commit');
     }),
 
@@ -2288,7 +2288,7 @@ export async function activate(context: vscode.ExtensionContext) {
               // Pre-create the Lakebase branch with the explicit base. Without
               // this, the new branch's Lakebase fork source depends on the
               // freshness of .git/hooks/post-checkout AND on whether the
-              // onBranchChanged listener races with the hook — neither of
+              // onBranchChanged listener races with the hook, neither of
               // which is reliable across machines. Doing it here makes the
               // user's choice authoritative; the post-checkout hook will see
               // the existing Lakebase branch and just connect.
@@ -2331,7 +2331,7 @@ export async function activate(context: vscode.ExtensionContext) {
             { location: vscode.ProgressLocation.Notification, title: `Switching to ${pick.branchName}...` },
             async (progress) => {
               if (pick.isRemote) {
-                // Checkout remote branch — creates a local tracking branch
+                // Checkout remote branch, creates a local tracking branch
                 progress.report({ message: `Checking out remote branch ${pick.branchName}...` });
                 await gitService.checkoutBranch(pick.branchName!, true, 'origin/' + pick.branchName!);
               } else {
@@ -2346,7 +2346,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const msg = err.message || '';
         if (msg.includes('local changes') && msg.includes('overwritten by checkout')) {
           const action = await vscode.window.showWarningMessage(
-            'Cannot switch branch — you have uncommitted changes that would be overwritten.',
+            'Cannot switch branch, you have uncommitted changes that would be overwritten.',
             'Stash & Switch', 'Commit First', 'Cancel'
           );
           if (action === 'Stash & Switch') {
@@ -2386,7 +2386,7 @@ export async function activate(context: vscode.ExtensionContext) {
             );
 
             if (!schemaDiffComment) {
-              // No comment — try live pg_dump against the CI branch
+              // No comment, try live pg_dump against the CI branch
               const ciBranchName = `ci-pr-${pr.number}`;
               let liveDiff: any;
               try {
@@ -2543,7 +2543,7 @@ export async function activate(context: vscode.ExtensionContext) {
               branchTreeProvider.refresh(); // Partial cleanup, update the tree
             }
           } catch {
-            // Lakebase API error — skip this poll
+            // Lakebase API error, skip this poll
             if (pollCount >= maxPolls) { clearInterval(pollTimer); }
           }
         }, 15_000);
@@ -2595,12 +2595,12 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'PR workflow (pr.yml)',
         ok: fs.existsSync(prYml),
-        detail: fs.existsSync(prYml) ? 'Found' : 'Missing — CI will not create Lakebase branches on PR',
+        detail: fs.existsSync(prYml) ? 'Found' : 'Missing, CI will not create Lakebase branches on PR',
       });
       results.push({
         label: 'Merge workflow (merge.yml)',
         ok: fs.existsSync(mergeYml),
-        detail: fs.existsSync(mergeYml) ? 'Found' : 'Missing — production migrations and branch cleanup will not run on merge',
+        detail: fs.existsSync(mergeYml) ? 'Found' : 'Missing, production migrations and branch cleanup will not run on merge',
       });
 
       // 2. Check .env
@@ -2610,12 +2610,12 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'LAKEBASE_PROJECT_ID in .env',
         ok: envConfig.includes('LAKEBASE_PROJECT_ID=') && !envConfig.includes('LAKEBASE_PROJECT_ID=\n'),
-        detail: envConfig.includes('LAKEBASE_PROJECT_ID=') ? 'Set' : 'Missing — extension cannot connect to Lakebase',
+        detail: envConfig.includes('LAKEBASE_PROJECT_ID=') ? 'Set' : 'Missing, extension cannot connect to Lakebase',
       });
       results.push({
         label: 'DATABRICKS_HOST in .env',
         ok: envConfig.includes('DATABRICKS_HOST=') && !envConfig.includes('DATABRICKS_HOST=\n'),
-        detail: envConfig.includes('DATABRICKS_HOST=') ? 'Set' : 'Missing — extension cannot connect to workspace',
+        detail: envConfig.includes('DATABRICKS_HOST=') ? 'Set' : 'Missing, extension cannot connect to workspace',
       });
 
       // 3. Check Databricks CLI
@@ -2627,7 +2627,7 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'Databricks CLI',
         ok: cliOk,
-        detail: cliOk ? 'Installed' : 'Not found — install and run "databricks auth login"',
+        detail: cliOk ? 'Installed' : 'Not found, install and run "databricks auth login"',
       });
 
       // 4. Check CLI auth
@@ -2641,7 +2641,7 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'Databricks auth',
         ok: authOk,
-        detail: authOk ? 'Authenticated' : 'Not authenticated — run "databricks auth login"',
+        detail: authOk ? 'Authenticated' : 'Not authenticated, run "databricks auth login"',
       });
 
       // 5. Check GitHub authentication
@@ -2657,7 +2657,7 @@ export async function activate(context: vscode.ExtensionContext) {
         ok: ghOk,
         detail: ghOk
           ? `Signed in as ${ghUser}`
-          : 'Not signed in — use VS Code GitHub sign-in or set lakebaseSync.githubToken',
+          : 'Not signed in, use VS Code GitHub sign-in or set lakebaseSync.githubToken',
       });
 
       // 6. Check GitHub secrets (requires auth + repo access)
@@ -2683,7 +2683,7 @@ export async function activate(context: vscode.ExtensionContext) {
           ok: missingSecrets.length === 0,
           detail: missingSecrets.length === 0
             ? 'DATABRICKS_HOST, DATABRICKS_TOKEN, LAKEBASE_PROJECT_ID all set'
-            : `Missing: ${missingSecrets.join(', ')} — CI workflows will fail`,
+            : `Missing: ${missingSecrets.join(', ')}, CI workflows will fail`,
         });
       }
 
@@ -2701,7 +2701,7 @@ export async function activate(context: vscode.ExtensionContext) {
       results.push({
         label: 'Post-checkout hook',
         ok: fs.existsSync(hookPath),
-        detail: fs.existsSync(hookPath) ? 'Installed' : 'Missing — re-open project or run scaffold hook install',
+        detail: fs.existsSync(hookPath) ? 'Installed' : 'Missing, re-open project or run scaffold hook install',
       });
 
       // Display results
@@ -2710,7 +2710,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const allOk = passed === total;
 
       const lines = results.map(r =>
-        `${r.ok ? '✅' : '❌'} **${r.label}** — ${r.detail}`
+        `${r.ok ? '✅' : '❌'} **${r.label}**, ${r.detail}`
       );
 
       const panel = vscode.window.createWebviewPanel(
@@ -2779,7 +2779,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Pick PR base branch. In 3-tier projects the parent is often `staging`,
         // not `main`, and creating a PR without an explicit base silently targets the
-        // repo's default branch (usually main) — so a feature branched from staging
+        // repo's default branch (usually main), so a feature branched from staging
         // ends up PR'd against main without the user noticing.
         // Candidates: trunk, staging, and other local branches; default = the
         // candidate whose merge-base with HEAD is most recent (= the nearest
@@ -2811,7 +2811,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const items = ranked.length > 0
             ? ranked.map(r => ({
                 label: r.branch,
-                description: r.branch === defaultBase ? '(nearest parent — default)' : undefined,
+                description: r.branch === defaultBase ? '(nearest parent, default)' : undefined,
               }))
             : [{ label: trunk, description: '(fallback)' }];
           const pick = await vscode.window.showQuickPick(items, {
@@ -2837,7 +2837,7 @@ export async function activate(context: vscode.ExtensionContext) {
               return;
             }
           }
-        } catch { /* ignore — branch may not have diverged from base yet */ }
+        } catch { /* ignore, branch may not have diverged from base yet */ }
 
         // Step 3: Push + create PR via GitHubService (pushCurrentBranchForPr below).
         // Just inform the user if the branch hasn't been pushed yet.
@@ -2846,14 +2846,14 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showInformationMessage(`Branch "${currentBranch}" will be pushed to GitHub as part of PR creation.`);
         }
 
-        // Pre-flight: sync CI secrets in the background (non-blocking — never prevents PR creation)
+        // Pre-flight: sync CI secrets in the background (non-blocking, never prevents PR creation)
         const root = getWorkspaceRoot();
         if (root) {
           try {
             const { syncCiSecrets } = require('./utils/ciSecrets');
             await syncCiSecrets(root, 'GitHub Actions CI', 86400, githubService, gitService);
           } catch {
-            // Non-fatal — CI may still work with existing secrets
+            // Non-fatal, CI may still work with existing secrets
           }
         }
 
@@ -3312,7 +3312,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('lakebaseSync.removeWorktree', async () => {
       const worktrees = await gitService.listWorktrees();
-      // First entry is the main worktree — skip it
+      // First entry is the main worktree, skip it
       const removable = worktrees.slice(1);
       if (removable.length === 0) {
         vscode.window.showInformationMessage('No removable worktrees.');
@@ -3519,7 +3519,7 @@ export async function activate(context: vscode.ExtensionContext) {
           action: 'deploy',
         });
         pickItems.push({
-          label: `$(gear) ${name} — Edit configuration`,
+          label: `$(gear) ${name}, Edit configuration`,
           description: 'Re-walk setup for this target',
           targetName: name,
           action: 'edit',
@@ -3537,7 +3537,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const picked = await vscode.window.showQuickPick(pickItems, {
         title: 'Lakebase: Deploy App',
-        placeHolder: targetNames.length > 0 ? 'Deploy to a target or create a new one' : 'No deploy targets yet — create one',
+        placeHolder: targetNames.length > 0 ? 'Deploy to a target or create a new one' : 'No deploy targets yet, create one',
       });
       if (!picked) { return; }
 
@@ -3574,7 +3574,7 @@ export async function activate(context: vscode.ExtensionContext) {
             validateInput: (val) => {
               if (!val.trim()) { return 'Target name is required'; }
               if (!/^[a-zA-Z0-9_-]+$/.test(val)) { return 'Use only letters, numbers, hyphens, underscores'; }
-              if (!isEdit && existingTargets[val]) { return `Target "${val}" already exists — choose Edit to modify it`; }
+              if (!isEdit && existingTargets[val]) { return `Target "${val}" already exists, choose Edit to modify it`; }
               return undefined;
             },
           });
@@ -3582,7 +3582,7 @@ export async function activate(context: vscode.ExtensionContext) {
           targetName = nameInput;
         }
 
-        // Step 2b: Workspace profile — pick from CLI profiles
+        // Step 2b: Workspace profile, pick from CLI profiles
         const stepWorkspace = isEdit ? 1 : 2;
         let profileName: string | undefined;
 
@@ -3689,7 +3689,7 @@ export async function activate(context: vscode.ExtensionContext) {
         });
         if (!lbBranch) { return; }
 
-        // Step 7: UC Catalog (optional — for UC Volumes file storage)
+        // Step 7: UC Catalog (optional, for UC Volumes file storage)
         const stepUcCatalog = isEdit ? 6 : 7;
         const defaultUcCatalog = defaults?.uc_catalog ?? '';
         const ucCatalog = await vscode.window.showInputBox({
@@ -3777,9 +3777,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 deployLinkShown = true;
                 if (workspaceHost) {
                   const consoleUrl = `${workspaceHost}/apps/${encodeURIComponent(appName)}`;
-                  // Non-blocking — runs alongside the deploy
+                  // Non-blocking, runs alongside the deploy
                   vscode.window.showInformationMessage(
-                    `Deploying ${appName} — this may take a few minutes.`,
+                    `Deploying ${appName}, this may take a few minutes.`,
                     'View in Databricks'
                   ).then(action => {
                     if (action === 'View in Databricks') {
@@ -3791,7 +3791,7 @@ export async function activate(context: vscode.ExtensionContext) {
             },
           );
 
-          // Handle catalog missing — interactive flow
+          // Handle catalog missing, interactive flow
           if (!result.success && result.error?.startsWith('CATALOG_MISSING:')) {
             const catalogName = result.error.split(':')[1];
             const catalogUrl = result.workspaceHost
@@ -3826,7 +3826,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 return;
               }
             } else if (action === 'I\'ve Created It') {
-              // User says they created it — fall through to verify
+              // User says they created it, fall through to verify
             } else {
               vscode.window.showInformationMessage('Deploy cancelled. You can re-run deploy when ready.');
               return;
@@ -3842,7 +3842,7 @@ export async function activate(context: vscode.ExtensionContext) {
               return;
             }
 
-            // Catalog confirmed — retry the full deploy
+            // Catalog confirmed, retry the full deploy
             progress.report({ message: 'Catalog confirmed. Resuming deploy...' });
             const retryResult = await DeployService.deploy(
               targetName,
@@ -3854,7 +3854,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   if (workspaceHost) {
                     const consoleUrl = `${workspaceHost}/apps/${encodeURIComponent(appName)}`;
                     vscode.window.showInformationMessage(
-                      `Deploying ${appName} — this may take a few minutes.`,
+                      `Deploying ${appName}, this may take a few minutes.`,
                       'View in Databricks'
                     ).then(a => {
                       if (a === 'View in Databricks') {
@@ -3939,7 +3939,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         await lakebaseService.syncConnection(lb.branchId);
       } catch {
-        // Silently fail — don't interrupt the user
+        // Silently fail, don't interrupt the user
       }
     }, REFRESH_INTERVAL_MS);
   }

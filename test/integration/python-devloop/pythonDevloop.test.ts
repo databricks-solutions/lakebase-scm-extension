@@ -1,5 +1,5 @@
 /**
- * Python Dev Loop — 4 Iterative Scenarios
+ * Python Dev Loop: 4 Iterative Scenarios
  *
  * Full end-to-end: creates a GitHub repo + Lakebase project via ProjectCreationService,
  * scaffolds a Python/FastAPI/Alembic project, starts an ephemeral self-hosted runner,
@@ -43,7 +43,7 @@ let runner: RunnerHandle | undefined;
 // Tracks whether signal handlers are installed, to avoid double-install if
 // before() runs twice (mocha retries / nested suites).
 let signalHandlersInstalled = false;
-// Re-entrancy guard — a signal mid-cleanup must not trigger another cleanup.
+// Re-entrancy guard, a signal mid-cleanup must not trigger another cleanup.
 let cleanupInFlight = false;
 
 const dbcli = (cmd: string, dbHost: string, timeoutMs = 30000): string =>
@@ -68,11 +68,11 @@ async function waitForLakebaseProjectGone(projectName: string, dbHost: string, t
   return false;
 }
 
-// Shared cleanup entry — used by mocha after-hook AND signal handlers AND
+// Shared cleanup entry, used by mocha after-hook AND signal handlers AND
 // uncaughtException. Idempotent; safe to call repeatedly.
 //
 // Drives deletes through the retry-aware force* helpers in helpers.ts
-// rather than ProjectCreationService.cleanupProject() — that service's
+// rather than ProjectCreationService.cleanupProject(), that service's
 // bare `try { ... } catch {}` blocks silently swallow delete failures,
 // which is exactly how Lakebase projects + GitHub repos were leaking
 // when the API returned a transient error.
@@ -94,13 +94,13 @@ async function fullCleanup(reason: string): Promise<void> {
     catch (e: any) { console.log(`  [cleanup:runner] FAILED: ${e?.message || e}`); }
     runner = undefined;
   }
-  // 2. GitHub repo — retry-aware. We do this BEFORE Lakebase because the
+  // 2. GitHub repo, retry-aware. We do this BEFORE Lakebase because the
   //    GitHub repo's pre-push hook / Actions workflows can still trigger
   //    new runs against the Lakebase branch while the repo exists.
   if (created && ctx.fullRepoName) {
     await forceDeleteGithubRepo(ctx.fullRepoName);
   }
-  // 3. Lakebase project — retry-aware with verify + re-issue on failure.
+  // 3. Lakebase project, retry-aware with verify + re-issue on failure.
   if (created && ctx.projectName) {
     await forceDeleteLakebaseProject(ctx.projectName);
   }
@@ -132,7 +132,7 @@ const installSignalHandlers = (): void =>
 const reapOrphanProjects = (dbHost: string): Promise<void> =>
   libReapOrphans('pydev-', dbHost);
 
-describe('Python Dev Loop — 4 Iterative Scenarios', function () {
+describe('Python Dev Loop, 4 Iterative Scenarios', function () {
   this.timeout(3600000); // 1 hour overall (4 scenarios x ~10 min each)
 
   // ── Setup: Project + Python scaffold + Runner ──────────────────
@@ -151,7 +151,7 @@ describe('Python Dev Loop — 4 Iterative Scenarios', function () {
     const lakebaseService = new LakebaseService();
     // Pre-flight: requires DATABRICKS_TEST_HOST + authenticated databricks
     // CLI + authenticated gh CLI. Throws IntegrationSetupError with exact
-    // setup commands if any piece is missing. No silent default — the test
+    // setup commands if any piece is missing. No silent default, the test
     // creates real cloud resources under the contributor's account.
     const { databricksHost: dbHost, githubUser: ghUser } = assertIntegrationCredentials();
 
@@ -203,7 +203,7 @@ describe('Python Dev Loop — 4 Iterative Scenarios', function () {
 
     // Step 1: Create the full project (GitHub repo + Lakebase DB + scaffold + hooks + commit + push)
     const result = await creationService.createProject(input, (step, detail) => {
-      console.log(`    [setup] ${step}${detail ? ' — ' + detail : ''}`);
+      console.log(`    [setup] ${step}${detail ? ', ' + detail : ''}`);
       if (step === 'Creating initial commit...') {
         // Inject Python project files before the commit
         scaffoldPythonProject(projectDir);
@@ -229,7 +229,7 @@ describe('Python Dev Loop — 4 Iterative Scenarios', function () {
     console.log(`    [setup] Runner started (pid=${runner.pid}).\n`);
 
     created = true;
-    console.log(`    [setup] Ready — 4 scenarios will execute.\n`);
+    console.log(`    [setup] Ready, 4 scenarios will execute.\n`);
   });
 
   // ── Scenario 1: Partner (CREATE TABLE) ──────────────────────────
@@ -322,7 +322,7 @@ describe('Python Dev Loop — 4 Iterative Scenarios', function () {
     });
   });
 
-  // Safety net — fires on natural mocha completion (pass or fail). Signal
+  // Safety net, fires on natural mocha completion (pass or fail). Signal
   // kills are handled separately by the installed SIGINT/SIGTERM handlers.
   after(async function () {
     this.timeout(600000);
