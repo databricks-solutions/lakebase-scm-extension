@@ -18,7 +18,7 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import {
   ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
-  forceDeleteLakebaseProject, forceDeleteGithubRepo,
+  forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs,
 } from './helpers';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
@@ -61,6 +61,12 @@ async function fullCleanup(reason: string): Promise<void> {
     return;
   }
   cleanupInFlight = true;
+  // Always save failed CI run logs first, even when teardown is gated.
+  // This is pure side-effect; failures here never block the cleanup path.
+  if (created && ctx.fullRepoName) {
+    try { await saveFailedCiRunLogs(ctx.fullRepoName); }
+    catch (e: any) { console.log(`  [ci-logs] save failed: ${e?.message || e}`); }
+  }
   if (process.env.ECOM_NO_TEARDOWN) {
     console.log(`  [cleanup:${reason}] ECOM_NO_TEARDOWN=1 set, skipping`);
     cleanupInFlight = false;
@@ -244,9 +250,12 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       }
     });
 
-    it('flyway_schema_history has exactly 9 entries (V1 placeholder + V2-V9)', async () => {
-      const count = await queryProduction(ctx, 'SELECT COUNT(*) FROM flyway_schema_history WHERE success=true;');
-      assert.strictEqual(parseInt(count, 10), 9, `Expected 9 migrations, got ${count}`);
+    it('flyway_schema_history has exactly 9 user migrations (V1 placeholder + V2-V9)', async () => {
+      // Exclude the BASELINE row that Flyway adds under -DbaselineOnMigrate=true
+      // (Lakebase's `public` schema is always non-empty). We assert on the
+      // user-migration count, not the raw row count.
+      const count = await queryProduction(ctx, "SELECT COUNT(*) FROM flyway_schema_history WHERE success=true AND type <> 'BASELINE';");
+      assert.strictEqual(parseInt(count, 10), 9, `Expected 9 user migrations, got ${count}`);
     });
 
     it('3 merge commits on main (scenarios 1-6, 7, 8)', () => {

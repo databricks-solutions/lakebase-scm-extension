@@ -94,12 +94,14 @@ describe('Self-Hosted Runner – Full CI/CD Pipeline', function () {
     assert.ok(content.includes('Set up JDK (local)'), 'merge.yml should have local JDK step');
   });
 
-  it('mvnw calls use -o (offline) flag', function () {
+  it('mvnw calls resolve online through the Maven proxy', function () {
     const pr = fs.readFileSync(path.join(projectDir, '.github', 'workflows', 'pr.yml'), 'utf-8');
-    // Every ./mvnw call should have -o
+    // mvnw calls should NOT contain -o. Forcing offline blocks plugin-
+    // prefix lookups (e.g. flyway:migrate) on a cold runner; the user's
+    // ~/.m2/settings.xml mirror handles resolution through the proxy.
     const mvnwCalls = pr.match(/\.\/mvnw [^|&\n]*/g) || [];
     for (const call of mvnwCalls) {
-      assert.ok(call.includes('-o '), `mvnw call should be offline: ${call}`);
+      assert.ok(!call.includes('-o '), `mvnw call should resolve online: ${call}`);
     }
   });
 

@@ -170,7 +170,7 @@ export async function activate(context: vscode.ExtensionContext) {
   gitService = new GitService();
   githubService = new GitHubService();
   lakebaseService = new LakebaseService();
-  migrationService = new SchemaMigrationService();
+  migrationService = new SchemaMigrationService(lakebaseService);
   schemaDiffService = new SchemaDiffService(lakebaseService);
   schemaDiffProvider = new SchemaDiffProvider(schemaDiffService, gitService, migrationService);
 
