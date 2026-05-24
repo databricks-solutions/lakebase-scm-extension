@@ -1,7 +1,18 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig, getWorkspaceRoot } from '../utils/config';
+import { getConfig, getEnvConfig, getWorkspaceRoot } from '../utils/config';
+import {
+  applyMigrations as substrateApplyMigrations,
+  listMigrations as substrateListMigrations,
+  migrationStatus as substrateMigrationStatus,
+  rollbackMigration as substrateRollbackMigration,
+  type ApplyMigrationsResult,
+  type MigrationFile as SubstrateMigrationFile,
+  type MigrationStatusResult,
+  type RollbackMigrationResult,
+} from '@databricks-solutions/lakebase-app-dev-kit';
+import { LakebaseService } from './lakebaseService';
 
 export interface MigrationFile {
   version: string;
@@ -18,6 +29,87 @@ export interface MigrationSchemaChange {
 }
 
 export class SchemaMigrationService {
+  /** Optional. Required by the substrate-proxy methods (apply / rollback /
+   *  migrationStatus) so they can resolve the effective Databricks host
+   *  the same way SchemaDiffService does. The legacy file-scan paths
+   *  (listMigrations, parseAlembic, parseSql, watchMigrations) do not
+   *  need it. */
+  private lakebaseService?: LakebaseService;
+
+  constructor(lakebaseService?: LakebaseService) {
+    this.lakebaseService = lakebaseService;
+  }
+
+  /** Resolve {instance, branch, projectDir} from VS Code config + env.
+   *  Throws with a single clear message if any required input is missing,
+   *  so the call sites do not have to duplicate the same checks. */
+  private resolveSubstrateContext(): { instance: string; branch: string; projectDir: string } {
+    const instance = getConfig().lakebaseProjectId;
+    if (!instance) {
+      throw new Error('lakebaseProjectId is not configured. Set it in extension settings or via LAKEBASE_PROJECT_ID.');
+    }
+    const branch = getEnvConfig().LAKEBASE_BRANCH_ID;
+    if (!branch) {
+      throw new Error('LAKEBASE_BRANCH_ID is not set in the workspace .env.');
+    }
+    const projectDir = getWorkspaceRoot();
+    if (!projectDir) {
+      throw new Error('No workspace root open. Open a folder in VS Code first.');
+    }
+    return { instance, branch, projectDir };
+  }
+
+  /** Mutate DATABRICKS_HOST to the extension's effective host around a
+   *  substrate call. The substrate's databricks-CLI shellouts read it
+   *  from env. Restore the prior value (including unset) afterwards. */
+  private async withEffectiveHost<T>(fn: () => Promise<T>): Promise<T> {
+    const host = this.lakebaseService?.getEffectiveHost();
+    const prior = process.env.DATABRICKS_HOST;
+    if (host) process.env.DATABRICKS_HOST = host;
+    try {
+      return await fn();
+    } finally {
+      if (prior === undefined) delete process.env.DATABRICKS_HOST;
+      else process.env.DATABRICKS_HOST = prior;
+    }
+  }
+
+  /** Substrate proxy: enumerate pending + applied migrations against the
+   *  current branch. No DB connection required; pure file scan. Returns
+   *  the substrate's MigrationFile shape (includes `tool` + `type`,
+   *  omits `fullPath`). The legacy listMigrations() above stays for
+   *  call sites that need fullPath. */
+  listMigrationsViaSubstrate(): SubstrateMigrationFile[] {
+    const projectDir = getWorkspaceRoot();
+    if (!projectDir) {
+      throw new Error('No workspace root open. Open a folder in VS Code first.');
+    }
+    return substrateListMigrations({ projectDir });
+  }
+
+  /** Substrate proxy: apply all pending migrations against the current
+   *  branch. Auto-detects language (Java/Kotlin → Flyway, Python →
+   *  Alembic, Node.js → Knex stub). Async so that synchronous context
+   *  resolution errors surface as Promise rejections, not sync throws. */
+  async applyMigrationsViaSubstrate(): Promise<ApplyMigrationsResult> {
+    const ctx = this.resolveSubstrateContext();
+    return this.withEffectiveHost(() => substrateApplyMigrations(ctx));
+  }
+
+  /** Substrate proxy: roll back to `target`. Target syntax is
+   *  tool-specific (Alembic: revision id or "-1"; Flyway Community:
+   *  throws — no undo support). */
+  async rollbackMigrationViaSubstrate(target: string): Promise<RollbackMigrationResult> {
+    const ctx = this.resolveSubstrateContext();
+    return this.withEffectiveHost(() => substrateRollbackMigration({ ...ctx, target }));
+  }
+
+  /** Substrate proxy: report current head + pending list. Read-only. */
+  async migrationStatusViaSubstrate(): Promise<MigrationStatusResult> {
+    const ctx = this.resolveSubstrateContext();
+    return this.withEffectiveHost(() => substrateMigrationStatus(ctx));
+  }
+
   listMigrations(): MigrationFile[] {
     const root = getWorkspaceRoot();
     if (!root) {

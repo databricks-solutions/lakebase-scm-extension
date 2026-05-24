@@ -103,9 +103,9 @@ export function runScenario(ctx: ScenarioContext): void {
       writePythonFile(ctx, 'tests/test_partner.py', TEST_CONTENT);
     });
 
-    it('A5: uv run alembic + pytest passes', function () {
+    it('A5: uv run alembic + pytest passes', async function () {
       this.timeout(120000);
-      runAlembicAndTests(ctx);
+      await runAlembicAndTests(ctx);
     });
 
     it('A6: commits and pushes', () => {

@@ -86,9 +86,9 @@ export function runScenario(ctx: ScenarioContext): void {
       deleteJavaTestFile(ctx, 'BookControllerTest.java');
     });
 
-    it('A5: ./mvnw test passes against Lakebase branch DB', function () {
+    it('A5: ./mvnw test passes against Lakebase branch DB', async function () {
       this.timeout(300000);
-      runMavenTests(ctx);
+      await runMavenTests(ctx);
     });
 
     it('A6: commits and pushes', () => {

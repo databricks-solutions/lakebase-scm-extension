@@ -94,9 +94,9 @@ export function runScenario(ctx: ScenarioContext): void {
       }
     });
 
-    it('A6: ./mvnw test passes against Lakebase branch', function () {
+    it('A6: ./mvnw test passes against Lakebase branch', async function () {
       this.timeout(300000);
-      runMavenTests(ctx);
+      await runMavenTests(ctx);
     });
 
     it('A7: commits and pushes', () => {

@@ -21,6 +21,7 @@ import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
+import { applyMigrations as substrateApplyMigrations } from '@databricks-solutions/lakebase-app-dev-kit';
 
 // ── Context shared across all scenarios ──────────────────────────────
 
@@ -190,22 +191,60 @@ def downgrade() -> None:
   return filename;
 }
 
+/** Parse LAKEBASE_BRANCH_ID out of the project's .env (written by the
+ *  post-checkout hook). Throws with a clear message when missing - the
+ *  substrate's applyMigrations needs an explicit branch. */
+function readBranchFromEnv(projectDir: string): string {
+  const envPath = path.join(projectDir, '.env');
+  if (!fs.existsSync(envPath)) {
+    throw new Error(`Expected ${envPath} to exist; the post-checkout hook should have written it.`);
+  }
+  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+    const m = line.match(/^\s*LAKEBASE_BRANCH_ID\s*=\s*(.+?)\s*$/);
+    if (m) return m[1].replace(/^["']|["']$/g, '');
+  }
+  throw new Error(`LAKEBASE_BRANCH_ID not found in ${envPath}.`);
+}
+
 /**
- * Run Alembic migrations and pytest against the live Lakebase branch database.
- * Sources .env, runs `uv run alembic upgrade head`, then `uv run pytest`.
+ * Apply Alembic migrations via the substrate (FEIP-7091), then run
+ * pytest against the live Lakebase branch database. Replaces the prior
+ * `uv run alembic upgrade head` shell-out so the e2e test exercises
+ * the substrate's `applyMigrations` end-to-end.
+ *
+ * pytest stays as a separate shell because it isn't a migration concern
+ * and needs the .env-derived DATABASE_URL the existing `source .env`
+ * pattern provides.
  */
-export function runAlembicAndTests(ctx: ScenarioContext, timeoutMs = 120000): string {
+export async function runAlembicAndTests(
+  ctx: ScenarioContext,
+  timeoutMs = 120000
+): Promise<string> {
+  const branch = readBranchFromEnv(ctx.projectDir);
+  const priorHost = process.env.DATABRICKS_HOST;
+  process.env.DATABRICKS_HOST = ctx.dbHost;
+  try {
+    const applied = await substrateApplyMigrations({
+      instance: ctx.projectName,
+      branch,
+      projectDir: ctx.projectDir,
+    });
+    console.log(`    [substrate] Alembic applied: ${applied.applied.length} migration(s).`);
+  } finally {
+    if (priorHost === undefined) delete process.env.DATABRICKS_HOST;
+    else process.env.DATABRICKS_HOST = priorHost;
+  }
   try {
     const output = cp.execSync(
-      `bash -c 'set -a; source .env; set +a; uv run alembic upgrade head 2>&1 && uv run pytest tests/ -x -q 2>&1'`,
+      `bash -c 'set -a; source .env; set +a; uv run pytest tests/ -x -q 2>&1'`,
       { cwd: ctx.projectDir, timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: ctx.dbHost } }
     ).toString();
-    console.log('    [uv] Alembic + pytest passed.');
+    console.log('    [uv] pytest passed.');
     return output;
   } catch (err: any) {
     const output = err.stdout?.toString() || err.stderr?.toString() || err.message;
     const lastLines = output.split('\n').slice(-60).join('\n');
-    throw new Error(`Alembic/pytest failed. Last 60 lines:\n${lastLines}`);
+    throw new Error(`pytest failed. Last 60 lines:\n${lastLines}`);
   }
 }
 
