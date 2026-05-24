@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 import { exec } from '../utils/exec';
-import { formatOwnerRepo, parseOwnerRepo } from '../utils/parseRepo';
 // Substrate covers a small, pairing-essential subset of git ops (clone +
 // origin-remote parsing). The remaining ~60 methods on this service are
 // VS Code SCM-flavored / generic git wrappers and stay inline. FEIP-7065.
 import {
+  formatOwnerRepo,
+  parseOwnerRepo,
   cloneRepo as substrateCloneRepo,
   getGitHubUrl as substrateGetGitHubUrl,
   getOwnerRepo as substrateGetOwnerRepo,
