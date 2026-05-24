@@ -1410,7 +1410,8 @@
     "compile": "webpack --mode production",
     "watch": "webpack --mode development --watch",
     "lint": "eslint src --ext ts",
-    "test": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/suite/**/*.test.ts' --timeout 10000",
+    "test": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/suite/**/*.test.ts' 'test/equivalence/**/*.test.ts' --timeout 10000",
+    "test:equivalence": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/equivalence/**/*.test.ts' --timeout 10000",
     "test:integration": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/integration/**/*.test.ts' --timeout 120000"
   },
   "devDependencies": {
