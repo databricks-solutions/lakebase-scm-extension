@@ -118,7 +118,7 @@ function oldGetNewMigrationChanges(repoDir: string, migPath: string): Array<{typ
   return migrationService.parseMigrationSchemaChanges(newMigrations);
 }
 
-describe('R3 Migration Schema Detection — Parity Test', function () {
+describe('R3 Migration Schema Detection – Parity Test', function () {
   this.timeout(120000);
 
   let repo: { fullName: string; dir: string };
@@ -133,7 +133,7 @@ describe('R3 Migration Schema Detection — Parity Test', function () {
     console.log(`    ${repo.fullName}`);
   });
 
-  // ── Phase 1: OLD code — inline SQL parsing ───────────────────────
+  // ── Phase 1: OLD code – inline SQL parsing ───────────────────────
 
   describe('Phase 1: OLD code (inline SQL parsing from graphWebview)', () => {
     it('parses V2 migration: CREATE TABLE orders + order_items + ALTER users', () => {

@@ -37,7 +37,7 @@ function git(cmd: string): string {
   return cp.execSync(`git ${cmd}`, { cwd: repoDir, timeout: 15000 }).toString().trim();
 }
 
-describe('R5 Live Integration — Shared exec through services', function () {
+describe('R5 Live Integration – Shared exec through services', function () {
   this.timeout(180000);
 
   before(async function () {
@@ -90,7 +90,7 @@ describe('R5 Live Integration — Shared exec through services', function () {
     console.log('  Setup complete.\n');
   });
 
-  // ── Scenario 1: GitService exec — real git operations ────────────
+  // ── Scenario 1: GitService exec – real git operations ────────────
   // Tests that the shared exec handles git commands correctly
   // through the GitService layer (no env needed, 60s timeout)
 
@@ -192,7 +192,7 @@ describe('R5 Live Integration — Shared exec through services', function () {
     });
   });
 
-  // ── Scenario 2: LakebaseService exec — auth tagging + env injection ──
+  // ── Scenario 2: LakebaseService exec – auth tagging + env injection ──
   // Tests that lakebaseExec correctly injects DATABRICKS_HOST env
   // and tags auth errors when Lakebase CLI fails
 
@@ -216,7 +216,7 @@ describe('R5 Live Integration — Shared exec through services', function () {
           timeout: 10000,
           env: { ...process.env, DATABRICKS_HOST: 'https://nonexistent.cloud.databricks.com' },
         });
-        // If it doesn't throw, skip — some configs may have a default profile
+        // If it doesn't throw, skip – some configs may have a default profile
       } catch (err: any) {
         // The exec wrapper should produce an error with the command context
         assert.ok(err.message.length > 0, 'Error should have a message');
@@ -224,7 +224,7 @@ describe('R5 Live Integration — Shared exec through services', function () {
     });
 
     it('createProject/deleteProject round-trip uses lakebaseExec', async () => {
-      // The project was already created in setup — verify it exists
+      // The project was already created in setup – verify it exists
       const raw = cp.execSync(
         `databricks postgres list-projects -o json`,
         { timeout: 15000, env: { ...process.env, DATABRICKS_HOST: dbHost } }
@@ -259,7 +259,7 @@ describe('R5 Live Integration — Shared exec through services', function () {
     });
 
     it('stderr appears in error message on failure', async () => {
-      // The shared exec includes stderr in the error — verify
+      // The shared exec includes stderr in the error – verify
       const { exec: sharedExec } = require('../../src/utils/exec');
       try {
         await sharedExec('echo "pg_dump: connection refused" >&2 && false', { cwd: process.cwd() });

@@ -1,10 +1,10 @@
-// SchemaDiffService — VS Code-aware shell over the substrate's schema-diff.
+// SchemaDiffService – VS Code-aware shell over the substrate's schema-diff.
 //
 // FEIP-7065 (publish_and_consume): the core "compare two Lakebase branches"
 // logic lives in @databricks-solutions/lakebase-app-dev-kit. This
 // service keeps:
-//   - Per-branch cache (mtime + age) — pure VS Code perf optimization
-//   - parseMarkdownDiff / generateDiff / readCachedDiff — legacy schema-diff.md
+//   - Per-branch cache (mtime + age) – pure VS Code perf optimization
+//   - parseMarkdownDiff / generateDiff / readCachedDiff – legacy schema-diff.md
 //     support (the scaffolded prepare-schema-diff.sh writes a markdown file;
 //     agents don't need this path)
 //
@@ -220,7 +220,7 @@ export class SchemaDiffService {
   }
 
   /**
-   * Compare a branch's live schema against its parent — routes through the
+   * Compare a branch's live schema against its parent – routes through the
    * substrate's getSchemaDiff, then caches the result against migration mtime.
    */
   async compareBranchSchemas(targetBranchId?: string, force = false): Promise<SchemaDiffResult> {
@@ -234,7 +234,7 @@ export class SchemaDiffService {
       if (cached) { return cached; }
     }
 
-    // Mutate DATABRICKS_HOST to the effective extension host around the call —
+    // Mutate DATABRICKS_HOST to the effective extension host around the call –
     // substrate's CLI invocations read it from env.
     const host = this.lakebaseService.getEffectiveHost();
     const prior = process.env.DATABRICKS_HOST;

@@ -125,7 +125,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       isConnected = authStatus.authenticated;
     } catch { /* ignore */ }
 
-    // GitHub repo — green icon if remote is available, clickable to open
+    // GitHub repo – green icon if remote is available, clickable to open
     try {
       const repoUrl = await this.gitService.getGitHubUrl();
       if (repoUrl) {
@@ -139,7 +139,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       }
     } catch { /* no remote */ }
 
-    // Lakebase project + workspace — green if connected, red if not
+    // Lakebase project + workspace – green if connected, red if not
     const config = getConfig();
     if (config.lakebaseProjectId) {
       let displayName: string | undefined;
@@ -153,7 +153,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       lbItem.description = host;
       lbItem.tooltip = isConnected
         ? `Lakebase Project: ${label}${displayName ? `\nID: ${config.lakebaseProjectId}` : ''}${host ? `\nWorkspace: ${host}` : ''}\nConnected`
-        : `Lakebase Project: ${config.lakebaseProjectId}${host ? `\nWorkspace: ${host}` : ''}\nNot connected — click to login`;
+        : `Lakebase Project: ${config.lakebaseProjectId}${host ? `\nWorkspace: ${host}` : ''}\nNot connected – click to login`;
       if (isConnected) {
         const consoleUrl = await this.lakebaseService.getConsoleUrl();
         lbItem.command = consoleUrl
@@ -315,7 +315,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     const gb = parent.gitBranch;
     const lb = parent.lakebaseBranch;
 
-    // Git tracking — collapsible to show branch files
+    // Git tracking – collapsible to show branch files
     if (gb) {
       const tracking = gb.tracking ? `→ ${gb.tracking}` : '(no remote)';
       const gitItem = new BranchItem(undefined, undefined, 'fileList',
@@ -337,7 +337,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       }
     }
 
-    // Database — collapsible to show tables; inline icons for delete/refresh/console
+    // Database – collapsible to show tables; inline icons for delete/refresh/console
     const isCurrent = parent.itemType === 'currentBranch';
     if (lb) {
       const dbLabel = lb.isDefault ? `production (${lb.state})` : `${lb.branchId} (${lb.state})`;
@@ -371,7 +371,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       details.push(noDbItem);
     }
 
-    // Migrations — collapsible to show individual files
+    // Migrations – collapsible to show individual files
     if (gb) {
       const config = getConfig();
       const migFiles = await this.gitService.listMigrationsOnBranch(gb.name, config.migrationPath);
@@ -418,7 +418,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   private makeTableCommand(tableName: string, changeType: 'new' | 'modified' | 'removed' | 'unchanged'): vscode.Command {
     const branchUri = vscode.Uri.parse(`lakebase-schema-content://branch/${tableName}`);
     if (changeType === 'unchanged') {
-      // No diff needed — just show the DDL
+      // No diff needed – just show the DDL
       return { command: 'vscode.open', title: 'View Table', arguments: [branchUri] };
     }
     // Force a fresh compareBranchSchemas before dispatching vscode.diff, so
@@ -445,7 +445,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       }
 
       // For non-default branches, query the PARENT branch's schema for
-      // comparison (matches Branch Diff Summary semantics — for a feature
+      // comparison (matches Branch Diff Summary semantics – for a feature
       // forked from staging, compare against staging, not production).
       // Falls back to the default branch when source can't be resolved.
       let prodSchema: Map<string, string[]> | undefined; // tableName → sorted column signatures
@@ -468,7 +468,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
               prodSchema.set(t.name, t.columns.map(c => `${c.name}:${c.dataType}`).sort());
             }
           }
-        } catch { /* can't reach parent — skip diff */ }
+        } catch { /* can't reach parent – skip diff */ }
       }
 
       type TableStatus = 'new' | 'modified' | 'unchanged';
@@ -502,7 +502,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           item.iconPath = new vscode.ThemeIcon('diff-modified', new vscode.ThemeColor('charts.yellow'));
           item.description = `modified · ${colCount} columns`;
         } else {
-          // unchanged — always shown on production; on feature branches included below if no diffs
+          // unchanged – always shown on production; on feature branches included below if no diffs
           item.iconPath = new vscode.ThemeIcon('symbol-class', new vscode.ThemeColor('foreground'));
           item.description = colCount > 0 ? `${colCount} columns` : '';
         }
@@ -679,7 +679,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   private async getBranchFiles(branchName: string): Promise<BranchItem[]> {
     const isMain = isMainBranch(branchName, getConfig().trunkBranch);
     if (isMain) {
-      const item = new BranchItem(undefined, undefined, 'detail', 'Default branch — no diff');
+      const item = new BranchItem(undefined, undefined, 'detail', 'Default branch – no diff');
       item.iconPath = new vscode.ThemeIcon('info');
       return [item];
     }

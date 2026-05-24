@@ -75,7 +75,7 @@ export function startRunner(ctx: ScenarioContext, runnerDir: string): RunnerHand
     { cwd: runnerDir, timeout: 60000 }
   );
 
-  // Start in background — ensure JAVA_HOME is set so actions/setup-java uses the local JDK
+  // Start in background – ensure JAVA_HOME is set so actions/setup-java uses the local JDK
   console.log(`    [runner] Starting runner...`);
   const runnerEnv = { ...process.env };
   if (!runnerEnv.JAVA_HOME) {
@@ -136,7 +136,7 @@ export function startRunner(ctx: ScenarioContext, runnerDir: string): RunnerHand
     cleanup: (cleanupCtx: ScenarioContext) => {
       console.log(`    [runner] Cleaning up runner "${runnerName}"...`);
 
-      // 1. Kill the process tree — SIGKILL immediately (no graceful shutdown needed for test runners)
+      // 1. Kill the process tree – SIGKILL immediately (no graceful shutdown needed for test runners)
       try { process.kill(-pid, 'SIGKILL'); } catch {}
       try { process.kill(pid, 'SIGKILL'); } catch {}
 

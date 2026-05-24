@@ -27,7 +27,7 @@ function git(dir: string, cmd: string): string {
   return cp.execSync(`git ${cmd}`, { cwd: dir, timeout: 30000 }).toString().trim();
 }
 
-describe('Self-Hosted Runner — Full CI/CD Pipeline', function () {
+describe('Self-Hosted Runner – Full CI/CD Pipeline', function () {
   this.timeout(600000); // 10 min
 
   let projectDir: string;
@@ -71,7 +71,7 @@ describe('Self-Hosted Runner — Full CI/CD Pipeline', function () {
     console.log(`  Runner type: self-hosted\n`);
 
     const result = await creationService.createProject(input, (step, detail) => {
-      console.log(`    [setup] ${step}${detail ? ' — ' + detail : ''}`);
+      console.log(`    [setup] ${step}${detail ? ' – ' + detail : ''}`);
     });
 
     created = true;

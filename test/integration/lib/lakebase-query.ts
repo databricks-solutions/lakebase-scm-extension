@@ -3,7 +3,7 @@
  *
  * `queryProduction` connects to the default ("production") branch of a
  * Lakebase project via substrate's getConnection() and returns rows
- * formatted to match psql's `-t -A` output — so existing callers that
+ * formatted to match psql's `-t -A` output – so existing callers that
  * compare against literal 't' / 'f' / number strings keep working
  * without changes.
  */

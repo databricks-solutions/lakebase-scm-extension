@@ -1,4 +1,4 @@
-// GitHubService — thin proxy over @databricks-solutions/lakebase-app-dev-kit.
+// GitHubService – thin proxy over @databricks-solutions/lakebase-app-dev-kit.
 //
 // All operations except `listCommits` (extension-specific avatar enrichment
 // for the graph view) and the local `octokit` cache for it now delegate to
@@ -212,7 +212,7 @@ export class GitHubService {
       const octokit = await this.getOctokit();
       const { data } = await octokit.rest.repos.listCommits({ owner, repo, sha, per_page: perPage });
       // Annotating structurally instead of importing the full RestEndpointMethodTypes
-      // chain — Octokit's listCommits response is large enough that tsc gives up
+      // chain – Octokit's listCommits response is large enough that tsc gives up
       // on inferring the element type, surfacing as implicit-any on `c`. We only
       // touch four fields here; declaring just those keeps the surface minimal.
       type CommitItem = {

@@ -204,7 +204,7 @@ class Base(DeclarativeBase):
     pass
 `);
 
-  // ── app/models.py (empty initially — scenarios add models) ──────
+  // ── app/models.py (empty initially – scenarios add models) ──────
   write('app/models.py', `from app.database import Base
 `);
 
@@ -240,7 +240,7 @@ def engine():
 def tables(engine):
     Base.metadata.create_all(engine)
     yield
-    # Don't drop — Alembic owns the schema
+    # Don't drop – Alembic owns the schema
 
 
 @pytest.fixture

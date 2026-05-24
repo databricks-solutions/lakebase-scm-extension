@@ -16,7 +16,7 @@ describe("equivalence: github PR flow", () => {
     restoreSubstrate();
   });
 
-  it("createPullRequest — maps positional args to single object { ownerRepo, headBranch, title, body, baseBranch }", async () => {
+  it("createPullRequest – maps positional args to single object { ownerRepo, headBranch, title, body, baseBranch }", async () => {
     const tracker = stubSubstrate(
       "createPullRequest",
       "https://github.com/acme/repo/pull/42"
@@ -41,7 +41,7 @@ describe("equivalence: github PR flow", () => {
     assert.strictEqual(url, "https://github.com/acme/repo/pull/42");
   });
 
-  it("getPullRequest — passes ownerRepo + headBranch positionally", async () => {
+  it("getPullRequest – passes ownerRepo + headBranch positionally", async () => {
     const tracker = stubSubstrate("getPullRequest", {
       number: 42,
       title: "Add X",
@@ -56,7 +56,7 @@ describe("equivalence: github PR flow", () => {
     assert.deepStrictEqual(result, { number: 42, title: "Add X", state: "open" });
   });
 
-  it("mergePullRequest — defaults to merge + deleteRemoteBranch=true", async () => {
+  it("mergePullRequest – defaults to merge + deleteRemoteBranch=true", async () => {
     const tracker = stubSubstrate("mergePullRequest", "merged-sha");
 
     const result = await service.mergePullRequest("acme/repo", 42);
@@ -71,7 +71,7 @@ describe("equivalence: github PR flow", () => {
     assert.strictEqual(result, "merged-sha");
   });
 
-  it("mergePullRequest — honors method + deleteRemoteBranch overrides", async () => {
+  it("mergePullRequest – honors method + deleteRemoteBranch overrides", async () => {
     const tracker = stubSubstrate("mergePullRequest", "merged-sha");
 
     await service.mergePullRequest("acme/repo", 42, "squash", false);

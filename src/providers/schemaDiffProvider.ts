@@ -26,7 +26,7 @@ export class SchemaDiffProvider {
     }
 
     if (!diff) {
-      // No cache available (or force refresh requested) — run pg_dump
+      // No cache available (or force refresh requested) – run pg_dump
       diff = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -54,7 +54,7 @@ export class SchemaDiffProvider {
     //   3. The spread-copy `diff = { ...diff, inSync: false }` left array
     //      references pointing at the cached result, so subsequent
     //      `diff.modified.push(...)` calls mutated the cached state while
-    //      the cached inSync flag stayed `true` — every re-open of the
+    //      the cached inSync flag stayed `true` – every re-open of the
     //      panel doubled the entries.
     // Trust the live DB query instead; the diff the `compareBranchSchemas`
     // call produces is authoritative. Pending-migration awareness is
@@ -127,7 +127,7 @@ export class SchemaDiffProvider {
 
     if (diff.inSync && !diff.error) {
       const targetName = diff.comparisonBranchName || 'production';
-      schemaHtml += `<p class="sync-msg">No schema changes — branch and ${esc(targetName)} are in sync.</p>`;
+      schemaHtml += `<p class="sync-msg">No schema changes – branch and ${esc(targetName)} are in sync.</p>`;
     }
 
     for (const obj of diff.created) {
@@ -386,7 +386,7 @@ export class SchemaDiffProvider {
       rightCount = 0;
       rightIndependent = `<div class="empty-msg">Table does not exist on branch</div>`;
       // For removed tables, we need to find columns from the diff's raw data
-      // The removed SchemaObject may not have columns populated — use pg_dump prod data if available
+      // The removed SchemaObject may not have columns populated – use pg_dump prod data if available
       const prodCols = obj?.columns || [];
       if (prodCols.length > 0) {
         leftIndependent = `<table><tr><th></th><th>Column</th><th>Type</th></tr>`;
@@ -423,13 +423,13 @@ export class SchemaDiffProvider {
         for (const pc of prodCols) {
           const bc = branchByName.get(pc.name);
           if (!bc) {
-            // Removed column — show on left in red, empty on right
+            // Removed column – show on left in red, empty on right
             rows.push({
               left:  `<tr class="row-removed"><td class="indicator">−</td><td>${esc(pc.name)}</td><td>${esc(pc.dataType)}</td></tr>`,
               right: `<tr class="row-empty"><td class="indicator"></td><td class="muted">&nbsp;</td><td class="muted"></td></tr>`,
             });
           } else if (bc.dataType !== pc.dataType) {
-            // Type changed — yellow on both sides
+            // Type changed – yellow on both sides
             rows.push({
               left:  `<tr class="row-changed"><td class="indicator">~</td><td>${esc(pc.name)}</td><td>${esc(pc.dataType)}</td></tr>`,
               right: `<tr class="row-changed"><td class="indicator">~</td><td>${esc(bc.name)}</td><td>${esc(bc.dataType)}</td></tr>`,
@@ -445,7 +445,7 @@ export class SchemaDiffProvider {
           }
         }
 
-        // Added columns — empty on left, green on right
+        // Added columns – empty on left, green on right
         for (const bc of branchCols) {
           if (!emittedBranch.has(bc.name) && !prodByName.has(bc.name)) {
             rows.push({

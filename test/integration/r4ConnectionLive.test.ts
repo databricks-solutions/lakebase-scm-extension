@@ -30,7 +30,7 @@ function dbcli(args: string): string {
   }).toString();
 }
 
-describe('R4 Live Integration — syncConnection through service layer', function () {
+describe('R4 Live Integration – syncConnection through service layer', function () {
   this.timeout(180000);
 
   before(async function () {
@@ -151,7 +151,7 @@ describe('R4 Live Integration — syncConnection through service layer', functio
         const token2 = JSON.parse(raw2).token;
         assert.ok(token1, 'First call returns token');
         assert.ok(token2, 'Second call returns token');
-        // Tokens may or may not be the same — both should be valid
+        // Tokens may or may not be the same – both should be valid
       } catch (err: any) {
         console.log(`    Sequential credentials: ${err.message.substring(0, 60)}`);
       }

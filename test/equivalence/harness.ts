@@ -9,7 +9,7 @@
 //
 // The adapter contracts re-declared here are the single source of truth
 // for what each proxy is allowed to transform. Drift between contract
-// and proxy fails the deepStrictEqual — deliberately requiring a paired
+// and proxy fails the deepStrictEqual – deliberately requiring a paired
 // update.
 //
 // How the stub works: test/setup.js routes `require('@databricks-...')`
@@ -30,7 +30,7 @@ const SUBSTRATE = substrate as SubstrateMock;
 
 if (!("__overrides" in SUBSTRATE)) {
   throw new Error(
-    "substrate mock not loaded — expected test/mocks/substrate.js via test/setup.js"
+    "substrate mock not loaded – expected test/mocks/substrate.js via test/setup.js"
   );
 }
 
@@ -50,7 +50,7 @@ const TRACKERS = new Map<string, CallTracker>();
  * `returns`. Returns a per-stub call tracker. */
 export function stubSubstrate(name: string, returns: unknown): CallTracker {
   if (!(name in SUBSTRATE.__real)) {
-    throw new Error(`substrate has no export "${name}" — stub target invalid`);
+    throw new Error(`substrate has no export "${name}" – stub target invalid`);
   }
   const tracker: CallTracker = { callCount: 0, calls: [], firstCall: undefined, name };
   const impl =

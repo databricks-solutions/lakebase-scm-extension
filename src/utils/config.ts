@@ -28,7 +28,7 @@ export interface LakebaseConfig {
   /**
    * Optional git branch name paired with the Lakebase `staging` branch.
    * When set and the user is on this branch, `.env` points at the Lakebase
-   * `staging` branch (which must already exist — this hook does NOT
+   * `staging` branch (which must already exist – this hook does NOT
    * auto-create it). Symmetric to `trunkBranch` but targets `staging`
    * instead of the project's default Lakebase branch.
    */
@@ -64,7 +64,7 @@ export interface EnvConfig {
   LAKEBASE_STAGING_BRANCH?: string;
   LAKEBASE_BASE_BRANCH?: string;
   LAKEBASE_GIT_BRANCH_PREFIX?: string;
-  // Legacy — kept for backward compat with existing Java projects
+  // Legacy – kept for backward compat with existing Java projects
   SPRING_DATASOURCE_URL?: string;
   SPRING_DATASOURCE_USERNAME?: string;
   SPRING_DATASOURCE_PASSWORD?: string;
@@ -200,15 +200,15 @@ export function updateEnvConnection(opts: {
   // Build both URL formats
   const pgUrl = opts.host
     ? `postgresql://${encodeURIComponent(opts.username)}:${encodeURIComponent(opts.password)}@${opts.host}:5432/${dbName}?sslmode=require`
-    : '# ENDPOINT_NOT_READY — run Refresh Credentials';
+    : '# ENDPOINT_NOT_READY – run Refresh Credentials';
   const jdbcUrl = opts.host
     ? `jdbc:postgresql://${opts.host}:5432/${dbName}?sslmode=require`
-    : '# ENDPOINT_NOT_READY — run Refresh Credentials';
+    : '# ENDPOINT_NOT_READY – run Refresh Credentials';
 
   const keysToReplace = new Set([
     'LAKEBASE_HOST', 'LAKEBASE_BRANCH_ID',
     'DATABASE_URL', 'DB_USERNAME', 'DB_PASSWORD',
-    // Legacy keys — remove if present so .env stays clean
+    // Legacy keys – remove if present so .env stays clean
     'SPRING_DATASOURCE_URL', 'SPRING_DATASOURCE_USERNAME', 'SPRING_DATASOURCE_PASSWORD',
   ]);
 
@@ -226,7 +226,7 @@ export function updateEnvConnection(opts: {
     lines.pop();
   }
 
-  // Generic names — all languages read these
+  // Generic names – all languages read these
   if (opts.comment) {
     lines.push(opts.comment);
   }

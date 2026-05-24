@@ -33,7 +33,7 @@ function git(cmd: string): string {
   return cp.execSync(`git ${cmd}`, { cwd: projectDir, timeout: 15000 }).toString().trim();
 }
 
-describe('ProjectCreationService — Full End-to-End', function () {
+describe('ProjectCreationService – Full End-to-End', function () {
   this.timeout(180000);
 
   before(async function () {
@@ -70,7 +70,7 @@ describe('ProjectCreationService — Full End-to-End', function () {
       const steps: string[] = [];
       const result = await creationService.createProject(input, (step, detail) => {
         steps.push(step);
-        console.log(`    ${step}${detail ? ' — ' + detail : ''}`);
+        console.log(`    ${step}${detail ? ' – ' + detail : ''}`);
       });
 
       created = true;
@@ -265,7 +265,7 @@ describe('ProjectCreationService — Full End-to-End', function () {
 
     it('pre-push hook runs on push', function () {
       this.timeout(30000);
-      // Push the test commit — pre-push hook should fire
+      // Push the test commit – pre-push hook should fire
       // It may warn about secrets but should not block the push
       try {
         git('push origin main');

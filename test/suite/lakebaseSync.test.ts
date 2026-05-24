@@ -14,7 +14,7 @@ const originalExec = cpModule.exec;
  * cache clearing, credential refresh, etc.)
  */
 
-describe('Lakebase sync — renameBranch', () => {
+describe('Lakebase sync – renameBranch', () => {
   let lakebaseStub: sinon.SinonStubbedInstance<LakebaseService>;
 
   beforeEach(() => {
@@ -47,7 +47,7 @@ describe('Lakebase sync — renameBranch', () => {
   });
 });
 
-describe('Lakebase sync — mergeBranch', () => {
+describe('Lakebase sync – mergeBranch', () => {
   let lakebaseStub: sinon.SinonStubbedInstance<LakebaseService>;
 
   beforeEach(() => {
@@ -86,7 +86,7 @@ describe('Lakebase sync — mergeBranch', () => {
   });
 });
 
-describe('Lakebase sync — deleteRemoteBranch', () => {
+describe('Lakebase sync – deleteRemoteBranch', () => {
   let lakebaseStub: sinon.SinonStubbedInstance<LakebaseService>;
 
   beforeEach(() => {
@@ -198,7 +198,7 @@ describe('Schema cache clearing on git operations', () => {
   });
 });
 
-describe('GitService — getFileAtRef and getMergeBase', () => {
+describe('GitService – getFileAtRef and getMergeBase', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });
@@ -283,7 +283,7 @@ describe('GitService — getFileAtRef and getMergeBase', () => {
   });
 });
 
-describe('GitService — deleteRemoteTag', () => {
+describe('GitService – deleteRemoteTag', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });
@@ -305,7 +305,7 @@ describe('GitService — deleteRemoteTag', () => {
   });
 });
 
-describe('LakebaseService — getConsoleUrl', () => {
+describe('LakebaseService – getConsoleUrl', () => {
   let service: LakebaseService;
 
   beforeEach(() => {

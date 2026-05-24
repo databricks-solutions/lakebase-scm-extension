@@ -1,9 +1,9 @@
 /**
- * Maven project — secrets gitignore guard
+ * Maven project – secrets gitignore guard
  *
  * Substrate's `LAKEBASE_SCAFFOLD_FALLBACK=1` path (set in ecommerceScenarios.test.ts)
  * deploys the bundled static Java/Spring scaffold from
- * templates/project/java/fallback/ — that already ships every file the test
+ * templates/project/java/fallback/ – that already ships every file the test
  * needs (pom.xml with data-jpa+flyway+postgres deps, mvnw, application.properties
  * with spring.config.import for application-local.properties, deterministic
  * DemoApplication.java, DemoApplicationTests, V1 placeholder migration).
@@ -43,7 +43,7 @@ function ensureSecretsGitignored(projectDir: string): void {
       cp.execSync(`git ls-files --error-unmatch "${f}"`, { cwd: projectDir, stdio: 'pipe' });
       cp.execSync(`git rm --cached -q "${f}"`, { cwd: projectDir, stdio: 'pipe' });
     } catch {
-      // Not tracked — nothing to do.
+      // Not tracked – nothing to do.
     }
   }
 }

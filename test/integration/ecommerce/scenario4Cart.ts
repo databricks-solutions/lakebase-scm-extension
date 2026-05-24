@@ -106,7 +106,7 @@ class CartServiceTest {
         Long itemId = item.getId();
         // When
         cartService.removeItem(itemId);
-        // Then — no exception means success
+        // Then – no exception means success
     }
 }
 `,

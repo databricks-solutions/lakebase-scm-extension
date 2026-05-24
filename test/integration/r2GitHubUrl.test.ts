@@ -6,9 +6,9 @@
  * Compare: Results must be identical
  *
  * Tests all 3 call sites:
- * 1. schemaScmProvider.ts:313 — Recent Merges GitHub commit URLs
- * 2. branchTreeProvider.ts:103 — Project view repo name/URL
- * 3. branchTreeProvider.ts:140 — Project view GitHub link
+ * 1. schemaScmProvider.ts:313 – Recent Merges GitHub commit URLs
+ * 2. branchTreeProvider.ts:103 – Project view repo name/URL
+ * 3. branchTreeProvider.ts:140 – Project view GitHub link
  *
  * Run: npm run test:integration -- --grep "R2 GitHub URL"
  */
@@ -83,7 +83,7 @@ function oldGetMergeCommitUrls(cwd: string): string[] {
 
 // ── Tests ──────────────────────────────────────────────────────────
 
-describe('R2 GitHub URL Resolution — Parity Test', function () {
+describe('R2 GitHub URL Resolution – Parity Test', function () {
   this.timeout(120000);
 
   let oldRepo: { fullName: string; dir: string };
@@ -152,7 +152,7 @@ describe('R2 GitHub URL Resolution — Parity Test', function () {
 
   describe('Phase 2: NEW code (GitService.getGitHubUrl)', () => {
     it('resolves GitHub URL', async () => {
-      // GitService uses getWorkspaceRoot() internally — we need to work around that
+      // GitService uses getWorkspaceRoot() internally – we need to work around that
       // by calling the raw method logic directly since we can't mock workspace in integration
       const url = cp.execSync('git remote get-url origin', { cwd: newRepo.dir, timeout: 5000 }).toString().trim()
         .replace(/\.git$/, '')
