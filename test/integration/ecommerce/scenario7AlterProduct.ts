@@ -1,5 +1,5 @@
 /**
- * Scenario 7: Schema Evolution — ALTER TABLE
+ * Scenario 7: Schema Evolution, ALTER TABLE
  *
  * Product reviews feature needs rating columns on the product table.
  * Tests: ALTER TABLE ADD COLUMN (no new tables), modifying existing entity.

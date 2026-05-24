@@ -18,7 +18,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
     restoreSubstrate();
   });
 
-  it("ProjectCreationService.createProject — forwards full ProjectCreationInput to substrate", async () => {
+  it("ProjectCreationService.createProject, forwards full ProjectCreationInput to substrate", async () => {
     const tracker = stubSubstrate("createProject", {
       projectDir: "/tmp/demo",
       githubRepoUrl: "https://github.com/acme/demo",
@@ -62,7 +62,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
     assert.strictEqual(result.githubRepoUrl, "https://github.com/acme/demo");
   });
 
-  it("ScaffoldService.scaffoldAll — renames hooksInstalled → hooks in result", async () => {
+  it("ScaffoldService.scaffoldAll, renames hooksInstalled → hooks in result", async () => {
     const tracker = stubSubstrate("scaffoldAll", {
       scripts: ["deploy.sh"],
       workflows: ["pr.yml"],
@@ -90,7 +90,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
     });
   });
 
-  it("ScaffoldService.scaffoldAll — defaults language=java, runnerType=self-hosted when not provided", async () => {
+  it("ScaffoldService.scaffoldAll, defaults language=java, runnerType=self-hosted when not provided", async () => {
     const tracker = stubSubstrate("scaffoldAll", {
       scripts: [],
       workflows: [],
@@ -105,7 +105,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
     assert.strictEqual(args.runnerType, "self-hosted");
   });
 
-  it("RunnerService.stopRunner — pure delegate, positional projectName", () => {
+  it("RunnerService.stopRunner, pure delegate, positional projectName", () => {
     const tracker = stubSubstrate("stopRunner", undefined);
     const runner = new RunnerService(new GitHubService());
 
@@ -115,7 +115,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
     assert.strictEqual(tracker.firstCall!.args[0], "demo-runner");
   });
 
-  it("LakebaseService.getCredential — forwards { instance, branch }", async () => {
+  it("LakebaseService.getCredential, forwards { instance, branch }", async () => {
     const tracker = stubSubstrate("getCredential", {
       token: "fake-token",
       email: "u@example.com",

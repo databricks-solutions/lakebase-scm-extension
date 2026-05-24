@@ -11,7 +11,7 @@ import { GitHubService } from '../../src/services/githubService';
 const cpModule = require('child_process');
 const originalExec = cpModule.exec;
 
-describe('Merge Awareness — main branch view', () => {
+describe('Merge Awareness, main branch view', () => {
   let provider: SchemaScmProvider;
   let gitStub: sinon.SinonStubbedInstance<GitService>;
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
@@ -57,7 +57,7 @@ describe('Merge Awareness — main branch view', () => {
     return { uid: `br-${id}`, name: `projects/p1/branches/${id}`, branchId: id, state, isDefault };
   }
 
-  describe('Lakebase group — production status', () => {
+  describe('Lakebase group, production status', () => {
     it('shows production branch status on main', async () => {
       lakebaseStub.getDefaultBranch.resolves(makeBranch('br-prod-123', 'READY', true));
       lakebaseStub.getConsoleUrl.returns('https://workspace.databricks.com/lakebase/projects/p1/branches/br-prod-123');
@@ -212,7 +212,7 @@ describe('Merge Awareness — main branch view', () => {
   });
 });
 
-describe('GitHubService — mergePullRequest', () => {
+describe('GitHubService, mergePullRequest', () => {
   afterEach(() => {
     sinon.restore();
   });
@@ -239,7 +239,7 @@ describe('GitHubService — mergePullRequest', () => {
   });
 });
 
-describe('GitHubService — getPullRequest', () => {
+describe('GitHubService, getPullRequest', () => {
   afterEach(() => {
     sinon.restore();
   });
@@ -273,7 +273,7 @@ describe('GitHubService — getPullRequest', () => {
   });
 });
 
-describe('GitHubService — getPullRequestComments', () => {
+describe('GitHubService, getPullRequestComments', () => {
   afterEach(() => {
     sinon.restore();
   });
@@ -296,7 +296,7 @@ describe('GitHubService — getPullRequestComments', () => {
   });
 });
 
-describe('GitService — getAheadBehind', () => {
+describe('GitService, getAheadBehind', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });

@@ -10,7 +10,7 @@ import { SchemaScmProvider } from '../../src/providers/schemaScmProvider';
 import { GitHubService } from '../../src/services/githubService';
 import { SchemaDiffProvider } from '../../src/providers/schemaDiffProvider';
 
-describe('Branch Review — full branch scope', () => {
+describe('Branch Review, full branch scope', () => {
   let gitStub: sinon.SinonStubbedInstance<GitService>;
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
   let schemaDiffStub: sinon.SinonStubbedInstance<SchemaDiffService>;
@@ -102,7 +102,7 @@ describe('Branch Review — full branch scope', () => {
     });
   });
 
-  describe('Lakebase group — live database diff (requires lakebaseService)', () => {
+  describe('Lakebase group, live database diff (requires lakebaseService)', () => {
     it('shows empty lakebase group when no lakebaseService provided', async () => {
       gitStub.getStagedChanges.resolves([]);
       gitStub.getUnstagedChanges.resolves([
@@ -113,7 +113,7 @@ describe('Branch Review — full branch scope', () => {
       provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, undefined, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
 
-      // Migration file parsing is no longer used — schema comes from live DB diff
+      // Migration file parsing is no longer used, schema comes from live DB diff
       assert.strictEqual(migrationStub.parseMigrationSchemaChanges.called, false);
     });
 
@@ -128,7 +128,7 @@ describe('Branch Review — full branch scope', () => {
     });
   });
 
-  describe('Combined view — code changes + live DB schema', () => {
+  describe('Combined view, code changes + live DB schema', () => {
     it('shows unstaged code changes; lakebase group empty without lakebaseService', async () => {
       gitStub.getStagedChanges.resolves([]);
       gitStub.getUnstagedChanges.resolves([
@@ -147,7 +147,7 @@ describe('Branch Review — full branch scope', () => {
   });
 });
 
-describe('Branch Diff webview — migration fallback', () => {
+describe('Branch Diff webview, migration fallback', () => {
   let schemaDiffStub: sinon.SinonStubbedInstance<SchemaDiffService>;
   let gitStub: sinon.SinonStubbedInstance<GitService>;
   let migrationStub: sinon.SinonStubbedInstance<SchemaMigrationService>;
@@ -226,7 +226,7 @@ describe('Branch Diff webview — migration fallback', () => {
   });
 });
 
-describe('SchemaMigrationService — parseMigrationSchemaChanges', () => {
+describe('SchemaMigrationService, parseMigrationSchemaChanges', () => {
   let service: SchemaMigrationService;
   let tmpDir: string;
 

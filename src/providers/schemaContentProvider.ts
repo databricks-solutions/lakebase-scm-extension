@@ -20,7 +20,7 @@ export class SchemaContentProvider implements vscode.TextDocumentContentProvider
     const side = uri.authority; // 'production' or 'branch'
     const tableName = uri.path.startsWith('/') ? uri.path.substring(1) : uri.path;
 
-    // Prefer cached diff (fast). When empty, run a live compare — this also
+    // Prefer cached diff (fast). When empty, run a live compare, this also
     // primes the cache for the SCM provider and other callers. On error we
     // still fall through to the migration-file parser below for offline/DDL-only.
     let diff = this.schemaDiffService.getCachedDiff();
@@ -49,7 +49,7 @@ export class SchemaContentProvider implements vscode.TextDocumentContentProvider
 
         // If the table is "created" on the branch, it doesn't exist on production
         const created = diff.created.find(t => t.name === tableName);
-        if (created) { return ''; } // empty — new table
+        if (created) { return ''; } // empty, new table
 
         // For unchanged or removed tables, production = branch
         const branchTable = diff.branchTables.find(t => t.name === tableName);

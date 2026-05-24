@@ -41,7 +41,7 @@ function git(cmd: string): string {
   return cp.execSync(`git ${cmd}`, { cwd: repoDir, timeout: 15000 }).toString().trim();
 }
 
-describe('ScaffoldService — Live Integration', function () {
+describe('ScaffoldService, Live Integration', function () {
   this.timeout(180000);
 
   before(async function () {
@@ -227,11 +227,11 @@ describe('ScaffoldService — Live Integration', function () {
       git('add -A');
       git('commit -m "Add scaffold"');
 
-      // Create and switch branch — post-checkout should fire
+      // Create and switch branch, post-checkout should fire
       // It may warn about missing .env / Lakebase config but should not fail
       try {
         const output = cp.execSync('git checkout -b feature/test-hook 2>&1', { cwd: repoDir, timeout: 15000 }).toString();
-        // Hook runs but may output warnings — that's OK
+        // Hook runs but may output warnings, that's OK
         assert.ok(true, 'Branch switch succeeded');
       } catch (err: any) {
         // Post-checkout hook failures are non-fatal in git
@@ -253,7 +253,7 @@ describe('ScaffoldService — Live Integration', function () {
         const msg = git('log --oneline -1');
         assert.ok(msg.includes('Test commit'), 'Commit message preserved');
       } catch (err: any) {
-        // Hook may fail if no .env — that's a warning, not a blocker
+        // Hook may fail if no .env, that's a warning, not a blocker
         // Force commit without hooks if needed
         git('commit --no-verify -m "Test commit (hook skipped)"');
       }

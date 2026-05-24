@@ -5,7 +5,7 @@ export const GITHUB_SCOPES = ['repo', 'workflow', 'delete_repo'] as const;
 /**
  * GitHub authentication for Octokit.
  *
- * Primary: VS Code `authentication.getSession('github', …)` — uses whichever
+ * Primary: VS Code `authentication.getSession('github', …)`, uses whichever
  * GitHub account is signed into the editor.
  *
  * Fallback: `lakebaseSync.githubToken` setting or `GITHUB_TOKEN` env var

@@ -1,5 +1,5 @@
 /**
- * Scenario 8: Schema Evolution — DROP TABLE (Remove Book)
+ * Scenario 8: Schema Evolution, DROP TABLE (Remove Book)
  *
  * Business pivot: books are discontinued. Remove the book entity entirely.
  * Tests: DROP TABLE, deleting Java files, verifying no collateral damage.
@@ -92,7 +92,7 @@ export function runScenario(ctx: ScenarioContext): void {
     });
 
     it('A6: commits and pushes', () => {
-      commitAndPush(ctx, 'Remove book entity — discontinued product line', BRANCH);
+      commitAndPush(ctx, 'Remove book entity, discontinued product line', BRANCH);
       // Verify git diff shows 4 deletions + 1 addition
       const stat = git(ctx, `diff --stat origin/main...${BRANCH}`);
       assert.ok(stat.includes('V9__drop_book_table.sql'), 'Should show migration file');

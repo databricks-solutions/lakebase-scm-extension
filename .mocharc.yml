@@ -1,7 +1,7 @@
 require:
   - test/setup.js
   - ts-node/register
-# spec is intentionally NOT set here — each npm script (test,
+# spec is intentionally NOT set here, each npm script (test,
 # test:equivalence, test:integration) provides its own glob. A spec
 # here would merge with CLI args and broaden the test set.
 timeout: 10000
