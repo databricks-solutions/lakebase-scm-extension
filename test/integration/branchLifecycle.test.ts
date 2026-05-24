@@ -4,7 +4,7 @@
  * Tests the new create/delete branch features against LIVE Lakebase APIs.
  *
  * Prerequisites:
- * - `databricks auth login`, authenticated to a workspace with Lakebase
+ * - `databricks auth login` – authenticated to a workspace with Lakebase
  * - DATABRICKS_HOST env var or ~/.databrickscfg configured
  * - LAKEBASE_PROJECT_ID env var or .env with a valid project
  *

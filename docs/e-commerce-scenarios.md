@@ -1,4 +1,4 @@
-# E-Commerce Backend, Iterative Feature Development Scenarios
+# E-Commerce Backend – Iterative Feature Development Scenarios
 
 ## Overview
 
@@ -41,7 +41,7 @@ Every scenario follows this execution outline. Scenario-specific details (branch
 | A6 | **Push** | `git push -u origin {branch-name}` |
 | | | pre-push hook fires → syncs GitHub secrets for CI |
 
-### Phase B: CI/CD Pipeline, PR Workflow (pr.yml, self-hosted runner)
+### Phase B: CI/CD Pipeline – PR Workflow (pr.yml, self-hosted runner)
 
 Triggered automatically when the PR is created or updated.
 
@@ -119,10 +119,10 @@ CREATE TABLE IF NOT EXISTS book (
 ```
 
 **Java files (Step A2):**
-- `model/Book.java`: JPA entity (id, title, price, publishDate)
-- `repository/BookRepository.java`: extends JpaRepository
-- `service/BookService.java`: findAll, findById, save, delete
-- `controller/BookController.java`: GET /books, POST /books, GET /books/{id}, DELETE /books/{id}
+- `model/Book.java` – JPA entity (id, title, price, publishDate)
+- `repository/BookRepository.java` – extends JpaRepository
+- `service/BookService.java` – findAll, findById, save, delete
+- `controller/BookController.java` – GET /books, POST /books, GET /books/{id}, DELETE /books/{id}
 
 **Commit message (Step A5):** `"Add book entity with CRUD"`
 
@@ -154,10 +154,10 @@ CREATE TABLE IF NOT EXISTS product (
 ```
 
 **Java files (Step A2):**
-- `model/Product.java`: @Entity with NOT NULL, DEFAULT
-- `repository/ProductRepository.java`: findByCategory, findByTitleContaining
-- `service/ProductService.java`: CRUD + updateStock
-- `controller/ProductController.java`: full REST API
+- `model/Product.java` – @Entity with NOT NULL, DEFAULT
+- `repository/ProductRepository.java` – findByCategory, findByTitleContaining
+- `service/ProductService.java` – CRUD + updateStock
+- `controller/ProductController.java` – full REST API
 
 **Commit message:** `"Add product catalog with inventory"`
 
@@ -185,10 +185,10 @@ CREATE TABLE IF NOT EXISTS customer (
 ```
 
 **Java files (Step A2):**
-- `model/Customer.java`: @Column(unique=true) on email
-- `repository/CustomerRepository.java`: findByEmail
-- `service/CustomerService.java`: register, findByEmail
-- `controller/CustomerController.java`: POST /customers, GET /customers/{id}
+- `model/Customer.java` – @Column(unique=true) on email
+- `repository/CustomerRepository.java` – findByEmail
+- `service/CustomerService.java` – register, findByEmail
+- `controller/CustomerController.java` – POST /customers, GET /customers/{id}
 
 **Commit message:** `"Add customer registration with email uniqueness"`
 
@@ -224,12 +224,12 @@ CREATE INDEX IF NOT EXISTS idx_cart_item_product_id ON cart_item(product_id);
 ```
 
 **Java files (Step A2):**
-- `model/Cart.java`: @OneToOne with Customer
-- `model/CartItem.java`: @ManyToOne to Cart + Product
-- `repository/CartRepository.java`: findByCustomerId
+- `model/Cart.java` – @OneToOne with Customer
+- `model/CartItem.java` – @ManyToOne to Cart + Product
+- `repository/CartRepository.java` – findByCustomerId
 - `repository/CartItemRepository.java`
-- `service/CartService.java`: getOrCreateCart, addItem, removeItem, clearCart
-- `controller/CartController.java`: GET /cart, POST /cart/items, DELETE /cart/items/{id}
+- `service/CartService.java` – getOrCreateCart, addItem, removeItem, clearCart
+- `controller/CartController.java` – GET /cart, POST /cart/items, DELETE /cart/items/{id}
 
 **Commit message:** `"Add shopping cart with customer and product references"`
 
@@ -268,14 +268,14 @@ CREATE INDEX IF NOT EXISTS idx_order_item_order_id ON order_item(order_id);
 ```
 
 **Java files (Step A2):**
-- `model/Order.java`: @Enumerated for status
-- `model/OrderItem.java`: price snapshot at order time
-- `model/OrderStatus.java`: enum: PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED
-- `repository/OrderRepository.java`: findByCustomerId
+- `model/Order.java` – @Enumerated for status
+- `model/OrderItem.java` – price snapshot at order time
+- `model/OrderStatus.java` – enum: PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED
+- `repository/OrderRepository.java` – findByCustomerId
 - `repository/OrderItemRepository.java`
-- `service/OrderService.java`: placeOrder (validate stock, convert cart), updateStatus
+- `service/OrderService.java` – placeOrder (validate stock, convert cart), updateStatus
 - `service/InsufficientStockException.java`
-- `controller/OrderController.java`: POST /orders, GET /orders/{id}, PATCH /orders/{id}/status
+- `controller/OrderController.java` – POST /orders, GET /orders/{id}, PATCH /orders/{id}/status
 
 **Commit message:** `"Add order processing with stock validation"`
 
@@ -311,12 +311,12 @@ CREATE INDEX IF NOT EXISTS idx_wishlist_item_wishlist_id ON wishlist_item(wishli
 ```
 
 **Java files (Step A2):**
-- `model/Wishlist.java`: @OneToOne Customer
-- `model/WishlistItem.java`: compound UNIQUE
-- `repository/WishlistRepository.java`: findByCustomerId
+- `model/Wishlist.java` – @OneToOne Customer
+- `model/WishlistItem.java` – compound UNIQUE
+- `repository/WishlistRepository.java` – findByCustomerId
 - `repository/WishlistItemRepository.java`
-- `service/WishlistService.java`: add, remove, moveToCart
-- `controller/WishlistController.java`: GET /wishlist, POST /wishlist/items, POST /wishlist/items/{id}/move-to-cart
+- `service/WishlistService.java` – add, remove, moveToCart
+- `controller/WishlistController.java` – GET /wishlist, POST /wishlist/items, POST /wishlist/items/{id}/move-to-cart
 
 **Commit message:** `"Add wishlist with move-to-cart functionality"`
 
@@ -326,7 +326,7 @@ CREATE INDEX IF NOT EXISTS idx_wishlist_item_wishlist_id ON wishlist_item(wishli
 
 ---
 
-## Scenario 7: Schema Evolution, ALTER TABLE
+## Scenario 7: Schema Evolution – ALTER TABLE
 
 **Story:** Product reviews feature needs rating columns on the product table.
 
@@ -338,9 +338,9 @@ ALTER TABLE product ADD COLUMN average_rating DECIMAL(3, 2) DEFAULT 0.00;
 ALTER TABLE product ADD COLUMN review_count INTEGER DEFAULT 0;
 ```
 
-**Java update (Step A2):** Modify `model/Product.java`, add `averageRating` and `reviewCount` fields
+**Java update (Step A2):** Modify `model/Product.java` – add `averageRating` and `reviewCount` fields
 
-**Note:** No new files, only modifying one existing Java file + adding migration. This tests ALTER TABLE (no CREATE).
+**Note:** No new files – only modifying one existing Java file + adding migration. This tests ALTER TABLE (no CREATE).
 
 **Commit message:** `"Add product rating and review count columns"`
 
@@ -350,9 +350,9 @@ ALTER TABLE product ADD COLUMN review_count INTEGER DEFAULT 0;
 
 ---
 
-## Scenario 8: Schema Evolution, DROP TABLE (Remove Book)
+## Scenario 8: Schema Evolution – DROP TABLE (Remove Book)
 
-**Story:** Business pivot, books are discontinued. Remove the book entity entirely.
+**Story:** Business pivot – books are discontinued. Remove the book entity entirely.
 
 **Branch:** `feature/remove-book`
 **Migration:** `V9__drop_book_table.sql`
@@ -369,7 +369,7 @@ DROP TABLE IF EXISTS book;
 
 **Note:** Git diff shows 1 file added (migration), 4 files deleted (Java). Tests DROP TABLE and entity removal.
 
-**Commit message:** `"Remove book entity, discontinued product line"`
+**Commit message:** `"Remove book entity – discontinued product line"`
 
 **Post-merge verification:**
 - `book` table does **NOT** exist on production
@@ -407,7 +407,7 @@ test/integration/ecommerce/
 All tests run through the existing Mocha integration test harness defined in `package.json`:
 
 ```bash
-# Run all e-commerce scenarios (full suite, 3 scenarios)
+# Run all e-commerce scenarios (full suite – 3 scenarios)
 npm run test:integration -- --grep "E-Commerce"
 
 # Run all integration suites in parallel (e-commerce, python, runner)
@@ -430,9 +430,9 @@ TS_NODE_TRANSPILE_ONLY=1 mocha \
 ```
 
 Key flags:
-- `TS_NODE_TRANSPILE_ONLY=1`: avoids Node 22 ESM resolution conflicts with the `vscode` mock
-- `test/setup.js`: sets up the `vscode` module mock before any imports
-- `--timeout 120000`: 2 min default per test (individual tests override with `this.timeout()`)
+- `TS_NODE_TRANSPILE_ONLY=1` – avoids Node 22 ESM resolution conflicts with the `vscode` mock
+- `test/setup.js` – sets up the `vscode` module mock before any imports
+- `--timeout 120000` – 2 min default per test (individual tests override with `this.timeout()`)
 
 ### Prerequisites
 
@@ -447,28 +447,28 @@ Before running, ensure:
 
 ### Architecture
 
-#### runner.ts, Ephemeral Self-Hosted Runner
+#### runner.ts – Ephemeral Self-Hosted Runner
 
 Manages the lifecycle of a GitHub Actions runner that executes pr.yml and merge.yml workflows:
 
-- `ensureRunnerBinary()`: Downloads the runner archive to `~/.cache/github-actions-runner/` (cached across runs), extracts to a unique temp dir.
-- `startRunner(ctx, runnerDir)`: Gets a registration token via `gh api`, configures the runner (non-ephemeral, since we need it for 16+ jobs), starts `./run.sh` in background, polls until the runner appears online.
-- Returns `RunnerHandle` with `cleanup(ctx)`, kills process, deregisters runner via API, removes temp dir.
+- `ensureRunnerBinary()` – Downloads the runner archive to `~/.cache/github-actions-runner/` (cached across runs), extracts to a unique temp dir.
+- `startRunner(ctx, runnerDir)` – Gets a registration token via `gh api`, configures the runner (non-ephemeral, since we need it for 16+ jobs), starts `./run.sh` in background, polls until the runner appears online.
+- Returns `RunnerHandle` with `cleanup(ctx)` – kills process, deregisters runner via API, removes temp dir.
 
 Runner binary: `actions-runner-osx-arm64-{version}.tar.gz` (auto-detects platform).
 
-#### mavenProject.ts, Maven/Spring Boot Scaffolding
+#### mavenProject.ts – Maven/Spring Boot Scaffolding
 
 `scaffoldMavenProject(projectDir)` writes a minimal but real Maven project so `./mvnw flyway:migrate` and `./mvnw test` work in the CI workflows:
 
-- **pom.xml**: Spring Boot 3.5.5, JPA, Flyway 10.22.0, PostgreSQL driver, Flyway Maven plugin with `baselineOnMigrate`
-- **mvnw**: Downloaded from Apache Maven Wrapper repo
-- **.mvn/wrapper/maven-wrapper.properties**: Maven 3.9.9
-- **DemoApplication.java**: `@SpringBootApplication` main class
-- **application.properties**: datasource from env vars, `ddl-auto=validate`, flyway enabled
-- **DemoApplicationTests.java**: minimal `contextLoads()` test
+- **pom.xml** – Spring Boot 3.5.5, JPA, Flyway 10.22.0, PostgreSQL driver, Flyway Maven plugin with `baselineOnMigrate`
+- **mvnw** – Downloaded from Apache Maven Wrapper repo
+- **.mvn/wrapper/maven-wrapper.properties** – Maven 3.9.9
+- **DemoApplication.java** – `@SpringBootApplication` main class
+- **application.properties** – datasource from env vars, `ddl-auto=validate`, flyway enabled
+- **DemoApplicationTests.java** – minimal `contextLoads()` test
 
-#### helpers.ts, Shared Functions
+#### helpers.ts – Shared Functions
 
 No test code. Exports functions consumed by all 8 scenario files:
 
@@ -483,9 +483,9 @@ No test code. Exports functions consumed by all 8 scenario files:
 | **Schema** | `parseMigrationSql` | Delegates to `SchemaMigrationService.parseSql()` |
 | **Cleanup** | `deleteLakebaseBranch` | Non-fatal branch deletion via `databricks` CLI |
 
-All functions take a `ScenarioContext` as first argument, a shared object containing project name, directory, GitHub user, Lakebase host, and service instances.
+All functions take a `ScenarioContext` as first argument – a shared object containing project name, directory, GitHub user, Lakebase host, and service instances.
 
-#### scenarioN*.ts, Scenario Files
+#### scenarioN*.ts – Scenario Files
 
 Each scenario file exports a single function:
 ```typescript
@@ -520,12 +520,12 @@ describe('Phase D: Verification')
 
 The runner handles all Flyway/Lakebase operations via the actual CI workflows. Tests just wait for workflows to complete and verify the result.
 
-#### ecommerceScenarios.test.ts, Orchestrator
+#### ecommerceScenarios.test.ts – Orchestrator
 
 The single `.test.ts` file that Mocha discovers. Structure:
 
 ```
-describe('E-Commerce Backend, 8 Iterative Scenarios')
+describe('E-Commerce Backend – 8 Iterative Scenarios')
   before()
     → ProjectCreationService.createProject()
     → scaffoldMavenProject()   ← pom.xml, mvnw, DemoApplication.java
@@ -572,7 +572,7 @@ describe('E-Commerce Backend, 8 Iterative Scenarios')
 
 | Test Point | What Happens |
 |------------|-------------|
-| A3-verify (parseSql) | `SchemaMigrationService.parseSql()`, static SQL parser |
+| A3-verify (parseSql) | `SchemaMigrationService.parseSql()` – static SQL parser |
 | B1 (create PR) | `gh pr create` via helpers |
 | B2 (pr.yml succeeds) | Self-hosted runner executes pr.yml: Lakebase branch creation, Flyway migrate on branch, `./mvnw test`, schema diff, PR comment |
 | C2 (merge PR) | `gh pr merge --admin` via helpers |

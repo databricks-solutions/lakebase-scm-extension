@@ -37,7 +37,7 @@ interface ConnectionResult {
   hasToken: boolean;
 }
 
-describe('R4 Lakebase Connection Sync, Parity Test', function () {
+describe('R4 Lakebase Connection Sync – Parity Test', function () {
   this.timeout(120000);
 
   before(async function () {
@@ -66,14 +66,14 @@ describe('R4 Lakebase Connection Sync, Parity Test', function () {
     }
   });
 
-  // ── Phase 1: OLD code, inline getEndpoint + getCredential ───────
+  // ── Phase 1: OLD code – inline getEndpoint + getCredential ───────
 
   describe('Phase 1: OLD code (inline pattern from extension.ts)', function () {
     before(function () { if (!projectCreated || !defaultBranchName) { this.skip(); } });
 
     let oldResult: ConnectionResult;
 
-    it('step 1: getEndpoint, list-endpoints for branch', function () {
+    it('step 1: getEndpoint – list-endpoints for branch', function () {
       this.timeout(15000);
       try {
         const raw = dbcli(`list-endpoints "${defaultBranchName}" -o json`);
@@ -82,7 +82,7 @@ describe('R4 Lakebase Connection Sync, Parity Test', function () {
         if (ep?.status?.hosts?.host) {
           oldResult = { host: ep.status.hosts.host, branchId: defaultBranchName.split('/branches/').pop() || '', username: '', hasToken: false };
         } else {
-          console.log('    Endpoint not active, no host yet');
+          console.log('    Endpoint not active – no host yet');
           oldResult = { host: '', branchId: defaultBranchName.split('/branches/').pop() || '', username: '', hasToken: false };
         }
         assert.ok(true, 'list-endpoints succeeded');
@@ -93,7 +93,7 @@ describe('R4 Lakebase Connection Sync, Parity Test', function () {
       }
     });
 
-    it('step 2: getCredential, generate-database-credential', function () {
+    it('step 2: getCredential – generate-database-credential', function () {
       this.timeout(15000);
       if (!oldResult.branchId) { this.skip(); return; }
       try {
@@ -123,7 +123,7 @@ describe('R4 Lakebase Connection Sync, Parity Test', function () {
     });
   });
 
-  // ── Phase 2: NEW code, same operations, composed ────────────────
+  // ── Phase 2: NEW code – same operations, composed ────────────────
 
   describe('Phase 2: NEW code (syncConnection pattern)', function () {
     before(function () { if (!projectCreated || !defaultBranchName) { this.skip(); } });
@@ -180,12 +180,12 @@ describe('R4 Lakebase Connection Sync, Parity Test', function () {
     });
 
     it('same endpoint host resolution path', function () {
-      // Both phases call list-endpoints on the same branch, identical CLI command
+      // Both phases call list-endpoints on the same branch – identical CLI command
       assert.ok(true, 'Same CLI path');
     });
 
     it('same credential resolution path', function () {
-      // Both phases call generate-database-credential + current-user me, identical
+      // Both phases call generate-database-credential + current-user me – identical
       assert.ok(true, 'Same CLI path');
     });
 

@@ -1,6 +1,6 @@
 // Thin proxy: re-exports from @databricks-solutions/lakebase-app-dev-kit.
 // Substrate source: scripts/lakebase/spring-initializr.ts.
-// FEIP-7065 (publish_and_consume), extension consumes substrate via the
+// FEIP-7065 (publish_and_consume) – extension consumes substrate via the
 // shared package's CJS build so webpack can bundle without ESM-interop pain.
 
 export {

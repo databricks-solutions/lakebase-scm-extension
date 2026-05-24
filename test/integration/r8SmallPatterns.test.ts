@@ -56,7 +56,7 @@ const STATUS_COLORS = {
   created: 'charts.green', removed: 'charts.red',
 } as const;
 
-describe('R8 Small Patterns, Parity + Live', function () {
+describe('R8 Small Patterns – Parity + Live', function () {
   this.timeout(120000);
 
   before(async function () {

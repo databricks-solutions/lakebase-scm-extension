@@ -6,7 +6,7 @@ import { GitService } from '../../src/services/gitService';
 const cpModule = require('child_process');
 const originalExec = cpModule.exec;
 
-describe('GitService, extended operations', () => {
+describe('GitService – extended operations', () => {
   beforeEach(() => {
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/fake/root' } }];
   });

@@ -64,7 +64,7 @@ export class SchemaMigrationService {
 
   /**
    * Parse raw SQL to extract schema changes (CREATE TABLE, ALTER TABLE, DROP TABLE).
-   * Accepts a SQL string directly, no file I/O needed.
+   * Accepts a SQL string directly – no file I/O needed.
    */
   static parseSql(sql: string): MigrationSchemaChange[] {
     const changes: MigrationSchemaChange[] = [];

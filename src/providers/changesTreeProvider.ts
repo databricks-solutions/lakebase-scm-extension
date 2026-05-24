@@ -105,7 +105,7 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeIt
     items.push(codeItem);
 
     const lakebase = this.scmProvider.getLakebase();
-    // Filter out status items (lakebase-prod://status/*), only count actual schema changes
+    // Filter out status items (lakebase-prod://status/*) – only count actual schema changes
     const schemaChanges = lakebase.filter(s => !s.resourceUri.toString().includes('lakebase-prod://'));
     const lbItem = new ChangeTreeItem(
       'Lakebase',
@@ -290,7 +290,7 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<ChangeTreeIt
     return items;
   }
 
-  /** Single file item, matches SCM rendering. No description in tree mode (folder provides context). */
+  /** Single file item – matches SCM rendering. No description in tree mode (folder provides context). */
   private makeFileItem(state: vscode.SourceControlResourceState, group: 'staged' | 'unstaged', root: string): ChangeTreeItem {
     const item = new ChangeTreeItem(
       state.resourceUri.path.split('/').pop() || '',

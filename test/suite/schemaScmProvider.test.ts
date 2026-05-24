@@ -76,7 +76,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
     });
   });
 
-  describe('refresh, staged and changes groups', () => {
+  describe('refresh – staged and changes groups', () => {
     it('populates staged group from git index', async () => {
       gitStub.getStagedChanges.resolves([
         { status: 'modified', path: 'src/a.ts' },
@@ -112,7 +112,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
     });
   });
 
-  describe('refresh, schema changes (live DB diff)', () => {
+  describe('refresh – schema changes (live DB diff)', () => {
     it('shows empty lakebase when no lakebaseService provided', async () => {
       gitStub.getStagedChanges.resolves([]);
       gitStub.getUnstagedChanges.resolves([
@@ -137,7 +137,7 @@ describe('SchemaScmProvider (Unified Repo)', () => {
     });
   });
 
-  describe('refresh, combined count', () => {
+  describe('refresh – combined count', () => {
     it('sums staged + changes + schema in count', async () => {
       gitStub.getStagedChanges.resolves([{ status: 'modified', path: 'a.ts' }]);
       gitStub.getUnstagedChanges.resolves([{ status: 'added', path: 'b.ts' }]);

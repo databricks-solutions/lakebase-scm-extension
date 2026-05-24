@@ -34,7 +34,7 @@ collect_result() {
     return 0
   else
     RESULT=$(grep -E "passing|failing" "$logfile" 2>/dev/null | tail -1)
-    echo "  $name: FAILED, $RESULT"
+    echo "  $name: FAILED – $RESULT"
     tail -20 "$logfile" | grep -E "failing|AssertionError|Error" || true
     return 1
   fi

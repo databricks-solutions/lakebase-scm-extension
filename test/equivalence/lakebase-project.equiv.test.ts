@@ -25,7 +25,7 @@ describe("equivalence: lakebase project lifecycle + endpoint", () => {
     restoreSubstrate();
   });
 
-  it("createProject, forwards { projectId, host }", async () => {
+  it("createProject – forwards { projectId, host }", async () => {
     const tracker = stubSubstrate("createLakebaseProject", {
       uid: "proj-new",
       name: "proj-new",
@@ -42,7 +42,7 @@ describe("equivalence: lakebase project lifecycle + endpoint", () => {
     assert.deepStrictEqual(result, { uid: "proj-new", name: "proj-new", state: "READY" });
   });
 
-  it("deleteProject, forwards { projectId, host }", async () => {
+  it("deleteProject – forwards { projectId, host }", async () => {
     const tracker = stubSubstrate("deleteLakebaseProject", undefined);
 
     await service.deleteProject("proj-old");
@@ -54,7 +54,7 @@ describe("equivalence: lakebase project lifecycle + endpoint", () => {
     });
   });
 
-  it("getEndpoint, forwards { instance, branch }, passes through unadapted", async () => {
+  it("getEndpoint – forwards { instance, branch }, passes through unadapted", async () => {
     const tracker = stubSubstrate("getEndpoint", sampleEndpoint());
 
     const result = await service.getEndpoint("customer-entity");

@@ -58,7 +58,7 @@ export function runScenario(ctx: ScenarioContext): void {
   let prNumber: number;
   let phaseAFailed = false;
 
-  describe('Phase A: Developer, all 6 entities', () => {
+  describe('Phase A: Developer – all 6 entities', () => {
     before(() => { setCurrentScenario(1); });
     afterEach(function () {
       if (this.currentTest?.state === 'failed') { phaseAFailed = true; }

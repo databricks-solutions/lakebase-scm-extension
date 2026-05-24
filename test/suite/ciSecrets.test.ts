@@ -101,7 +101,7 @@ describe('CI Secret Sync', () => {
     });
   });
 
-  describe('secret sync flow, PR creation', () => {
+  describe('secret sync flow – PR creation', () => {
     it('syncs all three secrets when .env has values', () => {
       const envContent = [
         'DATABRICKS_HOST=https://host.com',
@@ -147,7 +147,7 @@ describe('CI Secret Sync', () => {
     });
   });
 
-  describe('secret sync flow, merge', () => {
+  describe('secret sync flow – merge', () => {
     it('refreshes token before merge (same flow as PR)', () => {
       // The merge flow uses the same secret sync logic as PR creation
       // but with a shorter token lifetime (3600s vs 86400s)

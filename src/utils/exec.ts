@@ -1,4 +1,4 @@
-// Extension exec, thin wrapper over substrate's `exec` that adds
+// Extension exec – thin wrapper over substrate's `exec` that adds
 // Databricks auth-error tagging (lakebaseService uses this to surface
 // "you're not signed in" diagnostics on auth failures).
 //

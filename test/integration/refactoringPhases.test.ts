@@ -7,8 +7,8 @@
  * - A remote-tracking branch
  *
  * Prerequisites:
- * - `gh auth status`, logged in with delete_repo scope
- * - `databricks auth login`, authenticated to FEVM workspace
+ * - `gh auth status` – logged in with delete_repo scope
+ * - `databricks auth login` – authenticated to FEVM workspace
  * - DATABRICKS_HOST env var or will default to FEVM
  *
  * Run: npm run test:integration
@@ -260,7 +260,7 @@ describe('Refactoring Phase Integration Tests', function () {
           // 0 commits ahead is fine (we just pushed)
           assert.ok(out.trim().length === 0 || out.split('\n').length >= 0);
         } catch {
-          // No upstream, that's also fine for this test
+          // No upstream – that's also fine for this test
         }
       });
     });
@@ -418,7 +418,7 @@ describe('Refactoring Phase Integration Tests', function () {
           { timeout: 15000, env: { ...process.env, DATABRICKS_HOST: process.env.DATABRICKS_HOST } }
         ).toString();
         const epParsed = JSON.parse(epRaw);
-        // May have endpoints or not, just verify no error
+        // May have endpoints or not – just verify no error
         assert.ok(true, 'Endpoint listing succeeded');
       } catch (err: any) {
         // No endpoints yet is OK for a new project
@@ -538,7 +538,7 @@ describe('Refactoring Phase Integration Tests', function () {
         assert.ok(token.length > 0, 'Should return a token');
       } catch (err: any) {
         if (err.message.includes('tokens create')) {
-          console.log('    (Token creation not available on this workspace, skipped)');
+          console.log('    (Token creation not available on this workspace – skipped)');
           this.skip();
         } else { throw err; }
       }

@@ -52,7 +52,7 @@ export async function forceDeleteLakebaseProject(
     }
     console.log(`  [cleanup:lakebase] still visible after attempt ${i} (waited ${verifyTimeoutMs / 1000}s); retrying`);
   }
-  console.log(`  [cleanup:lakebase] GAVE UP on ${projectName} after ${attempts} attempts, manual delete required`);
+  console.log(`  [cleanup:lakebase] GAVE UP on ${projectName} after ${attempts} attempts – manual delete required`);
   return false;
 }
 
@@ -77,6 +77,6 @@ export async function forceDeleteGithubRepo(
       if (i < attempts) await delay(5000);
     }
   }
-  console.log(`  [cleanup:github] GAVE UP on ${fullRepoName} after ${attempts} attempts, manual delete required`);
+  console.log(`  [cleanup:github] GAVE UP on ${fullRepoName} after ${attempts} attempts – manual delete required`);
   return false;
 }

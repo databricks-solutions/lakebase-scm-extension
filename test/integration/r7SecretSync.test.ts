@@ -65,7 +65,7 @@ function oldSyncSecrets(root: string, comment: string, lifetimeSeconds: number):
 // ── NEW code: extracted function ───────────────────────────────────
 
 function newSyncSecrets(root: string, comment: string, lifetimeSeconds: number): { host: string; projectId: string; tokenSet: boolean } {
-  // Same logic, same result, the refactoring extracts this into a shared function
+  // Same logic, same result – the refactoring extracts this into a shared function
   const envContent = fs.readFileSync(path.join(root, '.env'), 'utf-8');
   const getEnvVal = (key: string) => {
     const match = envContent.match(new RegExp(`^${key}=(.+)$`, 'm'));
@@ -96,7 +96,7 @@ function newSyncSecrets(root: string, comment: string, lifetimeSeconds: number):
   return { host, projectId, tokenSet };
 }
 
-describe('R7 CI Secret Sync, Parity + Live', function () {
+describe('R7 CI Secret Sync – Parity + Live', function () {
   this.timeout(120000);
 
   before(async function () {
