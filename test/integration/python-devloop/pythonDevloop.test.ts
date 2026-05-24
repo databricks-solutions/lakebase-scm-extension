@@ -23,7 +23,7 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import {
   ScenarioContext, git, verifyTableNotExists, verifyAlembicVersion, queryProduction,
-  forceDeleteLakebaseProject, forceDeleteGithubRepo,
+  forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs,
 } from './helpers';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from '../ecommerce/runner';
 import { scaffoldPythonProject } from './pythonProject';
@@ -82,6 +82,12 @@ async function fullCleanup(reason: string): Promise<void> {
     return;
   }
   cleanupInFlight = true;
+  // Always save failed CI run logs first, even when teardown is gated.
+  // Pure side-effect; failures here never block the cleanup path.
+  if (created && ctx.fullRepoName) {
+    try { await saveFailedCiRunLogs(ctx.fullRepoName); }
+    catch (e: any) { console.log(`  [ci-logs] save failed: ${e?.message || e}`); }
+  }
   if (process.env.PYDEV_NO_TEARDOWN) {
     console.log(`  [cleanup:${reason}] PYDEV_NO_TEARDOWN=1 set, skipping`);
     cleanupInFlight = false;

@@ -18,7 +18,7 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import {
   ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
-  forceDeleteLakebaseProject, forceDeleteGithubRepo,
+  forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs,
 } from './helpers';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
@@ -61,6 +61,12 @@ async function fullCleanup(reason: string): Promise<void> {
     return;
   }
   cleanupInFlight = true;
+  // Always save failed CI run logs first, even when teardown is gated.
+  // This is pure side-effect; failures here never block the cleanup path.
+  if (created && ctx.fullRepoName) {
+    try { await saveFailedCiRunLogs(ctx.fullRepoName); }
+    catch (e: any) { console.log(`  [ci-logs] save failed: ${e?.message || e}`); }
+  }
   if (process.env.ECOM_NO_TEARDOWN) {
     console.log(`  [cleanup:${reason}] ECOM_NO_TEARDOWN=1 set, skipping`);
     cleanupInFlight = false;

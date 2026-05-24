@@ -13,7 +13,79 @@ import {
   deleteRepo as substrateDeleteRepo,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { delay } from './github';
+
+/**
+ * Save every failed GitHub Actions run's log for the given test repo
+ * to /tmp/lakebase-ci-runs-<repo>-<timestamp>/ before the repo is deleted.
+ *
+ * Pure diagnostic side-effect: never throws (so it never blocks the
+ * cleanup path it precedes). When the repo is gone or gh is missing
+ * the function logs and returns. Safe to call with an empty repoName
+ * (no-op).
+ */
+export async function saveFailedCiRunLogs(repoName: string): Promise<void> {
+  if (!repoName) return;
+  const outDir = path.join(
+    os.tmpdir(),
+    `lakebase-ci-runs-${repoName.replace(/[^a-zA-Z0-9._-]/g, '_')}-${Date.now()}`
+  );
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+  } catch (e: any) {
+    console.log(`  [ci-logs] could not create ${outDir}: ${e?.message || e}`);
+    return;
+  }
+
+  let runsJson: string;
+  try {
+    runsJson = cp
+      .execSync(
+        `gh run list --repo ${repoName} --limit 50 --json databaseId,name,workflowName,headBranch,status,conclusion,displayTitle`,
+        { timeout: 30_000 }
+      )
+      .toString();
+  } catch (e: any) {
+    console.log(`  [ci-logs] gh run list failed for ${repoName}: ${e?.message || e}`);
+    return;
+  }
+
+  let runs: Array<{ databaseId: number; conclusion?: string; status?: string; workflowName?: string; headBranch?: string; displayTitle?: string }> = [];
+  try {
+    runs = JSON.parse(runsJson);
+  } catch (e: any) {
+    console.log(`  [ci-logs] gh run list returned unparseable JSON: ${e?.message || e}`);
+    return;
+  }
+
+  const failed = runs.filter((r) => r.conclusion === 'failure' || r.status === 'failure');
+  if (failed.length === 0) {
+    console.log(`  [ci-logs] no failed runs to save for ${repoName}`);
+    fs.rmSync(outDir, { recursive: true, force: true });
+    return;
+  }
+
+  fs.writeFileSync(path.join(outDir, '_runs.json'), JSON.stringify(runs, null, 2));
+  console.log(`  [ci-logs] saving ${failed.length} failed run(s) for ${repoName} → ${outDir}`);
+
+  for (const run of failed) {
+    const file = path.join(outDir, `run-${run.databaseId}-${(run.workflowName ?? 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_')}.log`);
+    try {
+      const logs = cp
+        .execSync(`gh run view ${run.databaseId} --repo ${repoName} --log`, { timeout: 120_000, maxBuffer: 50 * 1024 * 1024 })
+        .toString();
+      fs.writeFileSync(file, logs);
+    } catch (e: any) {
+      const stdout = e?.stdout?.toString?.() ?? '';
+      const stderr = e?.stderr?.toString?.() ?? '';
+      fs.writeFileSync(file, `# gh run view exited non-zero\n# err: ${e?.message || e}\n\n# --- stdout ---\n${stdout}\n\n# --- stderr ---\n${stderr}\n`);
+    }
+  }
+  console.log(`  [ci-logs] saved to ${outDir}`);
+}
 
 export async function lakebaseProjectStillVisible(projectName: string): Promise<boolean> {
   try {
