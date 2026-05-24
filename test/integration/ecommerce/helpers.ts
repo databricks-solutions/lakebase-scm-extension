@@ -26,7 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
 import * as lib from '../lib';
-export { forceDeleteLakebaseProject, forceDeleteGithubRepo } from '../lib';
+export { forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs } from '../lib';
 export type { WorkflowRunResult, WaitForWorkflowOptions } from '../lib';
 import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';

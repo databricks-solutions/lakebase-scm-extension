@@ -15,7 +15,7 @@ import * as cp from 'child_process';
 import * as lib from '../lib';
 // Re-export shared retry-aware cleanup helpers so callers that already
 // import them from ./helpers don't have to change.
-export { forceDeleteLakebaseProject, forceDeleteGithubRepo } from '../lib';
+export { forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs } from '../lib';
 export type { WorkflowRunResult, WaitForWorkflowOptions } from '../lib';
 import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
