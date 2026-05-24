@@ -1,6 +1,39 @@
-import * as cp from 'child_process';
-import { getConfig, getEnvConfig, getProjectDatabase } from '../utils/config';
-import { exec } from '../utils/exec';
+// LakebaseService — thin VS Code-aware shell over the substrate.
+//
+// FEIP-7065 (publish_and_consume): branch CRUD, endpoint lookup, credential
+// minting, schema introspection, and project CRUD live in
+// @databricks-solutions/lakebase-scm-workflow-scripts. This service keeps:
+//   - Per-session host + projectId overrides (set by the VS Code workspace
+//     picker; substrate's CLI calls honor process.env.DATABRICKS_HOST so we
+//     mutate that around each substrate call).
+//   - Adapters from substrate's LakebaseBranchInfo to the richer
+//     LakebaseBranch shape consumers in this extension expect.
+//   - VS Code-specific helpers that aren't part of the canonical workflow
+//     surface (auth profile listing, console URL, syncConnection writing
+//     to .env).
+//
+// As substrate grows, auth/profile helpers can move there too; the proxy
+// shape stays the same for callers.
+
+import { exec } from "../utils/exec";
+import { getConfig, getEnvConfig, getProjectDatabase } from "../utils/config";
+import {
+  createBranch as substrateCreateBranch,
+  deleteBranch as substrateDeleteBranch,
+  listBranches as substrateListBranches,
+  getDefaultBranch as substrateGetDefaultBranch,
+  getBranchByName as substrateGetBranchByName,
+  waitForBranchReady as substrateWaitForBranchReady,
+  createLakebaseProject as substrateCreateLakebaseProject,
+  deleteLakebaseProject as substrateDeleteLakebaseProject,
+  getProjectInfo as substrateGetProjectInfo,
+  getEndpoint as substrateGetEndpoint,
+  getCredential as substrateGetCredential,
+  queryBranchSchema as substrateQueryBranchSchema,
+  queryBranchTables as substrateQueryBranchTables,
+  sanitizeBranchName as substrateSanitizeBranchName,
+  type LakebaseBranchInfo,
+} from "@databricks-solutions/lakebase-scm-workflow-scripts";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -11,10 +44,9 @@ export interface LakebaseBranch {
   branchId: string;
   state: string;
   isDefault: boolean;
-  /** Full resource path of the parent branch this was forked from
-   *  (e.g. projects/.../branches/staging). Empty for the default branch. */
+  /** Full resource path of the parent branch this was forked from. */
   sourceBranch?: string;
-  /** Branch ID segment of the parent (e.g. "staging"). Empty for default. */
+  /** Branch ID segment of the parent. */
   sourceBranchId?: string;
   endpointHost?: string;
   endpointState?: string;
@@ -47,15 +79,22 @@ function lakebaseExec(command: string, cwd?: string, env?: Record<string, string
   return exec(command, { cwd, env, timeout: 30000, tagAuthErrors: true });
 }
 
-function sanitizeBranchName(gitBranch: string): string {
-  let name = gitBranch
-    .replace(/\//g, '-')
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .substring(0, 63);
-  // Lakebase requires a minimum branch name length of 3 characters
-  while (name.length < 3) name += '-x';
-  return name;
+function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {
+  const fullName = b.name || "";
+  const branchId = fullName.split("/branches/").pop() || b.uid;
+  const sourceBranch = b.sourceBranchName || "";
+  const sourceBranchId = sourceBranch.split("/branches/").pop() || "";
+  return {
+    uid: b.uid,
+    name: fullName,
+    branchId,
+    state: b.state,
+    isDefault: b.isDefault === true,
+    sourceBranch: sourceBranch || undefined,
+    sourceBranchId: sourceBranchId || undefined,
+    endpointHost: undefined,
+    endpointState: undefined,
+  };
 }
 
 export class LakebaseService {
@@ -64,67 +103,71 @@ export class LakebaseService {
   /** Runtime project ID override — set for integration tests or when workspace .env is not available */
   private projectIdOverride: string | undefined;
 
+  private projectInstance(): string {
+    if (this.projectIdOverride) { return this.projectIdOverride; }
+    return getConfig().lakebaseProjectId;
+  }
+
   private projectPath(): string {
-    if (this.projectIdOverride) {
-      return `projects/${this.projectIdOverride}`;
-    }
-    const config = getConfig();
-    return `projects/${config.lakebaseProjectId}`;
+    return `projects/${this.projectInstance()}`;
   }
 
-  /** Get the effective host: runtime override > .env > empty */
   getEffectiveHost(): string {
-    if (this.hostOverride) {
-      return this.hostOverride;
-    }
-    const config = getConfig();
-    return config.databricksHost;
+    if (this.hostOverride) { return this.hostOverride; }
+    return getConfig().databricksHost;
   }
 
-  /** Set a runtime host override (persists for this session) */
   setHostOverride(host: string): void {
-    this.hostOverride = host.replace(/\/+$/, '');
+    this.hostOverride = host.replace(/\/+$/, "");
   }
 
-  /** Set a runtime project ID override (for integration tests or non-workspace contexts) */
   setProjectIdOverride(projectId: string): void {
     this.projectIdOverride = projectId;
   }
 
-  /** Build env vars to inject DATABRICKS_HOST so CLI targets the correct workspace */
-  private cliEnv(): Record<string, string> | undefined {
+  /**
+   * Run a substrate call with DATABRICKS_HOST mutated to the effective host.
+   * Substrate's CLI invocations read process.env.DATABRICKS_HOST directly, so
+   * mutating it around each call gives them the same host the extension is
+   * using. Restores the prior value after — even on throw.
+   */
+  private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
-    if (host) {
-      return { DATABRICKS_HOST: host };
+    if (!host) { return fn(); }
+    const prior = process.env.DATABRICKS_HOST;
+    process.env.DATABRICKS_HOST = host;
+    try {
+      return await fn();
+    } finally {
+      if (prior === undefined) {
+        delete process.env.DATABRICKS_HOST;
+      } else {
+        process.env.DATABRICKS_HOST = prior;
+      }
     }
-    return undefined;
   }
 
-  /** Run a databricks CLI command, injecting DATABRICKS_HOST as env var */
-  private dbcli(args: string, cwd?: string): Promise<string> {
-    return lakebaseExec(`databricks ${args}`, cwd, this.cliEnv());
-  }
+  // ── Inline: auth / profile (no substrate equivalent yet) ────────
 
   async isAvailable(): Promise<boolean> {
     try {
-      await lakebaseExec('databricks --version');
+      await lakebaseExec("databricks --version");
       return true;
     } catch {
       return false;
     }
   }
 
-  /** List all configured Databricks CLI profiles from ~/.databrickscfg */
   async listProfiles(): Promise<DatabricksProfile[]> {
     try {
-      const raw = await lakebaseExec('databricks auth profiles -o json');
+      const raw = await lakebaseExec("databricks auth profiles -o json");
       const parsed = JSON.parse(raw);
-      const profiles: any[] = parsed.profiles || [];
-      return profiles.map(p => ({
-        name: p.name || '',
-        host: (p.host || '').replace(/\/+$/, ''),
-        cloud: p.cloud || '',
-        authType: p.auth_type || '',
+      const profiles: any[] = Array.isArray(parsed) ? parsed : parsed.profiles || [];
+      return profiles.map((p: any) => ({
+        name: p.name || "",
+        host: p.host || "",
+        cloud: p.cloud || "",
+        authType: p.auth_type || "",
         valid: p.valid === true,
       }));
     } catch {
@@ -132,312 +175,180 @@ export class LakebaseService {
     }
   }
 
-  /** List profiles that have Lakebase projects available */
   async listLakebaseProfiles(): Promise<DatabricksProfile[]> {
     const profiles = await this.listProfiles();
-
-    // Deduplicate by host (DEFAULT and named profiles often share the same host)
-    const seen = new Set<string>();
-    const unique = profiles.filter(p => {
-      if (seen.has(p.host)) { return false; }
-      seen.add(p.host);
-      return true;
-    });
-
-    const results = await Promise.all(
-      unique.map(async (p) => {
-        if (!p.valid) {
-          return { ...p, hasLakebase: false, lakebaseProjects: [] };
-        }
-        try {
-          const raw = await lakebaseExec(
-            `databricks postgres list-projects -o json`,
-            undefined,
-            { DATABRICKS_HOST: p.host }
-          );
-          const parsed = JSON.parse(raw);
-          const projects = (Array.isArray(parsed) ? parsed : parsed.projects || []);
-          const lakebaseProjects = projects.map((proj: any) => ({
-            uid: proj.uid || '',
-            displayName: proj.status?.display_name || proj.name || '',
-          }));
-          return {
-            ...p,
-            hasLakebase: lakebaseProjects.length > 0,
-            lakebaseProjects,
-          };
-        } catch {
-          return { ...p, hasLakebase: false, lakebaseProjects: [] };
-        }
-      })
-    );
-
-    return results.filter(p => p.hasLakebase);
+    const enriched: DatabricksProfile[] = [];
+    for (const p of profiles) {
+      if (!p.valid) { continue; }
+      try {
+        const raw = await lakebaseExec("databricks postgres list-projects -o json", undefined, {
+          DATABRICKS_CONFIG_PROFILE: p.name,
+        });
+        const parsed = JSON.parse(raw);
+        const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
+        enriched.push({
+          ...p,
+          hasLakebase: projects.length > 0,
+          lakebaseProjects: projects.map((pp: any) => ({
+            uid: pp.uid,
+            displayName: pp.status?.display_name || pp.display_name || pp.uid,
+          })),
+        });
+      } catch {
+        enriched.push({ ...p, hasLakebase: false });
+      }
+    }
+    return enriched;
   }
 
-  /** Check if CLI can reach the target workspace (using our DATABRICKS_HOST injection) */
   async checkAuth(): Promise<AuthStatus> {
-    const expectedHost = this.getEffectiveHost().replace(/\/+$/, '');
-
+    const expectedHost = this.getEffectiveHost().replace(/\/+$/, "");
+    // Fail fast when no host is configured. Otherwise the CLI runs against
+    // whatever ambient profile the user has, which may not be the project's
+    // intended workspace — silent cross-workspace operations are confusing.
     if (!expectedHost) {
       return {
         authenticated: false,
-        currentHost: '',
-        expectedHost: '(not configured)',
+        currentHost: "",
+        expectedHost: "",
         mismatch: false,
-        error: 'No DATABRICKS_HOST in .env',
+        error: "No DATABRICKS_HOST configured (set it in .env or via the workspace picker)",
       };
     }
-
     try {
-      // Test with our env var injection — this is what all real operations use
-      const userRaw = await this.dbcli('current-user me -o json');
-      const user = JSON.parse(userRaw);
-      const email = user.userName || user.emails?.[0]?.value || '';
+      const raw = await this.withHost(() => lakebaseExec("databricks current-user me -o json"));
+      const user = JSON.parse(raw);
+      const userHost = user?.host?.replace(/\/+$/, "") || expectedHost;
       return {
         authenticated: true,
-        currentHost: expectedHost,
+        currentHost: userHost,
         expectedHost,
-        mismatch: false,
-        error: undefined,
+        mismatch: !!(expectedHost && userHost && expectedHost !== userHost),
       };
     } catch (err: any) {
-      // Auth failed against the target host — need to login
       return {
         authenticated: false,
-        currentHost: '',
+        currentHost: "",
         expectedHost,
         mismatch: false,
-        error: `Cannot authenticate to ${expectedHost}: ${err.message}`,
+        error: err?.message || String(err),
       };
     }
   }
 
-  /** Get the login command string for the effective workspace */
   getLoginCommand(host?: string): string {
-    const target = (host || this.getEffectiveHost()).replace(/\/+$/, '');
-    if (target) {
-      return `databricks auth login --host ${target}`;
-    }
-    return 'databricks auth login';
+    const target = (host || this.getEffectiveHost()).replace(/\/+$/, "");
+    if (target) { return `databricks auth login --host ${target}`; }
+    return "databricks auth login";
   }
 
-  async getProjectDisplayName(): Promise<string | undefined> {
-    try {
-      const raw = await this.dbcli('postgres list-projects -o json');
-      const parsed = JSON.parse(raw);
-      const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
-      const config = getConfig();
-      const proj = projects.find((p: any) =>
-        p.uid === config.lakebaseProjectId ||
-        (p.name && p.name.endsWith(`/${config.lakebaseProjectId}`))
-      );
-      if (proj) {
-        return proj.status?.display_name || proj.display_name || undefined;
-      }
-    } catch { /* ignore */ }
-    return undefined;
-  }
-
-  /** Resolve the current Databricks user's email, or '' on any failure. */
   async getCurrentUserEmail(): Promise<string> {
     try {
-      const raw = await this.dbcli('current-user me -o json');
+      const raw = await this.withHost(() => lakebaseExec("databricks current-user me -o json"));
       const user = JSON.parse(raw);
-      return user.userName || user.emails?.[0]?.value || '';
+      return user.userName || user.emails?.[0]?.value || "";
     } catch {
-      return '';
+      return "";
     }
   }
 
+  // ── Substrate-routed: branch CRUD ──────────────────────────────
+
   async listBranches(): Promise<LakebaseBranch[]> {
-    const projPath = this.projectPath();
-    const raw = await this.dbcli(`postgres list-branches "${projPath}" -o json`);
-    const parsed = JSON.parse(raw);
-
-    const items: any[] = Array.isArray(parsed)
-      ? parsed
-      : parsed.branches || parsed.items || [];
-
-    return items.map((b: any) => {
-      const fullName: string = b.name || '';
-      const uid = b.uid || b.id || '';
-      // Extract the branch ID segment from the full path: projects/.../branches/{branchId}
-      const branchId = fullName.split('/branches/').pop() || b.branch_id || b.display_name || uid;
-      const sourceBranch: string = b.status?.source_branch || b.source_branch || '';
-      const sourceBranchId = sourceBranch.split('/branches/').pop() || '';
-      return {
-        uid,
-        name: fullName,
-        branchId,
-        state: b.status?.current_state || 'UNKNOWN',
-        isDefault: b.status?.default === true || b.is_default === true,
-        sourceBranch: sourceBranch || undefined,
-        sourceBranchId: sourceBranchId || undefined,
-        endpointHost: undefined,
-        endpointState: undefined,
-      };
-    });
+    const branches = await this.withHost(() =>
+      substrateListBranches({ instance: this.projectInstance() })
+    );
+    return branches.map(adaptBranchInfo);
   }
 
   async getDefaultBranch(): Promise<LakebaseBranch | undefined> {
-    const branches = await this.listBranches();
-    return branches.find(b => b.isDefault);
+    const b = await this.withHost(() =>
+      substrateGetDefaultBranch({ instance: this.projectInstance() })
+    );
+    return b ? adaptBranchInfo(b) : undefined;
   }
 
   async getBranchByName(name: string): Promise<LakebaseBranch | undefined> {
-    const branches = await this.listBranches();
-    const sanitized = sanitizeBranchName(name);
-    return branches.find(b =>
-      b.branchId === sanitized ||
-      b.branchId === name ||
-      b.uid === sanitized ||
-      b.uid === name ||
-      b.name.endsWith(`/branches/${sanitized}`) ||
-      b.name.endsWith(`/branches/${name}`)
+    const b = await this.withHost(() =>
+      substrateGetBranchByName(name, { instance: this.projectInstance() })
     );
+    return b ? adaptBranchInfo(b) : undefined;
   }
 
-  /** Resolve a branchId, uid, or name to the full resource path */
-  private async resolveBranchPath(branchNameOrUid: string): Promise<string | undefined> {
-    // If it already looks like a full path, use it directly
-    if (branchNameOrUid.startsWith('projects/')) {
-      return branchNameOrUid;
-    }
-    const branches = await this.listBranches();
-    const branch = branches.find(b =>
-      b.branchId === branchNameOrUid ||
-      b.uid === branchNameOrUid ||
-      b.name.endsWith(`/${branchNameOrUid}`)
-    );
-    return branch?.name;
-  }
-
-  async createBranch(gitBranch: string, baseBranchOverride?: string): Promise<LakebaseBranch | undefined> {
-    const projPath = this.projectPath();
-    const branchName = sanitizeBranchName(gitBranch);
-
-    const existing = await this.getBranchByName(branchName);
-    if (existing) {
-      return existing;
-    }
-
-    // Resolve the source (parent) Lakebase branch. Precedence:
-    //   1. Explicit `baseBranchOverride` arg (caller-supplied, e.g. for a
-    //      one-off "branch from prod" hotfix even when config says staging).
-    //   2. `LAKEBASE_BASE_BRANCH` from .env / `lakebaseSync.baseBranch` VS Code
-    //      setting — a project-wide "features ALWAYS fork from here" pin.
-    //   3. The Lakebase branch the user is currently on (LAKEBASE_BRANCH_ID
-    //      from .env) — git-like "fork from current" semantics. Mirrors the
-    //      post-checkout hook's default. Skipped when the current-branch id
-    //      equals the target (edge case — user recreating the same branch).
-    //   4. Project default Lakebase branch (usually `production`).
-    let sourceBranch: string;
+  async createBranch(
+    gitBranch: string,
+    baseBranchOverride?: string,
+    currentGitBranch?: string,
+  ): Promise<LakebaseBranch | undefined> {
+    const sanitized = substrateSanitizeBranchName(gitBranch);
     const configuredBase = baseBranchOverride || getConfig().baseBranch;
-    if (configuredBase) {
-      sourceBranch = `${projPath}/branches/${configuredBase}`;
-    } else {
-      const prevBranchId = (getEnvConfig().LAKEBASE_BRANCH_ID || '').trim();
-      let prevResolved: LakebaseBranch | undefined;
-      if (prevBranchId && prevBranchId !== branchName) {
-        try {
-          prevResolved = await this.getBranchByName(prevBranchId);
-        } catch { /* fall through to default */ }
-      }
-      if (prevResolved) {
-        sourceBranch = prevResolved.name;
-      } else {
-        const defaultBranch = await this.getDefaultBranch();
-        if (!defaultBranch) {
-          throw new Error('Could not find default Lakebase branch');
-        }
-        sourceBranch = defaultBranch.name;
-      }
-    }
-
-    const spec = JSON.stringify({
-      spec: { source_branch: sourceBranch, no_expiry: true },
+    const parentBranch = resolveCreateBranchParent({
+      sanitized,
+      configuredBase,
+      envBranchId: (getEnvConfig().LAKEBASE_BRANCH_ID || "").trim(),
+      currentGitBranch,
+      sanitize: substrateSanitizeBranchName,
+      warn: (msg) => console.warn(msg),
     });
 
-    await this.dbcli(
-      `postgres create-branch "${projPath}" "${branchName}" --json '${spec}'`
+    const created = await this.withHost(() =>
+      substrateCreateBranch({
+        instance: this.projectInstance(),
+        branch: gitBranch,
+        parentBranch,
+      })
     );
-
-    return this.waitForBranchReady(branchName);
+    return adaptBranchInfo(created);
   }
 
   async waitForBranchReady(branchName: string, maxAttempts = 24): Promise<LakebaseBranch | undefined> {
-    const sanitized = sanitizeBranchName(branchName);
-    for (let i = 0; i < maxAttempts; i++) {
-      const branch = await this.getBranchByName(sanitized);
-      if (branch && branch.state === 'READY') {
-        return branch;
-      }
-      await new Promise(resolve => setTimeout(resolve, 5000));
+    // Substrate waitForBranchReady takes a timeout budget, not attempt count.
+    // Match the extension's previous "5s × maxAttempts" with maxAttempts × 5s.
+    try {
+      const b = await this.withHost(() =>
+        substrateWaitForBranchReady({
+          instance: this.projectInstance(),
+          branch: branchName,
+          timeoutMs: maxAttempts * 5_000,
+        })
+      );
+      return adaptBranchInfo(b);
+    } catch {
+      return undefined;
     }
-    return undefined;
   }
 
   async deleteBranch(branchNameOrUid: string): Promise<void> {
-    // The CLI expects the full resource name (projects/.../branches/...), not the uid.
-    // Look up the branch to get its full name.
-    const branches = await this.listBranches();
-    const branch = branches.find(b =>
-      b.uid === branchNameOrUid ||
-      b.name.endsWith(`/${branchNameOrUid}`) ||
-      b.name === branchNameOrUid
+    await this.withHost(() =>
+      substrateDeleteBranch({
+        instance: this.projectInstance(),
+        branch: branchNameOrUid,
+      })
     );
-
-    if (!branch || !branch.name) {
-      throw new Error(`Branch "${branchNameOrUid}" not found`);
-    }
-
-    await this.dbcli(`postgres delete-branch "${branch.name}"`);
   }
 
+  // ── Substrate-routed: endpoint + credential + schema ───────────
+
   async getEndpoint(branchNameOrUid: string): Promise<{ host: string; state: string } | undefined> {
-    // Resolve to the full resource name path
-    const branchPath = await this.resolveBranchPath(branchNameOrUid);
-    if (!branchPath) {
-      return undefined;
-    }
-    try {
-      const raw = await this.dbcli(`postgres list-endpoints "${branchPath}" -o json`);
-      const endpoints = JSON.parse(raw);
-      if (Array.isArray(endpoints) && endpoints.length > 0) {
-        const ep = endpoints[0];
-        return {
-          host: ep.status?.hosts?.host || '',
-          state: ep.status?.current_state || 'UNKNOWN',
-        };
-      }
-    } catch {
-      // No endpoints
-    }
-    return undefined;
+    return this.withHost(() =>
+      substrateGetEndpoint({
+        instance: this.projectInstance(),
+        branch: branchNameOrUid,
+      })
+    );
   }
 
   async getCredential(branchNameOrUid: string): Promise<LakebaseCredential> {
-    const branchPath = await this.resolveBranchPath(branchNameOrUid);
-    if (!branchPath) {
-      throw new Error(`Branch "${branchNameOrUid}" not found`);
-    }
-    const endpointPath = `${branchPath}/endpoints/primary`;
-
-    const tokenRaw = await this.dbcli(
-      `postgres generate-database-credential "${endpointPath}" -o json`
+    return this.withHost(() =>
+      substrateGetCredential({
+        instance: this.projectInstance(),
+        branch: branchNameOrUid,
+      })
     );
-    const token = JSON.parse(tokenRaw).token || '';
-
-    const userRaw = await this.dbcli('current-user me -o json');
-    const userParsed = JSON.parse(userRaw);
-    const email = userParsed.userName || userParsed.emails?.[0]?.value || '';
-
-    return { token, email };
   }
 
   async enrichWithEndpoints(branches: LakebaseBranch[]): Promise<LakebaseBranch[]> {
-    const enriched = await Promise.all(
+    return Promise.all(
       branches.map(async (b) => {
         try {
           const ep = await this.getEndpoint(b.uid);
@@ -447,27 +358,21 @@ export class LakebaseService {
         }
       })
     );
-    return enriched;
   }
 
   /**
-   * Sync connection for a branch: get endpoint, get credential, update .env.
-   * Encapsulates the 3-step pattern used in 7 places across extension.ts.
-   * Retries up to 30s waiting for the endpoint to become available (newly
-   * created branches have a delay between branch READY and endpoint ACTIVE).
-   * @returns Connection info, or undefined if endpoint never became available.
+   * Sync .env with the current credentials for a branch. Stays inline because
+   * it writes to the VS Code workspace .env and uses VS Code's window
+   * notifications for retry UX.
    */
   async syncConnection(branchId: string): Promise<{ host: string; branchId: string; username: string; password: string } | undefined> {
-    const vscode = require('vscode');
-    const { updateEnvConnection } = require('../utils/config');
-    // Immediately point .env at this branch with empty credentials.
-    // This ensures .env never remains pointed at production.
+    const vscode = require("vscode");
+    const { updateEnvConnection } = require("../utils/config");
     const failTimestamp = new Date().toISOString();
-    updateEnvConnection({ host: '', branchId, username: '', password: '', comment: `# Connection pending at ${failTimestamp}. If this persists, run: git checkout - && git checkout <branch>` });
+    updateEnvConnection({ host: "", branchId, username: "", password: "", comment: `# Connection pending at ${failTimestamp}. If this persists, run: git checkout - && git checkout <branch>` });
 
     let ep = await this.getEndpoint(branchId);
     if (!ep?.host) {
-      // Endpoint may still be provisioning — retry up to 30s
       for (let i = 0; i < 6; i++) {
         await new Promise(r => setTimeout(r, 5000));
         ep = await this.getEndpoint(branchId);
@@ -477,11 +382,9 @@ export class LakebaseService {
     if (!ep?.host) {
       const action = await vscode.window.showWarningMessage(
         `Lakebase endpoint for branch "${branchId}" is not available. Credentials in .env are empty.`,
-        'Retry'
+        "Retry"
       );
-      if (action === 'Retry') {
-        return this.syncConnection(branchId);
-      }
+      if (action === "Retry") { return this.syncConnection(branchId); }
       return undefined;
     }
     const cred = await this.getCredential(branchId);
@@ -489,143 +392,126 @@ export class LakebaseService {
     return { host: ep.host, branchId, username: cred.email, password: cred.token };
   }
 
-  /**
-   * Query the actual tables on a Lakebase branch database (names only).
-   * @param branchNameOrUid - Branch uid, branchId, or full resource name
-   * @returns Array of table names in the public schema, or empty if unavailable
-   */
   async queryBranchTables(branchNameOrUid: string): Promise<string[]> {
-    const schema = await this.queryBranchSchema(branchNameOrUid);
-    return schema.map(t => t.name);
+    try {
+      return await this.withHost(() =>
+        substrateQueryBranchTables({
+          instance: this.projectInstance(),
+          branch: branchNameOrUid,
+          database: getProjectDatabase(),
+        })
+      );
+    } catch (err: any) {
+      console.error(`[lakebase-scm] queryBranchTables failed: ${err?.message || err}`);
+      return [];
+    }
   }
 
-  /**
-   * Query the actual tables and their columns on a Lakebase branch database.
-   * Connects via the branch endpoint and queries `information_schema`.
-   *
-   * Uses the bundled `pg` node client (no `psql` binary required). This replaced
-   * the former psql-primary + pg-fallback paths — the tree was often empty on
-   * macOS when libpq was not installed.
-   *
-   * Errors are logged to the developer console and return `[]` (empty tree),
-   * not thrown, so the sidebar degrades gracefully.
-   *
-   * @param branchNameOrUid - Branch uid, branchId, or full resource name
-   * @returns Array of { name, columns[] } for each table in the public schema
-   */
   async queryBranchSchema(branchNameOrUid: string): Promise<Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>> {
-    const ep = await this.getEndpoint(branchNameOrUid);
-    if (!ep?.host) { return []; }
-    const cred = await this.getCredential(branchNameOrUid);
-    const dbName = getProjectDatabase();
-
-    // Shared SQL for schema tree and any future pg-based introspection.
-    const sql =
-      "SELECT c.table_name, c.column_name, c.data_type " +
-      "FROM information_schema.columns c " +
-      "JOIN pg_tables t ON c.table_name = t.tablename " +
-      "WHERE c.table_schema='public' AND t.schemaname='public' " +
-      "ORDER BY c.table_name, c.ordinal_position";
-
-    const rowsToTables = (rows: Array<{ table_name: string; column_name: string; data_type: string }>) => {
-      const tables = new Map<string, Array<{ name: string; dataType: string }>>();
-      for (const r of rows) {
-        if (!r.table_name) { continue; }
-        if (!tables.has(r.table_name)) { tables.set(r.table_name, []); }
-        tables.get(r.table_name)!.push({ name: r.column_name, dataType: r.data_type });
-      }
-      return Array.from(tables.entries()).map(([name, columns]) => ({ name, columns }));
-    };
-
-    let Client: any;
     try {
-      ({ Client } = require('pg'));
-    } catch (requireErr: any) {
-      console.error(`[lakebase-scm] Could not load 'pg' client: ${requireErr?.message || requireErr}. Schema tree will be empty.`);
+      return await this.withHost(() =>
+        substrateQueryBranchSchema({
+          instance: this.projectInstance(),
+          branch: branchNameOrUid,
+          database: getProjectDatabase(),
+        })
+      );
+    } catch (err: any) {
+      console.error(`[lakebase-scm] queryBranchSchema failed: ${err?.message || err}`);
       return [];
-    }
-
-    const client = new Client({
-      host: ep.host,
-      port: 5432,
-      database: dbName,
-      user: cred.email,
-      password: cred.token,
-      ssl: { rejectUnauthorized: false }, // Lakebase managed cert; equivalent to sslmode=require
-      connectionTimeoutMillis: 10000,
-      statement_timeout: 15000,
-    });
-
-    try {
-      await client.connect();
-      const result = await client.query(sql);
-      return rowsToTables(result.rows as Array<{ table_name: string; column_name: string; data_type: string }>);
-    } catch (pgErr: any) {
-      console.error(`[lakebase-scm] queryBranchSchema failed: ${pgErr?.message || pgErr}`);
-      return [];
-    } finally {
-      try { await client.end(); } catch { /* noop */ }
     }
   }
 
-  /**
-   * Create a new Lakebase project. Long-running — waits for completion by default.
-   * @param projectId - Project ID (1-63 chars, lowercase, letters/numbers/hyphens, starts with letter)
-   * @returns The created project metadata
-   */
+  // ── Substrate-routed: project CRUD + metadata ──────────────────
+
   async createProject(projectId: string): Promise<{ uid: string; name: string; state: string }> {
-    const raw = await this.dbcli(`postgres create-project "${projectId}" -o json`);
-    const parsed = JSON.parse(raw);
-    // The CLI returns the operation result; extract project info
-    const result = parsed.response || parsed.result || parsed;
-    return {
-      uid: result.uid || projectId,
-      name: result.name || `projects/${projectId}`,
-      state: result.status?.current_state || result.state || 'READY',
-    };
+    return this.withHost(() =>
+      substrateCreateLakebaseProject({ projectId, host: this.hostOverride })
+    );
   }
 
-  /**
-   * Delete a Lakebase project. Long-running — waits for completion by default.
-   * @param projectId - Project ID (e.g. "my-app")
-   */
   async deleteProject(projectId: string): Promise<void> {
-    const name = projectId.startsWith('projects/') ? projectId : `projects/${projectId}`;
-    await this.dbcli(`postgres delete-project "${name}" -o json`);
+    return this.withHost(() =>
+      substrateDeleteLakebaseProject({ projectId, host: this.hostOverride })
+    );
+  }
+
+  async getProjectDisplayName(): Promise<string | undefined> {
+    const info = await this.withHost(() =>
+      substrateGetProjectInfo({ projectId: this.projectInstance(), host: this.hostOverride })
+    );
+    return info?.displayName;
+  }
+
+  async getProjectUid(): Promise<string | undefined> {
+    const info = await this.withHost(() =>
+      substrateGetProjectInfo({ projectId: this.projectInstance(), host: this.hostOverride })
+    );
+    return info?.uid;
   }
 
   sanitizeBranchName(name: string): string {
-    return sanitizeBranchName(name);
+    return substrateSanitizeBranchName(name);
   }
 
-  /** Resolve the project UUID from list-projects (the console URL uses UUID, not project name) */
-  async getProjectUid(): Promise<string | undefined> {
-    try {
-      const raw = await this.dbcli('postgres list-projects -o json');
-      const parsed = JSON.parse(raw);
-      const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
-      const projPath = this.projectPath();
-      const proj = projects.find((p: any) =>
-        p.uid === projPath.replace('projects/', '') ||
-        p.name === projPath ||
-        (p.name && p.name.endsWith(`/${projPath.replace('projects/', '')}`))
-      );
-      return proj?.uid;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Build the Databricks console URL for a Lakebase project or branch */
+  /** Build the Databricks console URL for a Lakebase project or branch. */
   async getConsoleUrl(branchUid?: string): Promise<string> {
-    const host = this.getEffectiveHost().replace(/\/+$/, '');
-    if (!host) { return ''; }
+    const host = this.getEffectiveHost().replace(/\/+$/, "");
+    if (!host) { return ""; }
     const projectUid = await this.getProjectUid();
-    if (!projectUid) { return ''; }
+    if (!projectUid) { return ""; }
     let url = `${host}/lakebase/projects/${projectUid}`;
-    if (branchUid) {
-      url += `/branches/${branchUid}`;
-    }
+    if (branchUid) { url += `/branches/${branchUid}`; }
     return url;
   }
+}
+
+/**
+ * Decide which branch to fork a new Lakebase branch from. Extracted as a
+ * pure helper so the precedence rules can be unit-tested without spinning
+ * up the full LakebaseService dependency graph.
+ *
+ * Precedence:
+ *   1. `configuredBase` — explicit override (caller-supplied or VS Code
+ *      config pinning a base like "staging").
+ *   2. `currentGitBranch` (sanitized) — the actual git HEAD the caller
+ *      just observed. Preferred over `envBranchId` when both are present;
+ *      if they disagree, `envBranchId` was stale (post-checkout hook
+ *      didn't fire, or `git checkout` ran with hooks disabled). Emits a
+ *      `warn` so the drift is visible.
+ *   3. `envBranchId` — fallback from `.env`'s `LAKEBASE_BRANCH_ID`,
+ *      used when the caller can't observe git HEAD (agent/headless flows).
+ *   4. `undefined` — substrate falls through to project default.
+ *
+ * Returns `undefined` when the resolved parent equals `sanitized` itself
+ * (no-op fork), letting substrate handle the same-name case downstream.
+ */
+export interface ResolveCreateBranchParentArgs {
+  sanitized: string;
+  configuredBase?: string;
+  envBranchId: string;
+  currentGitBranch?: string;
+  sanitize: (s: string) => string;
+  warn: (msg: string) => void;
+}
+
+export function resolveCreateBranchParent(args: ResolveCreateBranchParentArgs): string | undefined {
+  if (args.configuredBase) return args.configuredBase;
+
+  const gitBranchId = args.currentGitBranch ? args.sanitize(args.currentGitBranch) : "";
+
+  if (gitBranchId) {
+    if (args.envBranchId && args.envBranchId !== gitBranchId) {
+      args.warn(
+        `[lakebaseService] drift: .env LAKEBASE_BRANCH_ID="${args.envBranchId}" but git HEAD is "${gitBranchId}". ` +
+          `Using git HEAD as parent for new branch "${args.sanitized}". ` +
+          `Run the post-checkout hook (or git checkout <current>) to resync .env.`,
+      );
+    }
+    if (gitBranchId !== args.sanitized) return gitBranchId;
+    return undefined;
+  }
+
+  if (args.envBranchId && args.envBranchId !== args.sanitized) return args.envBranchId;
+  return undefined;
 }

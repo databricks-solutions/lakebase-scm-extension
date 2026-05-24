@@ -342,7 +342,8 @@ export async function activate(context: vscode.ExtensionContext) {
         },
         async (progress) => {
           progress.report({ message: 'Creating branch...' });
-          const branch = await lakebaseService.createBranch(newBranch);
+          const currentGitBranch = await gitService.getCurrentBranch().catch(() => undefined);
+          const branch = await lakebaseService.createBranch(newBranch, undefined, currentGitBranch);
           if (!branch) { return undefined; }
 
           progress.report({ message: 'Waiting for endpoint...' });
@@ -543,7 +544,8 @@ export async function activate(context: vscode.ExtensionContext) {
         async (progress) => {
           progress.report({ message: 'Creating branch...' });
           try {
-            const branch = await lakebaseService.createBranch(gitBranch);
+            const currentGitBranch = await gitService.getCurrentBranch().catch(() => undefined);
+            const branch = await lakebaseService.createBranch(gitBranch, undefined, currentGitBranch);
             if (branch && branch.state === 'READY') {
               vscode.window.showInformationMessage(
                 `Lakebase branch "${sanitized}" is ready.`
@@ -943,6 +945,13 @@ export async function activate(context: vscode.ExtensionContext) {
         },
         async (progress) => {
           try {
+            // Capture the branch we're forking from BEFORE the git checkout,
+            // since after `git checkout -b` HEAD is the new branch and the
+            // parent is no longer trivially observable. This is the value
+            // we want Lakebase to fork from (and the value the service uses
+            // for drift detection against .env's LAKEBASE_BRANCH_ID).
+            const parentGitBranch = await gitService.getCurrentBranch().catch(() => undefined);
+
             // 1. Create git branch
             progress.report({ message: 'Creating code branch...' });
             await gitService.checkoutBranch(branchName, true);
@@ -950,7 +959,7 @@ export async function activate(context: vscode.ExtensionContext) {
             // 2. Create Lakebase branch
             const sanitized = lakebaseService.sanitizeBranchName(branchName);
             progress.report({ message: `Creating database branch: ${sanitized}...` });
-            const lb = await lakebaseService.createBranch(branchName);
+            const lb = await lakebaseService.createBranch(branchName, undefined, parentGitBranch);
 
             if (!lb) {
               vscode.window.showWarningMessage(
@@ -1534,7 +1543,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: 'Publish Branch', command: 'lakebaseSync.publishBranch' },
         { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
         { label: 'Create Branch...', command: 'lakebaseSync.createUnifiedBranch' },
-        { label: 'Create Branch From...', command: 'lakebaseSync.createBranchFrom' },
+        { label: 'Create Branch From...', command: 'lakebaseSync.createUnifiedBranchFrom' },
         { label: 'Rename Branch...', command: 'lakebaseSync.renameBranch' },
         { label: 'Delete Branch...', command: 'lakebaseSync.deleteBranch' },
         { label: 'Merge Branch...', command: 'lakebaseSync.mergeBranch' },
@@ -1663,6 +1672,13 @@ export async function activate(context: vscode.ExtensionContext) {
         },
         async (progress) => {
           try {
+            // Capture pre-switch branch so we can fork Lakebase off of it if
+            // the target is brand new. After the checkout below, .env's
+            // LAKEBASE_BRANCH_ID may already reflect the *new* branch (the
+            // post-checkout hook fires during checkout), so .env is unreliable
+            // as a parent-of-record at the create-branch step.
+            const parentGitBranch = await gitService.getCurrentBranch().catch(() => undefined);
+
             // 1. Checkout git branch
             progress.report({ message: 'Checking out code branch...' });
             await gitService.checkoutBranch(targetGitBranch);
@@ -1681,7 +1697,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (!lb && !isMain && !isStaging) {
               progress.report({ message: 'Creating database branch...' });
               try {
-                lb = await lakebaseService.createBranch(targetGitBranch);
+                lb = await lakebaseService.createBranch(targetGitBranch, undefined, parentGitBranch);
               } catch (err: any) {
                 if (!await handleAuthError(lakebaseService, err)) {
                   vscode.window.showWarningMessage(
@@ -3348,7 +3364,7 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (err: any) { vscode.window.showErrorMessage(`Rebase failed: ${err.message}`); }
     }),
 
-    vscode.commands.registerCommand('lakebaseSync.createBranchFrom', async () => {
+    vscode.commands.registerCommand('lakebaseSync.createUnifiedBranchFrom', async () => {
       const branches = await gitService.listLocalBranches();
       const currentBranch = await gitService.getCurrentBranch();
       const basePick = await vscode.window.showQuickPick(

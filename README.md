@@ -355,14 +355,16 @@ When set, checking out that branch points `.env` at the default Lakebase branch 
 ## Testing
 
 ```bash
-npm test                                              # 328 unit tests
-npm run test:integration -- --grep "E-Commerce"       # 70 integration tests (3 scenarios, ~15 min)
+npm test                                                # 343 hermetic unit tests
+npm run test:integration -- --grep "E-Commerce"         # 413 integration tests (8 scenarios, ~17 min)
 npm run test:integration -- --grep "Self-Hosted Runner" # 12 runner pipeline tests (~2 min)
-npm run test:integration -- --grep "Python Dev Loop"  # 83 integration tests (4 scenarios, ~40 min)
-./test/integration/run-all.sh                         # all suites in parallel
+npm run test:integration -- --grep "Python Dev Loop"    # 426 integration tests (4 scenarios, ~13 min)
+./test/integration/run-all.sh                           # all suites
 ```
 
-**Integration tests** create real GitHub repos + Lakebase projects, deploy self-hosted runners, execute actual CI workflows, and verify production database state. Total: **165 integration tests**.
+**Tier 1 unit tests** are hermetic — no credentials needed. **Tier 3 integration tests** create real GitHub repos + Lakebase projects under your own accounts; they require `DATABRICKS_TEST_HOST=https://<your-workspace>...`, an authenticated `databricks` CLI against that host, and an authenticated `gh` CLI. Missing env or auth surfaces a copy-paste-ready `IntegrationSetupError` at startup; nothing is silently defaulted to a maintainer's workspace. See `CONTRIBUTING.md` § Testing for the full setup.
+
+**All three tiers (unit, substrate BDD, integration) are mandatory before opening a PR.** Latest release totals: **1554 tests passing**, zero failing.
 
 ## Lakebase Sync Across Git Operations
 

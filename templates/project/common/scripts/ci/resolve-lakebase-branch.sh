@@ -281,9 +281,9 @@ EMAIL="$(databricks current-user me -o json 2>/dev/null \
 }
 
 # URL-encode chars that break postgres:// parsing. The email username
-# ALWAYS contains '@' (e.g. kevin.hartman@databricks.com) and without
-# encoding, psycopg/libpq split the DSN at the wrong '@' and resolve the
-# literal email domain as the host.
+# ALWAYS contains '@' (e.g. user@example.com) and without encoding,
+# psycopg/libpq split the DSN at the wrong '@' and resolve the literal
+# email domain as the host.
 ENCODED_USER="$(printf '%s' "$EMAIL" | sed 's/@/%40/g; s/:/%3A/g; s/\//%2F/g; s/?/%3F/g; s/#/%23/g')"
 ENCODED_PASS="$(printf '%s' "$TOKEN" | sed 's/@/%40/g; s/:/%3A/g; s/\//%2F/g; s/?/%3F/g; s/#/%23/g')"
 PG_URL="postgresql://${ENCODED_USER}:${ENCODED_PASS}@${HOST}:5432/${DB_NAME}?sslmode=require"

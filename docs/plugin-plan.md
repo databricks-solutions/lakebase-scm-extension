@@ -440,8 +440,13 @@ lakebase-scm-extension/
 | 6 | Remaining Cleanup | Partially complete | v0.4.0 (#55-#56 open, #57 done) |
 | 7 | Deploy to Databricks Apps | ✅ Complete | v0.5.1 |
 | — | OAuth-only CI, template parity | ✅ Complete | v0.4.1–v0.4.9 |
+| 7.5 | Deploy + multi-target hardening | ✅ Complete | v0.5.1–v0.5.2 |
+| 7.6 | Two-tier CI (`feature → staging → main`) | ✅ Complete | v0.5.3 |
+| 7.7 | Monorepo + branch-prefix scoping | ✅ Complete | v0.5.4 |
+| 7.8 | Parent-branch consistency (5 views) | ✅ Complete | v0.5.5 |
+| 8 | Substrate extraction + tag-pinned dep + 1554-test gate | ✅ Complete | v0.5.6 |
 
-**Current state:** v0.5.1
+**Current state:** v0.5.6 (substrate `v0.1.0-alpha.0` / `f61af250`)
 
 ### v0.4.0 changelog:
 - **Create New Project wizard** — 10-step flow: project name → parent dir → GitHub auth gate → repo name → visibility → language (Java/Python/Node.js) → runner type (self-hosted/GitHub-hosted) → Databricks workspace + auth gate → Lakebase project name → execute. Cascading defaults, cleanup on failure, opens project folder.
@@ -521,6 +526,49 @@ lakebase-scm-extension/
 - **Lakebase folder always visible** — Changes tree shows the Lakebase folder even when empty (collapsed), instead of hiding it entirely.
 - **Lakebase re-evaluation on stage/unstage** — `refreshCodeOnly` now re-evaluates migration files, so staging a migration immediately updates the Lakebase group.
 - **Removed debug logging** — Cleaned up `Lakebase SCM Debug` output channel added during migrationPath troubleshooting.
+
+### v0.5.2 changelog:
+- **`setupCiSecrets` command** — explicit re-sync of `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `LAKEBASE_PROJECT_ID` GitHub repo secrets. Also auto-prompted after runner setup so contributors don't have to remember a Settings page round-trip.
+- **`createLakebaseProject` command** — one-shot creation of an autoscaling Lakebase project, decoupled from the new-project wizard for retrofitting existing repos.
+- **`getProjectDatabase()` parses `DATABASE_URL` path segment** — falls back to `databricks_postgres` only when the URL doesn't specify. Apps using a non-default DB name are now picked up automatically.
+
+### v0.5.3 changelog:
+- **Two-tier CI: `feature → staging → main`.** `pr.yml` forks `ci-pr-<N>` from the PR's `base.ref` (e.g. `staging`) instead of the default branch, so schema diffs compare against the right baseline. `merge.yml` triggers on push to `main` or `staging` and resolves the matching Lakebase branch from `github.ref_name`. Cleanup fires on any merged PR, not just PRs to `main`.
+- **`scripts/ci/resolve-lakebase-branch.sh`** — single source of truth for git→Lakebase branch mapping. Handles create-from-parent, endpoint ensure, credential mint. `--recreate-on-source-mismatch` deletes + re-forks `ci-pr-<N>` when its source doesn't match the current base.ref (prevents silent reuse of wrong-source CI branches). `LAKEBASE_BRANCH_STATUS` output (`CREATED`/`VERIFIED`/`RECREATED`/`EXISTS`/`UNVERIFIED`) exposes the truth in CI logs.
+- **`delete-lakebase-branches.sh` protected-branch allowlist** — refuses to delete `main`/`master`/`staging`/`production` or the project's default, even if `HEAD_REF` sanitizes to one of them (the `staging → main` PR merge case).
+- **`queryBranchSchema` falls back to the bundled `pg` node client** when `psql` isn't on PATH (common macOS default).
+
+### v0.5.4 changelog:
+- **Monorepo support — `LAKEBASE_TRUNK_BRANCH` / `LAKEBASE_STAGING_BRANCH`.** Pair a user-prefixed git branch (e.g. `<user>/<project>` or `<user>/<project>-staging`) with the project's Lakebase default / `staging` branch. When the alias is set, it REPLACES `main`/`master` as the project's trunk — the shared monorepo trunk does NOT also pair.
+- **post-checkout hook hardened.** Exits immediately if `.env` is missing at the work-tree root, and `unset`s all `LAKEBASE_*` / `DATABRICKS_*` env vars before sourcing `.env`. Prevents (a) the hook firing at a parent-submodule level and creating spurious branches, and (b) shell-inherited env vars leaking into unrelated repos.
+- **Feature branches honor `LAKEBASE_BASE_BRANCH`** in both the post-checkout hook and `lakebaseService.createBranch()`. The `feature/* → staging → production` promotion flow now works end-to-end (previously `.env.example` documented this but the value was never read).
+- **`LAKEBASE_GIT_BRANCH_PREFIX` scopes the branch list** in the sidebar — only branches starting with the configured prefix appear (plus the currently-checked-out branch, always).
+- **Branch-tree file list is per-branch, not per-HEAD.** Expanding a branch now shows its diff vs trunk, not the working tree's diff. Also: `getChangedFiles()` diffs against `config.trunkBranch` when set.
+- **Self-hosted runner: `setup-python` hostedtoolcache hint.** `setupRunner` checks `/Users/runner/hostedtoolcache` at install time and emits the exact `sudo mkdir -p ... && sudo chown ...` command if missing.
+
+### v0.5.5 changelog:
+- **Parent-branch consistency across five views.** `gitService.getChangedFiles`, schema diff (`compareBranchSchemas`), Branch Diff Summary, per-table modal, branch-tree per-table coloring, and `gh pr create` all resolve the actual parent (nearest ancestor via `git merge-base` on the git side; Lakebase branch's `source_branch` on the schema side) instead of hardcoded `main` / `production`. A feature forked from `staging` now diffs against `staging` everywhere, and `gh pr create` targets `staging`.
+- **`lakebaseSync.deleteBranchEverywhere`** — single-confirm action enumerating exactly what gets deleted (local, remote, Lakebase). Refuses trunk and staging-alias branches.
+- **`lakebaseSync.installPlaywrightConfig`** — copies the reference Playwright config into `client/`.
+- **Up-front dirty-tree prompt on branch switch** — `lakebaseSync.switchBranch` warns before any git op when the working tree has uncommitted edits. Auto-stash always uses `--include-untracked` (was a plain stash, which left new files to get clobbered by checkout).
+- **PR base picker on `lakebaseSync.createPullRequest`** — quick-picks from local candidates, defaults to nearest-parent by merge-base recency, passes `--base` through.
+- **Schema-diff data quality** — SCM Lakebase count now sourced from live DB diff, not migration file scan; cache primes lazily on click; removed buggy migration-file supplement that double-counted on re-open.
+- **Runner setup hardening** — aggressive state reset before reconfigure (wipes `.runner`, `.credentials*`, `.path`, `.service`, `svc.sh`, `.runner_migrated`, macOS launchd plist) — `config.sh` was silently no-op'ing on `--replace` after owner migrations.
+- **`DATABASE_URL` username URL-encoding** in three CI scripts (Lakebase usernames are emails, the `@` breaks parsing without encoding).
+- **Apache 2.0 LICENSE + CONTRIBUTING + CODE_OF_CONDUCT + CODEOWNERS + issue/PR templates** — repo in transferable shape for the `databrickslabs/` donation conversation.
+
+### v0.5.6 changelog:
+- **Substrate extracted to its own repo, pinned by tag.** `@databricks-solutions/lakebase-scm-workflow-scripts` now resolves to `github:databricks-solutions/lakebase-scm-workflows#v0.1.0-alpha.0` (annotated tag at `f61af250`). Reproducible installs, bisect-friendly, clear forward path for future substrate bumps. The extension delegates branch CRUD, endpoint lookup, credential minting, schema queries, project CRUD, and the github helpers to substrate; the extension keeps VS Code-aware shells + UI adapters.
+- **Two substrate bugs surfaced + fixed by live BDD.** `schema-diff` was passing branch UIDs (`br-still-bar-…`) to `databricks postgres list-endpoints` which only accepts NAMES (`staging`); `resolveComparisonBranch` and `findDefaultBranch` now resolve UID → name. `syncCiSecrets` read `.env` from disk to get `HOST` + `PROJECT_ID`, but option 3 (no .env-on-create) had removed that file — now both are passed as direct args; manifested earlier as "Lakebase feature branches not removed with their GitHub branches" because CI jobs had `LAKEBASE_PROJECT_ID=` empty.
+- **`createProject` no longer writes `.env`** (substrate option 3). Closes the last path by which a real JWT could end up staged in git. `.env.example` ships; post-checkout bootstraps `.env` on first switch.
+- **`branch-create` validates collision source** (substrate). When a branch with the target name already exists, compare its `source_branch` to the requested parent. Match → return existing (true retry idempotency). Mismatch → throw `LakebaseBranchError` naming both, so the operator picks delete-then-recreate or a different target.
+- **`merge.yml` snapshot lifecycle hardening (templates).** Failed `create-branch` no longer triggers a misleading "may have already expired" log downstream; the dead `MIGRATE_RESULT` variable is gone.
+- **Drift detection in `lakebaseService.createBranch`.** New `currentGitBranch` arg cross-checked against `.env`'s `LAKEBASE_BRANCH_ID`. On divergence the service prefers git HEAD and warns. Logic extracted as exported pure helper `resolveCreateBranchParent` for unit-testability.
+- **`createUnifiedBranchFrom`** — renamed from `createBranchFrom` for symmetry with `createUnifiedBranch`. Lakebase-only creation remains `createBranch`. Breaking if you had keybindings bound to the old name.
+- **`acquireSingleRunLock(suiteName)`** — pid-file lock for integration suites. A second mocha launch for the same suite refuses to start (rather than racing into orphaned project pairs).
+- **`assertIntegrationCredentials` + `requireLakebaseLiveEnv` helpers** — integration tests stop defaulting silently to one maintainer's Databricks workspace. Contributors must set `DATABRICKS_TEST_HOST` + `databricks auth login` + `gh auth login` before Tier 3 runs. Failures throw a banner-prefixed `IntegrationSetupError` with copy-paste setup commands.
+- **CONTRIBUTING three-tier testing section** + PR template tied to the same three checkboxes — Tier 1 hermetic unit, Tier 2 hermetic substrate BDD, Tier 3 full integration. **All three are mandatory before opening a PR.**
+- **Test coverage at this release:** hermetic substrate BDD 175 passing / 22 skipped; full live substrate BDD 197 / 0; extension unit suite 343 / 0; extension ecom integration 413 / 0; extension python-devloop integration 426 / 0. **1554 tests, zero failing.**
 
 ### Known issues / tech debt:
 - Existing projects created before v0.4.0 need manual workflow update (replace `actions/setup-java` with local JDK step) for self-hosted runners.

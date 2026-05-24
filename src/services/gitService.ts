@@ -2,6 +2,14 @@ import * as vscode from 'vscode';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 import { exec } from '../utils/exec';
 import { formatOwnerRepo, parseOwnerRepo } from '../utils/parseRepo';
+// Substrate covers a small, pairing-essential subset of git ops (clone +
+// origin-remote parsing). The remaining ~60 methods on this service are
+// VS Code SCM-flavored / generic git wrappers and stay inline. FEIP-7065.
+import {
+  cloneRepo as substrateCloneRepo,
+  getGitHubUrl as substrateGetGitHubUrl,
+  getOwnerRepo as substrateGetOwnerRepo,
+} from '@databricks-solutions/lakebase-scm-workflow-scripts';
 
 export interface PullRequestCheck {
   name: string;
@@ -890,13 +898,7 @@ export class GitService {
   async getGitHubUrl(cwd?: string): Promise<string> {
     const root = cwd || getWorkspaceRoot();
     if (!root) { return ''; }
-    try {
-      const url = (await exec('git remote get-url origin', root)).trim();
-      return url
-        .replace(/\.git$/, '')
-        .replace(/^git@github\.com:/, 'https://github.com/')
-        .replace(/^ssh:\/\/git@github\.com\//, 'https://github.com/');
-    } catch { return ''; }
+    return substrateGetGitHubUrl(root);
   }
 
   /**
@@ -905,14 +907,9 @@ export class GitService {
    * @param cwd - Optional repo root (defaults to workspace root)
    */
   async getOwnerRepo(cwd?: string): Promise<string> {
-    const url = await this.getGitHubUrl(cwd);
-    if (!url) { return ''; }
-    try {
-      const { owner, repo } = parseOwnerRepo(url);
-      return formatOwnerRepo(owner, repo);
-    } catch {
-      return '';
-    }
+    const root = cwd || getWorkspaceRoot();
+    if (!root) { return ''; }
+    return substrateGetOwnerRepo(root);
   }
 
   /**
@@ -1029,7 +1026,7 @@ export class GitService {
    * @param parentDir - Directory that will contain the cloned repo folder
    */
   async cloneRepo(repoUrl: string, parentDir: string): Promise<void> {
-    await exec(`git clone "${repoUrl}"`, parentDir);
+    return substrateCloneRepo(repoUrl, parentDir);
   }
 
   getCachedBranch(): string {
