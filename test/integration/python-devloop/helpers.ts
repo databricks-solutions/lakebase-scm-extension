@@ -222,7 +222,14 @@ export async function runAlembicAndTests(
 ): Promise<string> {
   const branch = readBranchFromEnv(ctx.projectDir);
   const priorHost = process.env.DATABRICKS_HOST;
+  const priorPath = process.env.PATH;
   process.env.DATABRICKS_HOST = ctx.dbHost;
+  // The substrate spawns `alembic` from PATH. ProjectCreationService /
+  // `uv sync` installed alembic into <projectDir>/.venv/bin; prepend it
+  // so the spawn resolves to the per-project venv (same path `uv run`
+  // would have used).
+  const venvBin = path.join(ctx.projectDir, '.venv', 'bin');
+  process.env.PATH = `${venvBin}:${priorPath ?? ''}`;
   try {
     const applied = await substrateApplyMigrations({
       instance: ctx.projectName,
@@ -233,6 +240,8 @@ export async function runAlembicAndTests(
   } finally {
     if (priorHost === undefined) delete process.env.DATABRICKS_HOST;
     else process.env.DATABRICKS_HOST = priorHost;
+    if (priorPath === undefined) delete process.env.PATH;
+    else process.env.PATH = priorPath;
   }
   try {
     const output = cp.execSync(

@@ -331,12 +331,14 @@ export async function runMavenTests(ctx: ScenarioContext, timeoutMs = 300000): P
 
   // 2. Maven runs against the already-migrated schema. Spring's auto-flyway
   //    is off (see application-local.properties); Hibernate just validates.
+  //    Always run online: ~/.m2/settings.xml routes through the internal
+  //    maven-proxy mirror, which serves any uncached parent POM (e.g.
+  //    spring-boot-starter-parent:3.5.5) on demand. The prior -o shortcut
+  //    failed when a different Spring Boot version was already cached.
   let mvnOutput: string;
   try {
-    const m2Repo = path.join(require('os').homedir(), '.m2', 'repository');
-    const offlineFlag = fs.existsSync(path.join(m2Repo, 'org', 'springframework', 'boot')) ? '-o ' : '';
     mvnOutput = cp.execSync(
-      `bash -c 'set -a; source .env; set +a; ./mvnw ${offlineFlag}test 2>&1'`,
+      `bash -c 'set -a; source .env; set +a; ./mvnw test 2>&1'`,
       { cwd: ctx.projectDir, timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: ctx.dbHost } }
     ).toString();
     console.log('    [mvnw] Tests passed.');
