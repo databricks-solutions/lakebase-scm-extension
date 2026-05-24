@@ -66,7 +66,9 @@ Three tiers, ordered by what they require and how long they take:
 npm test
 ```
 
-Runs the mocha `test/suite/` tests against mocks. **Always run this before pushing.** Catches API breakage, regex/parse logic, scaffold deviations.
+Runs the mocha `test/suite/` and `test/equivalence/` tests against mocks. **Always run this before pushing.** Catches API breakage, regex/parse logic, scaffold deviations, and drift between extension proxies and the substrate they delegate to.
+
+**Equivalence harness (`test/equivalence/`)** — every extension service method that delegates to `@databricks-solutions/lakebase-scm-workflow-scripts` has an adapter-aware equivalence test (FEIP-7080). Each test stubs the substrate function via `test/mocks/substrate.js` and asserts (a) substrate is called with the args the proxy derived from VS Code context, and (b) the proxy returns the documented adapter applied to the substrate result. When you change a proxy's argument-mapping or its result-adapter, update the matching test in `test/equivalence/`. Run just this slice with `npm run test:equivalence`.
 
 ### Tier 2 — Hermetic substrate BDD (no credentials, ~10s)
 
