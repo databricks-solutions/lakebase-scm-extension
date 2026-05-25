@@ -25,29 +25,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LakebaseService } from '../../../src/services/lakebaseService';
-import { createLongRunningBranch } from '@databricks-solutions/lakebase-app-dev-kit';
+import {
+  createLongRunningBranch,
+  deployScripts,
+  installHooks,
+} from '@databricks-solutions/lakebase-app-dev-kit';
 import { assertIntegrationCredentials } from '../lib/credentials';
 
 const HOOK_LOG = '/tmp/lakebase-hook.log';
-
-// Where the alpha.9 kit ships the hook + sanitize helper. We copy
-// directly from node_modules so this test always exercises the SAME
-// hook the integration suite would install via scaffold.
-const HOOK_SRC = path.join(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  'node_modules',
-  '@databricks-solutions',
-  'lakebase-app-dev-kit',
-  'templates',
-  'project',
-  'common',
-  'scripts',
-  'post-checkout.sh',
-);
-const SANITIZE_SRC = path.join(path.dirname(HOOK_SRC), 'sanitize-branch-name.sh');
 
 describe('post-checkout hook (small repro)', function () {
   this.timeout(300000); // 5 min
@@ -111,22 +96,15 @@ describe('post-checkout hook (small repro)', function () {
       [`DATABRICKS_HOST=${dbHost}`, `LAKEBASE_PROJECT_ID=${projectName}`, ''].join('\n'),
     );
 
-    // 4. Stage hook sources under <projectDir>/scripts/ - matches what
-    //    the substrate's deployScripts step does during scaffold - then
-    //    invoke install-hook.sh exactly as a user would. install-hook.sh
-    //    copies the hook into .git/hooks/ AND pins core.hooksPath to
-    //    .git/hooks (the alpha.10 fix). If the pin step is ever removed
-    //    from install-hook.sh, this test will fail with .env never being
-    //    written - regression guard for the fix.
-    const scriptsDir = path.join(projectDir, 'scripts');
-    fs.mkdirSync(scriptsDir, { recursive: true });
-    fs.copyFileSync(HOOK_SRC, path.join(scriptsDir, 'post-checkout.sh'));
-    fs.copyFileSync(SANITIZE_SRC, path.join(scriptsDir, 'sanitize-branch-name.sh'));
-    fs.chmodSync(path.join(scriptsDir, 'sanitize-branch-name.sh'), 0o755);
-    const installHookSrc = path.join(path.dirname(HOOK_SRC), 'install-hook.sh');
-    fs.copyFileSync(installHookSrc, path.join(scriptsDir, 'install-hook.sh'));
-    fs.chmodSync(path.join(scriptsDir, 'install-hook.sh'), 0o755);
-    cp.execSync('bash scripts/install-hook.sh', { cwd: projectDir, stdio: 'pipe' });
+    // 4. Use the substrate's deployScripts + installHooks primitives -
+    //    exactly what a real VS Code scaffold runs. deployScripts copies
+    //    EVERY common script into <projectDir>/scripts; installHooks
+    //    wires .git/hooks AND pins core.hooksPath to .git/hooks (the
+    //    alpha.10 fix). If installHooks ever stops pinning the path,
+    //    this test fails with .env never being written - regression
+    //    guard for the fix.
+    await deployScripts(projectDir);
+    await installHooks(projectDir);
 
     // 5. Patch the installed hook with diagnostic instrumentation.
     //    Redirects stderr + xtrace to HOOK_LOG so silent early exits
