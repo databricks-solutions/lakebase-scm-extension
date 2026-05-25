@@ -8,7 +8,7 @@
 import { strict as assert } from 'assert';
 import {
   ScenarioContext, git, createFeatureBranch, writeJavaFile, writeMigration,
-  commitAndPush, createPR, mergePR, pullMain, cleanupBranch,
+  commitAndPush, createPR, mergePR, pullBaseBranch, cleanupBranch,
   waitForWorkflowRun, getLatestRunId, getWorkflowLogs, getPRComments,
   verifyTableExists, verifyMigrationApplied, verifyFileOnGitHub,
   parseMigrationSql, deleteLakebaseBranch,
@@ -356,7 +356,7 @@ export function runScenario(ctx: ScenarioContext): void {
     });
 
     it('A1: creates feature/orders branch', () => {
-      createFeatureBranch(ctx, BRANCH);
+      await createFeatureBranch(ctx, BRANCH);
       const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
       assert.strictEqual(current, BRANCH);
     });
@@ -441,16 +441,16 @@ export function runScenario(ctx: ScenarioContext): void {
       await mergePR(ctx, prNumber);
     });
 
-    it('C3: merge.yml succeeds (Flyway on production)', async () => {
-      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
+    it('C3: merge.yml succeeds (Flyway on base branch)', async () => {
+      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: ctx.baseBranch, event: 'push', afterRunId: beforeMergeRunId });
       if (result.conclusion !== 'success') {
         const logs = getWorkflowLogs(ctx, result.runId);
         assert.fail(`merge.yml failed (${result.conclusion}). Run ${result.runId}. Logs:\n${logs}`);
       }
     });
 
-    it('C4: pulls main', () => {
-      pullMain(ctx);
+    it('C4: pulls base branch', () => {
+      pullBaseBranch(ctx);
     });
   });
 

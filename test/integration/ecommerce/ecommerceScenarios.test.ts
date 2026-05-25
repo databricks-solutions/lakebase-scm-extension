@@ -20,7 +20,12 @@ import {
   ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
   saveFailedCiRunLogs,
 } from './helpers';
-import { installFailureTracker, preservedResourcesBanner } from '../lib';
+import {
+  installFailureTracker, preservedResourcesBanner,
+  createLongRunningBranch, release,
+  assertBackupSnapshotLifecycle, assertSchemaContainsOnBranch,
+  resolveDefaultBranchName,
+} from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
 
@@ -107,7 +112,7 @@ const installSignalHandlers = (): void =>
   });
 
 const reapOrphanProjects = (dbHost: string): Promise<void> =>
-  libReapOrphans('ecom-', dbHost);
+  libReapOrphans('ecom-', dbHost, parseInt(process.env.ECOM_REAP_AGE_MS || '3600000', 10));
 
 describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
   this.timeout(7200000); // 2 hours overall (8 scenarios × ~10 min each)
@@ -121,6 +126,26 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
 
   before(async function () {
     this.timeout(300000); // 5 min for setup
+
+    // Wipe stale diagnostic logs from prior runs so the post-run inspection
+    // never confuses an old failure with this run's. Keep anything modified
+    // in the last 60s - the launch-cli creates the current log via nohup
+    // redirect seconds before mocha boots, so an mtime cutoff reliably
+    // preserves the active file descriptor's target.
+    try {
+      const logDir = '/tmp/two-tier-runs';
+      if (fs.existsSync(logDir)) {
+        const cutoffMs = Date.now() - 60_000;
+        for (const f of fs.readdirSync(logDir)) {
+          if (!f.endsWith('.log')) continue;
+          const fp = path.join(logDir, f);
+          try {
+            const st = fs.statSync(fp);
+            if (st.mtimeMs < cutoffMs) fs.unlinkSync(fp);
+          } catch { /* ignore individual file errors */ }
+        }
+      }
+    } catch { /* never let log cleanup abort setup */ }
 
     // Refuse to start if another ecom integration run is already in progress.
     // Throws before any cloud resources are created, so a stray parallel
@@ -154,6 +179,13 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     const parentDir = require('os').homedir();
     const projectDir = path.join(parentDir, PROJECT_NAME);
 
+    // Point the wrapper's getWorkspaceRoot() at the test project directory
+    // so getEnvConfig() reads <projectDir>/.env - exactly what VS Code does
+    // via workspaceFolders in a normal IDE session. This is what lets the
+    // post-checkout hook's LAKEBASE_BRANCH_ID writes flow through to
+    // resolveCreateBranchParent without scenarios passing override args.
+    process.env.LAKEBASE_PROJECT_DIR = projectDir;
+
     const input: ProjectCreationInput = {
       projectName: PROJECT_NAME,
       parentDir,
@@ -173,6 +205,9 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       scaffoldService,
       creationService,
       input,
+      // Two-tier suite: scenarios PR into staging. N-tier suites would set
+      // this to whichever tier their working-branch types target.
+      baseBranch: 'staging',
     });
 
     console.log(`\n  Project: ${PROJECT_NAME}`);
@@ -202,8 +237,22 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     runner = startRunner(ctx, runnerDir);
     console.log(`    [setup] Runner started (pid=${runner.pid}).\n`);
 
+    // Step 4: Cut the two-tier staging branch (Lakebase + git). Feature
+    // scenarios PR into this; Step E promotes staging → main, which is
+    // what actually exercises merge.yml's cut-backup + migrate-prod path.
+    console.log(`    [setup] Cutting Lakebase staging branch + pushing git staging…`);
+    const stagingInfo = await createLongRunningBranch({
+      // Architect declares two-tier: 'staging' tier forked from 'main'.
+      name: 'staging',
+      forkFromBranch: 'main',
+      projectId: PROJECT_NAME,
+      workTreeDir: ctx.projectDir,
+      databricksHost: dbHost,
+    });
+    console.log(`    [setup] Staging ready: lakebase=${stagingInfo.lakebaseBranchName}, git=${stagingInfo.gitBranch}.\n`);
+
     created = true;
-    console.log(`    [setup] Ready – 8 scenarios will execute.\n`);
+    console.log(`    [setup] Ready – 8 scenarios + 2 promotions will execute.\n`);
   });
 
   // ── Scenarios 1-6: All Entities (one branch, one PR, one merge) ──
@@ -222,12 +271,115 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     scenario7(ctx);
   });
 
+  // ── Step E1: Promote staging → main (after scenario 7) ───────────
+  // Exercises merge.yml's substrate-routed cut-backup + migrate against
+  // the prod (default) Lakebase branch. After this promotion, prod
+  // should carry V2..V8 (scenarios 1-6 entities + scenario 7's ALTER).
+
+  describe('Step E1: Release staging → main (post-scenario 7)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let releaseResult: Awaited<ReturnType<typeof release>>;
+
+    it('opens + merges staging → main PR and merge.yml succeeds', async () => {
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
+        ownerRepo: ctx.fullRepoName,
+        releaseLabel: 'post-scenario-7',
+      });
+      assert.strictEqual(
+        releaseResult.conclusion, 'success',
+        `merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
+      });
+    });
+
+    it('prod (default) Lakebase branch now carries scenario 1-7 tables', async () => {
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
+        expectedTables: [
+          'book', 'product', 'customer', 'cart', 'cart_item',
+          'orders', 'order_item', 'wishlist', 'wishlist_item',
+        ],
+      });
+    });
+  });
+
   // ── Scenario 8: DROP TABLE (Remove Book) ─────────────────────────
 
   describe('Scenario 8: DROP TABLE', function () {
     this.timeout(600000);
     before(function () { if (!created) { this.skip(); } });
     scenario8(ctx);
+  });
+
+  // ── Step E2: Promote staging → main (after scenario 8 / final) ──
+  // Final promotion exercises merge.yml against a DROP migration on
+  // prod. After this, the book table must be gone from prod and the
+  // remaining 8 tables present.
+
+  describe('Step E2: Release staging → main (final, post-scenario 8)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let releaseResult: Awaited<ReturnType<typeof release>>;
+
+    it('opens + merges final staging → main PR and merge.yml succeeds', async () => {
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
+        ownerRepo: ctx.fullRepoName,
+        releaseLabel: 'final-post-scenario-8',
+      });
+      assert.strictEqual(
+        releaseResult.conclusion, 'success',
+        `Final merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
+      });
+    });
+
+    it('prod has book DROPPED and the remaining 8 tables present', async () => {
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
+        expectedTables: [
+          'product', 'customer', 'cart', 'cart_item',
+          'orders', 'order_item', 'wishlist', 'wishlist_item',
+        ],
+        unexpectedTables: ['book'],
+      });
+    });
   });
 
   // ── Final Verification ───────────────────────────────────────────

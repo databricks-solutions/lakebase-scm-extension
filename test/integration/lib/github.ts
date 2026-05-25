@@ -26,14 +26,27 @@ export interface WaitForWorkflowOptions {
   pollIntervalMs?: number;
 }
 
-/** Create a PR via substrate octokit; returns the PR number. */
-export async function createPR(ownerRepo: string, title: string, branchName: string, body: string): Promise<number> {
+/**
+ * Create a PR via substrate octokit; returns the PR number. baseBranch
+ * is REQUIRED - the caller must declare which tier the PR targets so
+ * the lib stays tier-agnostic. Per-language wrappers in
+ * {ecommerce,python-devloop}/helpers.ts default it to ctx.baseBranch
+ * for scenario PRs; release PRs go through lib/staging-promotion.ts's
+ * release() helper which passes both from and to explicitly.
+ */
+export async function createPR(
+  ownerRepo: string,
+  title: string,
+  branchName: string,
+  body: string,
+  baseBranch: string,
+): Promise<number> {
   const url = await createPullRequest({
     ownerRepo,
     headBranch: branchName,
     title,
     body,
-    baseBranch: 'main',
+    baseBranch,
   });
   const match = url.match(/\/pull\/(\d+)/);
   if (!match) { throw new Error(`Could not extract PR number from: ${url}`); }

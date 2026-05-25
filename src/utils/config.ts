@@ -71,7 +71,13 @@ export interface EnvConfig {
 }
 
 export function getWorkspaceRoot(): string | undefined {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  // Prefer VS Code's workspace when the extension runs inside an IDE.
+  // Fall back to LAKEBASE_PROJECT_DIR so non-VS-Code callers (integration
+  // tests, scripts, CLI agents) can point at a project root the same way
+  // VS Code's open-folder does. This is a no-op for the IDE path.
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    ?? process.env.LAKEBASE_PROJECT_DIR
+    ?? undefined;
 }
 
 export function parseEnvFile(filePath: string): EnvConfig {

@@ -38,13 +38,57 @@ export interface ScenarioContext {
   input: ProjectCreationInput;
   /** Tracks the next Alembic revision number (starts at 2, since 001 is the placeholder) */
   nextRevision: number;
+  /**
+   * The long-running branch this scenario PRs into. Two-tier suites set
+   * 'staging'; three-tier suites would set 'dev'. Scenarios never hardcode
+   * 'main' or 'staging' - they pass ctx.baseBranch to waitForWorkflowRun
+   * and pullBaseBranch. See docs/two-tier-e2e-promotion-plan.md.
+   */
+  baseBranch: string;
 }
 
 // ── Shell helpers ────────────────────────────────────────────────────
 
-/** Run a git command in the project directory */
+/** Run a git command in the project directory. Timeout is generous (5 min)
+ *  because checkout fires the post-checkout hook, which provisions/refreshes
+ *  the Lakebase branch + endpoint + credentials. Aggressive timeouts here
+ *  killed the hook mid-flight before it could write .env. */
 export function git(ctx: ScenarioContext, cmd: string): string {
-  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 30000 }).toString().trim();
+  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 300000 }).toString().trim();
+}
+
+/** Poll <projectDir>/.env until LAKEBASE_BRANCH_ID matches the expected
+ *  value. Used after `git checkout` to gate scenario steps on the
+ *  post-checkout hook actually finishing its .env write. */
+export async function waitForEnvBranchId(
+  ctx: ScenarioContext,
+  expectedBranchId: string,
+  timeoutMs = 180000,
+): Promise<void> {
+  const envPath = path.join(ctx.projectDir, '.env');
+  const deadline = Date.now() + timeoutMs;
+  let last = '<unset>';
+  while (Date.now() < deadline) {
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      const m = content.match(/^LAKEBASE_BRANCH_ID=(.*)$/m);
+      last = m ? (m[1].trim() || '<empty>') : '<unset>';
+      if (last === expectedBranchId) {
+        return;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs / 1000}s waiting for ` +
+    `.env LAKEBASE_BRANCH_ID=${expectedBranchId} (last seen: '${last}'). ` +
+    `The post-checkout hook either didn't fire or failed before writing .env.`,
+  );
+}
+
+/** Sanitize a git branch name to the Lakebase branch ID the hook will use. */
+function sanitizeForLakebase(gitBranch: string): string {
+  return gitBranch.replace(/\//g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 }
 
 /** Run a shell command in the project directory */
@@ -59,58 +103,78 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
 // ── Lakebase helpers ─────────────────────────────────────────────────
 
 /**
- * Create a Lakebase database branch and write Python-style .env connection.
- * Uses DATABASE_URL (not SPRING_DATASOURCE_*).
+ * Print the .env values that drive the wrapper's parent-branch resolution.
+ * Run right before any createBranch call so a debugger can tell at a
+ * glance whether the post-checkout hook left .env in the expected shape.
+ * Only the non-secret fields - never the JWT.
+ */
+function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
+  const envPath = path.join(ctx.projectDir, '.env');
+  let projectId = '<unset>';
+  let branchId = '<unset>';
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+      const m = line.match(/^(LAKEBASE_PROJECT_ID|LAKEBASE_BRANCH_ID)=(.*)$/);
+      if (m) {
+        if (m[1] === 'LAKEBASE_PROJECT_ID') projectId = m[2] || '<empty>';
+        if (m[1] === 'LAKEBASE_BRANCH_ID') branchId = m[2] || '<empty>';
+      }
+    }
+  } else {
+    projectId = '<no .env file>';
+    branchId = '<no .env file>';
+  }
+  const headBranch = git(ctx, 'rev-parse --abbrev-ref HEAD');
+  console.log(
+    `    [env-before-branch] new='${newBranchName}', git HEAD='${headBranch}', ` +
+    `.env LAKEBASE_PROJECT_ID='${projectId}', LAKEBASE_BRANCH_ID='${branchId}'`,
+  );
+}
+
+/**
+ * Wait for the post-checkout hook to wire this branch's Lakebase connection
+ * into .env, then rewrite DATABASE_URL with the Python psycopg driver
+ * prefix.
+ *
+ * Before alpha.10 this helper duplicated the hook's work because the
+ * hook silently never fired (contributor's global core.hooksPath
+ * shadowed .git/hooks/). alpha.10's install-hook.sh pins core.hooksPath
+ * project-local, so the hook now does createBranch + endpoint +
+ * credential + .env write itself - exactly the same call shape VS Code
+ * triggers when a user runs `git checkout -b feature/...`. The hook
+ * writes DATABASE_URL with the bare `postgresql://` prefix; SQLAlchemy
+ * needs `postgresql+psycopg://` to select the psycopg driver, so we
+ * rewrite that single line here. The hook learning the language is
+ * future-work (see vs-code-parity-followups.md in this repo).
  */
 export async function createLakebaseBranchAndConnect(
   ctx: ScenarioContext,
   gitBranchName: string,
 ): Promise<{ branchId: string; host: string; username: string }> {
-  const branch = await ctx.lakebaseService.createBranch(gitBranchName);
-  if (!branch) {
-    throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
-  }
-
-  const ep = await ctx.lakebaseService.getEndpoint(branch.uid);
-  if (!ep?.host) {
-    throw new Error(`LakebaseService.getEndpoint('${branch.uid}') returned no host`);
-  }
-
-  const cred = await ctx.lakebaseService.getCredential(branch.uid);
-  if (!cred.token || !cred.email) {
-    throw new Error(`LakebaseService.getCredential('${branch.uid}') returned empty credentials`);
-  }
-
-  const dbName = 'databricks_postgres';
-  const dbUrl = `postgresql+psycopg://${encodeURIComponent(cred.email)}:${encodeURIComponent(cred.token)}@${ep.host}:5432/${dbName}?sslmode=require`;
+  logEnvBeforeBranch(ctx, gitBranchName);
+  const expectedBranchId = sanitizeForLakebase(gitBranchName);
+  await waitForEnvBranchId(ctx, expectedBranchId);
 
   const envPath = path.join(ctx.projectDir, '.env');
-  let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+  let env = fs.readFileSync(envPath, 'utf-8');
+  const branchId = env.match(/^LAKEBASE_BRANCH_ID=(.+)$/m)?.[1];
+  const host = env.match(/^LAKEBASE_HOST=(.+)$/m)?.[1];
+  const username = env.match(/^DB_USERNAME=(.+)$/m)?.[1];
+  if (!branchId || !host || !username) {
+    throw new Error(
+      `Hook did not finish writing .env for ${gitBranchName}: ` +
+      `LAKEBASE_BRANCH_ID=${branchId} LAKEBASE_HOST=${host} DB_USERNAME=${username}`,
+    );
+  }
 
-  // Remove existing connection vars
-  envContent = envContent
-    .split('\n')
-    .filter(l =>
-      !l.startsWith('DATABASE_URL=') &&
-      !l.startsWith('DB_USERNAME=') &&
-      !l.startsWith('DB_PASSWORD=') &&
-      !l.startsWith('LAKEBASE_HOST=') &&
-      !l.startsWith('LAKEBASE_BRANCH_ID=')
-    )
-    .join('\n');
+  // Rewrite DATABASE_URL to use the psycopg driver. Hook wrote
+  // `postgresql://...`; SQLAlchemy needs `postgresql+psycopg://...`.
+  if (/^DATABASE_URL=postgresql:\/\//m.test(env)) {
+    env = env.replace(/^DATABASE_URL=postgresql:\/\//m, 'DATABASE_URL=postgresql+psycopg://');
+    fs.writeFileSync(envPath, env);
+  }
 
-  envContent += [
-    '',
-    `DATABASE_URL=${dbUrl}`,
-    `DB_USERNAME=${cred.email}`,
-    `DB_PASSWORD=${cred.token}`,
-    `LAKEBASE_HOST=${ep.host}`,
-    `LAKEBASE_BRANCH_ID=${branch.branchId}`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(envPath, envContent);
-
-  return { branchId: branch.branchId, host: ep.host, username: cred.email };
+  return { branchId, host, username };
 }
 
 /** Verify that .env has a DATABASE_URL set */
@@ -126,13 +190,24 @@ export function verifyBranchConnection(ctx: ScenarioContext): { url: string } {
 // ── Phase A: Developer (Local) ───────────────────────────────────────
 
 /** A1a: Create a git feature branch from main */
-export function createFeatureBranch(ctx: ScenarioContext, branchName: string): void {
-  const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
-  if (current !== 'main') {
-    try { git(ctx, 'checkout main'); } catch { git(ctx, 'branch -M main'); }
-  }
-  git(ctx, 'pull origin main');
+export async function createFeatureBranch(ctx: ScenarioContext, branchName: string): Promise<void> {
+  // Branch off ctx.baseBranch. After each checkout, wait for the
+  // post-checkout hook to update .env so the next operation reads the
+  // correct LAKEBASE_BRANCH_ID. See ecommerce/helpers.ts for rationale.
+  const base = ctx.baseBranch;
+  // ALWAYS check out base, even when already on it. Between scenarios,
+  // the previous scenario can leave the working tree on `base` but with
+  // .env's LAKEBASE_BRANCH_ID still pointing at the prior feature branch
+  // (no checkout happened since then to fire the hook). Skipping the
+  // explicit checkout means the next `git checkout -b` reads a stale
+  // parent and the new Lakebase branch forks from the wrong place. git's
+  // post-checkout fires even on a no-op `git checkout <samebranch>` so
+  // this reliably re-syncs .env to base.
+  try { git(ctx, `checkout ${base}`); } catch { git(ctx, `branch -M ${base}`); }
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
+  git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));
 }
 
 /** Write a Python source file (relative to project root) */
@@ -266,18 +341,32 @@ export function commitAndPush(ctx: ScenarioContext, message: string, branchName:
 
 // ── Phase B/C: PR + Merge ────────────────────────────────────────────
 
-/** Create a PR; returns the PR number. */
-export const createPR = (ctx: ScenarioContext, title: string, branchName: string): Promise<number> =>
-  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated Python devloop test');
+/**
+ * Create a PR; returns the PR number. Defaults to ctx.baseBranch so
+ * scenario PRs target the suite's configured base tier. Promotion PRs
+ * go through the release primitive in lib/staging-promotion.ts.
+ */
+export const createPR = (
+  ctx: ScenarioContext,
+  title: string,
+  branchName: string,
+  baseBranch?: string,
+): Promise<number> =>
+  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated Python devloop test', baseBranch ?? ctx.baseBranch);
 
 /** Merge a PR (merge-commit, deletes the remote head branch). */
 export const mergePR = (ctx: ScenarioContext, prNumber: number): Promise<void> =>
   lib.mergePR(ctx.fullRepoName, prNumber);
 
-/** Update local main after merge */
-export function pullMain(ctx: ScenarioContext): void {
-  git(ctx, 'checkout main');
-  git(ctx, 'pull origin main');
+/**
+ * Update the local working tree after a scenario PR merges into its base
+ * branch. Two-tier suites resolve ctx.baseBranch to 'staging'; N-tier
+ * suites resolve it to whatever tier this scenario was targeting. The
+ * helper is tier-agnostic; the call site is what's parameterized.
+ */
+export function pullBaseBranch(ctx: ScenarioContext): void {
+  git(ctx, `checkout ${ctx.baseBranch}`);
+  git(ctx, `pull origin ${ctx.baseBranch}`);
 }
 
 /** Get PR comment bodies. */
@@ -286,7 +375,9 @@ export const getPRComments = (ctx: ScenarioContext, prNumber: number): Promise<s
 
 /** Delete the feature branch locally and remotely */
 export function cleanupBranch(ctx: ScenarioContext, branchName: string): void {
-  try { git(ctx, 'checkout main'); } catch {}
+  // Hop off the feature branch onto the tier we PR'd into. ctx.baseBranch
+  // is the suite's configured tier (two-tier: 'staging').
+  try { git(ctx, `checkout ${ctx.baseBranch}`); } catch {}
   try { git(ctx, `branch -D ${branchName}`); } catch {}
   try { git(ctx, `push origin --delete ${branchName}`); } catch {}
 }
@@ -306,37 +397,72 @@ export const waitForRunnerIdle = (ctx: ScenarioContext, timeoutMs = 300000, opts
   lib.waitForRunnerIdle(ctx.fullRepoName, timeoutMs, opts);
 
 
-// ── Phase D: Production Verification ─────────────────────────────────
+// ── Phase D: Verification (staging by default, Step E asserts against prod) ──
 
-/** Run a SQL query on the production database via lib (substrate pg.Pool). */
+/**
+ * Run a SQL query on a named Lakebase branch. Two-tier flow: Phase D
+ * asserts the merge landed on STAGING. Step E asserts prod via
+ * branch='default'.
+ */
+export const queryBranch = (ctx: ScenarioContext, branch: string, sql: string): Promise<string> =>
+  lib.queryBranch(ctx.projectName, branch, sql);
+
+/** Query the project's prod (default) Lakebase branch. Used by Final
+ *  Verification after all releases have promoted up the chain. */
 export const queryProduction = (ctx: ScenarioContext, sql: string): Promise<string> =>
   lib.queryProduction(ctx.projectName, sql);
 
-/** Verify a table exists on production */
-export async function verifyTableExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
+/** Verify a table exists on the branch where the scenario's merge lands
+ *  (defaults to ctx.baseBranch). */
+export async function verifyTableExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch?: string,
+): Promise<boolean> {
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
   return result === 't';
 }
 
-/** Verify a table does NOT exist on production */
-export async function verifyTableNotExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  return !(await verifyTableExists(ctx, tableName));
+/** Verify a table does NOT exist on the branch (defaults to ctx.baseBranch). */
+export async function verifyTableNotExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch?: string,
+): Promise<boolean> {
+  return !(await verifyTableExists(ctx, tableName, branch));
 }
 
-/** Verify a column exists on production */
-export async function verifyColumnExists(ctx: ScenarioContext, tableName: string, columnName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
+/** Verify a column exists on a table on the branch (defaults to ctx.baseBranch). */
+export async function verifyColumnExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  columnName: string,
+  branch?: string,
+): Promise<boolean> {
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
   return result === 't';
 }
 
-/** Verify a column does NOT exist on production */
-export async function verifyColumnNotExists(ctx: ScenarioContext, tableName: string, columnName: string): Promise<boolean> {
-  return !(await verifyColumnExists(ctx, tableName, columnName));
+/** Verify a column does NOT exist on the branch (defaults to ctx.baseBranch). */
+export async function verifyColumnNotExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  columnName: string,
+  branch?: string,
+): Promise<boolean> {
+  return !(await verifyColumnExists(ctx, tableName, columnName, branch));
 }
 
-/** Verify an Alembic migration was applied (exists in alembic_version) */
-export async function verifyAlembicVersion(ctx: ScenarioContext, revision: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
+/** Verify an Alembic migration was applied on the branch (defaults to ctx.baseBranch). */
+export async function verifyAlembicVersion(
+  ctx: ScenarioContext,
+  revision: string,
+  branch?: string,
+): Promise<boolean> {
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
   return result === 't';
 }
 

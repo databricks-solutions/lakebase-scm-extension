@@ -8,7 +8,7 @@
 import { strict as assert } from 'assert';
 import {
   ScenarioContext, git, createFeatureBranch, writePythonFile,
-  writeAlembicMigration, commitAndPush, createPR, mergePR, pullMain,
+  writeAlembicMigration, commitAndPush, createPR, mergePR, pullBaseBranch,
   cleanupBranch, waitForWorkflowRun, getLatestRunId, getWorkflowLogs,
   verifyTableExists, verifyAlembicVersion, verifyFileOnGitHub,
   deleteLakebaseBranch, verifyBranchConnection, createLakebaseBranchAndConnect,
@@ -73,8 +73,9 @@ export function runScenario(ctx: ScenarioContext): void {
       if (this.currentTest?.state === 'failed') { phaseAFailed = true; }
     });
 
-    it('A1a: creates feature/partner branch', () => {
-      createFeatureBranch(ctx, BRANCH);
+    it('A1a: creates feature/partner branch', async function () {
+      this.timeout(300000);
+      await createFeatureBranch(ctx, BRANCH);
       assert.strictEqual(git(ctx, 'rev-parse --abbrev-ref HEAD'), BRANCH);
     });
 
@@ -145,13 +146,13 @@ export function runScenario(ctx: ScenarioContext): void {
     });
 
     it('C3: merge.yml succeeds', async () => {
-      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
+      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: ctx.baseBranch, event: 'push', afterRunId: beforeMergeRunId });
       if (result.conclusion !== 'success') {
         assert.fail(`merge.yml failed (${result.conclusion}). Logs:\n${getWorkflowLogs(ctx, result.runId)}`);
       }
     });
 
-    it('C4: pulls main', () => { pullMain(ctx); });
+    it('C4: pulls base branch', () => { pullBaseBranch(ctx); });
   });
 
   describe('Phase D: Verification', function () {
@@ -162,7 +163,7 @@ export function runScenario(ctx: ScenarioContext): void {
       assert.ok(await verifyAlembicVersion(ctx, '002'));
     });
 
-    it('D2: partner table exists on production', async () => {
+    it('D2: partner table exists on base branch', async () => {
       assert.ok(await verifyTableExists(ctx, 'partner'));
     });
 
