@@ -13,3 +13,4 @@ export * from './lakebase-query';
 export * from './cleanup';
 export * from './lifecycle';
 export * from './credentials';
+export * from './preserve-on-failure';
