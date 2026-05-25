@@ -22,8 +22,9 @@ import {
 } from './helpers';
 import {
   installFailureTracker, preservedResourcesBanner,
-  createStagingBranch, promoteStagingToMain,
-  assertBackupSnapshotLifecycle, assertProdSchemaContains,
+  createLongRunningBranch, release,
+  assertBackupSnapshotLifecycle, assertSchemaContainsOnBranch,
+  resolveDefaultBranchName,
 } from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
@@ -220,7 +221,10 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     // scenarios PR into this; Step E promotes staging → main, which is
     // what actually exercises merge.yml's cut-backup + migrate-prod path.
     console.log(`    [setup] Cutting Lakebase staging branch + pushing git staging…`);
-    const stagingInfo = await createStagingBranch({
+    const stagingInfo = await createLongRunningBranch({
+      // Architect declares two-tier: 'staging' tier forked from 'main'.
+      name: 'staging',
+      forkFromBranch: 'main',
       projectName: PROJECT_NAME,
       projectDir: ctx.projectDir,
       fullRepoName: ctx.fullRepoName,
@@ -255,20 +259,22 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
   // the prod (default) Lakebase branch. After this promotion, prod
   // should carry V2..V8 (scenarios 1-6 entities + scenario 7's ALTER).
 
-  describe('Step E1: Promote staging → main (post-scenario 7)', function () {
+  describe('Step E1: Release staging → main (post-scenario 7)', function () {
     this.timeout(900000);
     before(function () { if (!created) { this.skip(); } });
 
-    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+    let releaseResult: Awaited<ReturnType<typeof release>>;
 
     it('opens + merges staging → main PR and merge.yml succeeds', async () => {
-      promotion = await promoteStagingToMain({
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
         fullRepoName: ctx.fullRepoName,
-        promotionLabel: 'post-scenario-7',
+        releaseLabel: 'post-scenario-7',
       });
       assert.strictEqual(
-        promotion.conclusion, 'success',
-        `merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+        releaseResult.conclusion, 'success',
+        `merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
       );
     });
 
@@ -276,16 +282,21 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
-        conclusion: promotion.conclusion,
+        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
       });
     });
 
     it('prod (default) Lakebase branch now carries scenario 1-7 tables', async () => {
-      await assertProdSchemaContains({
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
         lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
         expectedTables: [
           'book', 'product', 'customer', 'cart', 'cart_item',
           'orders', 'order_item', 'wishlist', 'wishlist_item',
@@ -307,20 +318,22 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
   // prod. After this, the book table must be gone from prod and the
   // remaining 8 tables present.
 
-  describe('Step E2: Promote staging → main (final, post-scenario 8)', function () {
+  describe('Step E2: Release staging → main (final, post-scenario 8)', function () {
     this.timeout(900000);
     before(function () { if (!created) { this.skip(); } });
 
-    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+    let releaseResult: Awaited<ReturnType<typeof release>>;
 
     it('opens + merges final staging → main PR and merge.yml succeeds', async () => {
-      promotion = await promoteStagingToMain({
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
         fullRepoName: ctx.fullRepoName,
-        promotionLabel: 'final-post-scenario-8',
+        releaseLabel: 'final-post-scenario-8',
       });
       assert.strictEqual(
-        promotion.conclusion, 'success',
-        `Final merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+        releaseResult.conclusion, 'success',
+        `Final merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
       );
     });
 
@@ -328,16 +341,21 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
-        conclusion: promotion.conclusion,
+        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
       });
     });
 
     it('prod has book DROPPED and the remaining 8 tables present', async () => {
-      await assertProdSchemaContains({
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
         lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
         expectedTables: [
           'product', 'customer', 'cart', 'cart_item',
           'orders', 'order_item', 'wishlist', 'wishlist_item',

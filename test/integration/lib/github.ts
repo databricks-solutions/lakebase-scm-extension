@@ -28,17 +28,18 @@ export interface WaitForWorkflowOptions {
 
 /**
  * Create a PR via substrate octokit; returns the PR number. baseBranch
- * defaults to 'main' for back-compat with the single-tier flow, but
- * the two-tier suites pass 'staging' here so feature PRs target the
- * staging tier (and a separate staging→main promotion PR fires merge.yml
- * against prod).
+ * is REQUIRED - the caller must declare which tier the PR targets so
+ * the lib stays tier-agnostic. Per-language wrappers in
+ * {ecommerce,python-devloop}/helpers.ts default it to ctx.baseBranch
+ * for scenario PRs; release PRs go through lib/staging-promotion.ts's
+ * release() helper which passes both from and to explicitly.
  */
 export async function createPR(
   ownerRepo: string,
   title: string,
   branchName: string,
   body: string,
-  baseBranch: string = 'main',
+  baseBranch: string,
 ): Promise<number> {
   const url = await createPullRequest({
     ownerRepo,

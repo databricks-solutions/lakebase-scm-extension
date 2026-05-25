@@ -1,30 +1,29 @@
 /**
- * Two-tier release flow helpers for the integration suites.
+ * N-tier release flow helpers for the integration suites.
  *
- * The scaffolded merge.yml triggers on push to either `main` or `staging`,
- * driving a substrate-routed cut-backup + migrate against the matching
- * Lakebase branch (staging → Lakebase staging; main → Lakebase production).
+ * Two roles in any release flow:
+ *   - LONG-RUNNING BRANCHES form a directed chain ending at the project's
+ *     default (usually 'main' / Lakebase 'production'). The architect
+ *     declares which tier names live in the chain (e.g. two-tier:
+ *     ['staging', 'main']; three-tier: ['dev', 'staging', 'main']).
+ *   - A RELEASE is a merge between two adjacent tiers (from → to). The
+ *     shape is identical at every tier; only the tier names change.
  *
- * Default test flow used to be single-tier: feature PR'd straight into
- * main. That left merge.yml's promotion path (staging → main) completely
- * unexercised. This module adds the missing primitives:
+ * This module exposes:
+ *   - `createLongRunningBranch({ name, forkFromBranch, ... })`: cut a
+ *     Lakebase branch + push a paired git branch named `name`. Runs once
+ *     per tier the suite needs (two-tier: once for 'staging').
+ *   - `release({ from, to, ... })`: open + merge a from→to PR, wait for
+ *     merge.yml to complete on the `to` push, return the run + the
+ *     pre-migrate snapshot lifecycle handle.
+ *   - `assertBackupSnapshotLifecycle`: verify cut-backup ran and was
+ *     cleaned up on green / preserved on red.
+ *   - `assertSchemaContainsOnBranch`: verify migration landed on a
+ *     specific Lakebase branch's `public` schema.
  *
- *   - `createStagingBranch`: cut a Lakebase staging branch + push the
- *     paired `staging` git branch. Runs once per suite, before any
- *     feature work, so feature branches can fork off staging.
- *   - `promoteStagingToMain`: open + merge a staging-into-main PR, wait
- *     for merge.yml on the main push, return the resulting run + the
- *     name of the snapshot backup it cut.
- *   - `assertBackupSnapshotExists`: verify the cut-backup primitive
- *     actually created the rollback snapshot in Lakebase.
- *   - `assertProdSchemaContains`: verify the migration landed on the
- *     prod (default) Lakebase branch's `public` schema.
- *
- * Each promotion creates a `pre-migrate-pr-N` snapshot via the
- * substrate's `lakebase-cut-backup` CLI; the merge.yml's "Clean up or
- * preserve snapshot" step deletes it on success and preserves on
- * failure. Tests should NOT assume the snapshot survives beyond the
- * promotion they observed.
+ * Each release creates a `pre-migrate-pr-N` snapshot via the substrate's
+ * `lakebase-cut-backup` CLI; merge.yml's "Clean up or preserve snapshot"
+ * step deletes it on success and preserves on failure.
  */
 
 import { strict as assert } from 'assert';
@@ -36,125 +35,117 @@ import { GitService } from '../../../src/services/gitService';
 const dbcli = (cmd: string, dbHost: string, timeoutMs = 30_000): string =>
   cp.execSync(cmd, { timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: dbHost } }).toString();
 
-export interface StagingSetupArgs {
-  projectName: string;       // Lakebase project (e.g. ecom-mpkXXX)
-  projectDir: string;        // Local scaffolded project directory
-  fullRepoName: string;      // owner/repo on GitHub
-  databricksHost: string;    // Workspace URL
+export interface CreateLongRunningBranchArgs {
+  /** Tier name to create (e.g. 'staging', 'dev'). Used as both the git
+   *  branch name and the Lakebase branch name. */
+  name: string;
+  /** Existing git branch to fork the new tier from. For two-tier the
+   *  staging tier forks from 'main'; for three-tier the dev tier forks
+   *  from 'staging' and the staging tier forks from 'main'. */
+  forkFromBranch: string;
+  projectName: string;
+  projectDir: string;
+  fullRepoName: string;
+  databricksHost: string;
   lakebaseService: LakebaseService;
   gitService: GitService;
 }
 
 /**
- * Cut a Lakebase `staging` branch forked from the project's default
- * (prod) branch, and push the matching git `staging` branch. After
- * this call, `staging` is the merge target for feature PRs in the
- * suite. The default (prod) branch remains untouched.
+ * Cut a long-running tier off another long-running tier. Creates the
+ * Lakebase branch (via the wrapper, which forks from the project's
+ * current branch per convention) and pushes the matching git branch
+ * to GitHub.
  *
- * Idempotent on the Lakebase side - createBranch returns the existing
- * branch if it's already there. Idempotent on the git side because
- * we use `git push --set-upstream` which won't fail on re-push.
+ * Idempotent on both the Lakebase + git sides.
  */
-export async function createStagingBranch(args: StagingSetupArgs): Promise<{
-  lakebaseBranchName: string;
-  gitBranch: string;
-}> {
-  // Fork a Lakebase staging branch. Per convention, createBranch with
-  // no explicit parent forks from the current branch (read from the
-  // project's .env LAKEBASE_BRANCH_ID). When no .env is loaded into
-  // process.env (the test runs outside the VS Code extension context),
-  // resolveCreateBranchParent falls through to undefined and substrate
-  // defaults to the project's main/prod branch - which is exactly
-  // what we want at the very start of the suite. Matches the pattern
-  // in test/integration/ecommerce/helpers.ts and python-devloop/helpers.ts.
-  const stagingLakebase = await args.lakebaseService.createBranch('staging');
-  if (!stagingLakebase) {
+export async function createLongRunningBranch(
+  args: CreateLongRunningBranchArgs,
+): Promise<{ lakebaseBranchName: string; gitBranch: string }> {
+  // Fork a Lakebase branch. createBranch with no explicit parent forks
+  // from whatever's in the project's .env (kept current by the
+  // post-checkout hook). Since this runs at suite start, the .env's
+  // LAKEBASE_BRANCH_ID resolves to the project default / forkFromBranch's
+  // Lakebase pair.
+  const created = await args.lakebaseService.createBranch(args.name);
+  if (!created) {
     throw new Error(
-      `Failed to create Lakebase staging branch for project ${args.projectName}`,
+      `Failed to create Lakebase branch '${args.name}' for project ${args.projectName}`,
     );
   }
 
-  // Push a `staging` git branch from `main`. The post-checkout hook
-  // would re-create the Lakebase branch on a fresh clone; since this
-  // helper runs on the test-author's local clone (where the Lakebase
-  // staging branch already exists), the createBranch call above is
-  // the authoritative provisioning step. Git push just makes staging
-  // visible to GitHub for the promotion-PR flow.
-  cp.execSync('git fetch origin main', { cwd: args.projectDir, stdio: 'pipe' });
-  cp.execSync('git checkout main', { cwd: args.projectDir, stdio: 'pipe' });
-  cp.execSync('git pull --ff-only origin main', { cwd: args.projectDir, stdio: 'pipe' });
-  cp.execSync('git branch -f staging main', { cwd: args.projectDir, stdio: 'pipe' });
-  cp.execSync('git push -u origin staging', { cwd: args.projectDir, stdio: 'pipe' });
-  // Leave the local working tree on `staging` so scenario A-steps
-  // that fork from it pick up the right parent automatically.
-  cp.execSync('git checkout staging', { cwd: args.projectDir, stdio: 'pipe' });
-
-  // No need to update process.env here. The wrapper's
-  // resolveCreateBranchParent reads LAKEBASE_BRANCH_ID via
-  // getEnvConfig(), which loads from <workspaceRoot>/.env via VS Code's
-  // getWorkspaceRoot() - both unavailable in tests. Scenarios instead
-  // pass ctx.baseBranch as baseBranchOverride to lakebaseService.createBranch
-  // (see ecommerce/python-devloop helpers.ts createLakebaseBranchAndConnect).
+  // Push the matching git branch from the parent tier. The post-checkout
+  // hook tracks the current Lakebase branch via .env; the git side just
+  // makes the new tier visible on GitHub so release PRs can target it.
+  cp.execSync(`git fetch origin ${args.forkFromBranch}`, { cwd: args.projectDir, stdio: 'pipe' });
+  cp.execSync(`git checkout ${args.forkFromBranch}`, { cwd: args.projectDir, stdio: 'pipe' });
+  cp.execSync(`git pull --ff-only origin ${args.forkFromBranch}`, { cwd: args.projectDir, stdio: 'pipe' });
+  cp.execSync(`git branch -f ${args.name} ${args.forkFromBranch}`, { cwd: args.projectDir, stdio: 'pipe' });
+  cp.execSync(`git push -u origin ${args.name}`, { cwd: args.projectDir, stdio: 'pipe' });
+  // Leave the local working tree on the new tier so subsequent scenario
+  // operations (which feature-branch off it) pick up the right parent.
+  cp.execSync(`git checkout ${args.name}`, { cwd: args.projectDir, stdio: 'pipe' });
 
   return {
-    lakebaseBranchName: stagingLakebase.name,
-    gitBranch: 'staging',
+    lakebaseBranchName: created.name,
+    gitBranch: args.name,
   };
 }
 
-export interface PromotionResult {
-  /** PR number used for the staging → main promotion. */
+export interface ReleaseResult {
+  /** PR number used for the from→to release. */
   prNumber: number;
-  /** mergeY.yml run that fired on the resulting main push. */
+  /** merge.yml run that fired on the resulting `to` push. */
   workflowRunId: number;
   /** The merge.yml run's conclusion (expected: 'success'). */
   conclusion: string;
-  /** PR number that the merge.yml snapshot step embedded into the
-   *  pre-migrate-pr-N branch name. May differ from prNumber when the
-   *  merge commit body's first #N matches a different PR. */
+  /** PR number the merge.yml snapshot step embedded into the
+   *  pre-migrate-pr-N branch name. */
   derivedPrNumberForSnapshot?: number;
 }
 
-/**
- * Promote the current state of `staging` to `main`:
- *   1. Open a "Promote staging → main" PR.
- *   2. Squash-merge it. The merge.yml `on: push: branches: [main]`
- *      handler fires.
- *   3. Wait for merge.yml to complete on `main`.
- *   4. Return run + conclusion so the caller can assert success.
- *
- * Caller is responsible for asserting the conclusion, schema effects,
- * and snapshot existence via `assertBackupSnapshotExists` /
- * `assertProdSchemaContains`.
- */
-export async function promoteStagingToMain(args: {
+export interface ReleaseArgs {
+  /** Source tier (any long-running branch or feature branch). */
+  from: string;
+  /** Target tier (a long-running branch). */
+  to: string;
   fullRepoName: string;
-  promotionLabel: string;
-  ownerLogin?: string;
+  /** Human-readable label appended to the PR title for traceability. */
+  releaseLabel: string;
   /** Bound the wait. Merge.yml's full flow runs migrate + verify;
    *  10 min is comfortable headroom. */
   timeoutMs?: number;
-}): Promise<PromotionResult> {
+}
+
+/**
+ * Promote `from` into `to`. Same shape for every adjacent-tier release
+ * (and even feature → tier, though scenarios use the simpler
+ * createPR + mergePR flow for those):
+ *   1. Open a "Release: from → to" PR.
+ *   2. Squash-merge it. The merge.yml `on: push: branches: [to]`
+ *      handler fires.
+ *   3. Wait for merge.yml to complete on `to`.
+ *   4. Return run + conclusion so the caller can assert success.
+ */
+export async function release(args: ReleaseArgs): Promise<ReleaseResult> {
   const baselineRun = await getLatestRunId(args.fullRepoName, 'merge.yml');
-  const title = `Promote staging → main (${args.promotionLabel})`;
+  const title = `Release: ${args.from} → ${args.to} (${args.releaseLabel})`;
   const body =
-    'Automated two-tier promotion from the integration suite. ' +
-    'Triggers merge.yml on the main push, which runs the substrate-routed ' +
-    'lakebase-cut-backup + lakebase-migrate apply against the prod Lakebase branch.';
-  // createPR's helper writes against the suite-shared default base
-  // (main); we pass head='staging' explicitly.
+    `Automated release from the integration suite. ` +
+    `Triggers merge.yml on the ${args.to} push, which runs the substrate-routed ` +
+    `lakebase-cut-backup + lakebase-migrate apply against the ${args.to} Lakebase branch.`;
   const prNumber = await createPullRequestBase(
     args.fullRepoName,
     title,
-    'staging',
-    'main',
+    args.from,
+    args.to,
     body,
   );
   await mergePR(args.fullRepoName, prNumber);
   // merge.yml triggers on push, not on PR closure. The push event
   // fires within seconds of the squash-merge.
   const run = await waitForWorkflowRun(args.fullRepoName, 'merge.yml', {
-    branch: 'main',
+    branch: args.to,
     event: 'push',
     afterRunId: baselineRun,
     timeoutMs: args.timeoutMs ?? 600_000,
@@ -168,10 +159,9 @@ export async function promoteStagingToMain(args: {
 }
 
 /**
- * Internal helper - createPR in lib/github.ts hard-codes baseBranch='main'.
- * We need feature → staging AND staging → main, so go through the
- * substrate's createPullRequest directly. Kept here (not in github.ts)
- * to avoid breaking the existing per-scenario createPR signature.
+ * Internal helper - createPR in lib/github.ts has its own default base.
+ * `release` always specifies both head and base, so we go through the
+ * substrate's createPullRequest directly.
  */
 async function createPullRequestBase(
   ownerRepo: string,
@@ -194,18 +184,11 @@ async function createPullRequestBase(
 }
 
 /**
- * Verify that a pre-migrate snapshot backup branch exists in Lakebase
- * after a promotion. The merge.yml snapshot step names backups
- * `pre-migrate-pr-N` where N is the PR number; that branch SHOULD
- * exist immediately after merge.yml's cut-backup step completes and
- * BEFORE its "Clean up or preserve snapshot" step deletes it on
- * success.
- *
- * Because the cleanup step runs in the SAME job, we can't observe
- * the snapshot post-promotion in a green run. This helper takes the
- * snapshot name AND the workflow run's conclusion: on 'success' we
- * verify the snapshot is gone (cleanup deleted it); on any other
- * conclusion the snapshot must remain.
+ * Verify the pre-migrate snapshot's lifecycle for a release. The
+ * merge.yml snapshot step names backups `pre-migrate-pr-N` where N is
+ * the release PR's number. On a green run, the "Clean up or preserve
+ * snapshot" step deletes it (we expect the snapshot absent); on any
+ * other conclusion the snapshot must remain.
  */
 export async function assertBackupSnapshotLifecycle(args: {
   projectName: string;
@@ -230,55 +213,46 @@ export async function assertBackupSnapshotLifecycle(args: {
       snapshotMatch.length,
       0,
       `Expected pre-migrate-pr-${args.prNumber} snapshot to be cleaned up after a green ` +
-        `promotion; found ${snapshotMatch.length} matching branch(es): ` +
+        `release; found ${snapshotMatch.length} matching branch(es): ` +
         `${snapshotMatch.map((b) => b.name).join(', ')}`,
     );
   } else {
     assert.ok(
       snapshotMatch.length > 0,
       `Expected pre-migrate-pr-${args.prNumber} snapshot to be PRESERVED after a ` +
-        `non-success promotion (conclusion=${args.conclusion}); none found`,
+        `non-success release (conclusion=${args.conclusion}); none found`,
     );
   }
 }
 
-/**
- * Verify that a set of tables exists on the prod (default) Lakebase
- * branch's `public` schema. Use after a successful promotion to
- * confirm migrations landed where they were supposed to.
- *
- * Connects via psql using the prod branch's credentials (resolved
- * through LakebaseService). Requires `psql` on PATH.
- */
-export async function assertProdSchemaContains(args: {
+export interface AssertSchemaContainsArgs {
   projectName: string;
   databricksHost: string;
   lakebaseService: LakebaseService;
+  /** Lakebase branch to query. Pass the literal branch name (e.g. the
+   *  project's default branch name, which is typically 'production' for
+   *  the prod tier and 'staging' / 'dev' for intermediate tiers). */
+  branchName: string;
   expectedTables: string[];
   unexpectedTables?: string[];
-}): Promise<void> {
-  // Find the default (prod) Lakebase branch.
-  const raw = dbcli(
-    `databricks postgres list-branches projects/${args.projectName} -o json`,
-    args.databricksHost,
-  );
-  const parsed = JSON.parse(raw) as unknown;
-  const branches = Array.isArray(parsed)
-    ? parsed as Array<{ name?: string; status?: { default?: boolean }; is_default?: boolean }>
-    : ((parsed as { branches?: unknown }).branches as Array<{ name?: string; status?: { default?: boolean }; is_default?: boolean }>) ?? [];
-  const defaultBranch = branches.find((b) => b.status?.default === true || b.is_default === true);
-  if (!defaultBranch?.name) {
-    throw new Error(`Could not locate default Lakebase branch for project ${args.projectName}`);
-  }
-  const defaultBranchName = defaultBranch.name.split('/').pop()!;
+}
 
-  // Pull connection credentials for the prod branch.
+/**
+ * Verify the `public` schema on a specific Lakebase branch contains
+ * (and doesn't contain) the expected tables. Use after a release to
+ * confirm migrations landed where they were supposed to.
+ *
+ * Connects via psql using the branch's credentials. Requires `psql`
+ * on PATH.
+ */
+export async function assertSchemaContainsOnBranch(
+  args: AssertSchemaContainsArgs,
+): Promise<void> {
+  // Pull connection credentials for the target branch.
   const cred = await args.lakebaseService.getCredential({
     instance: args.projectName,
-    branch: defaultBranchName,
+    branch: args.branchName,
   });
-  // cred shape: { host, port, database, username, password, ... }
-  // Names vary slightly between substrate versions; use indexer access.
   const c = cred as unknown as Record<string, string | number | undefined>;
   const host = String(c.host ?? c.endpoint ?? '');
   const port = String(c.port ?? '5432');
@@ -288,7 +262,7 @@ export async function assertProdSchemaContains(args: {
 
   if (!host || !user || !password) {
     throw new Error(
-      `Incomplete prod Lakebase credentials for ${args.projectName}: ` +
+      `Incomplete Lakebase credentials for ${args.projectName}/${args.branchName}: ` +
         `host=${!!host} user=${!!user} password=${password ? '<set>' : '<unset>'}`,
     );
   }
@@ -306,16 +280,41 @@ export async function assertProdSchemaContains(args: {
   for (const expected of args.expectedTables) {
     assert.ok(
       actualTables.includes(expected),
-      `Expected table '${expected}' on prod (default) Lakebase branch ${defaultBranchName}; ` +
-        `actual tables: [${actualTables.join(', ')}]`,
+      `Expected table '${expected}' on Lakebase branch '${args.branchName}' of ` +
+        `${args.projectName}; actual tables: [${actualTables.join(', ')}]`,
     );
   }
   for (const unexpected of args.unexpectedTables ?? []) {
     assert.ok(
       !actualTables.includes(unexpected),
-      `Table '${unexpected}' should NOT exist on prod (default) Lakebase branch ` +
-        `${defaultBranchName} (still present after a DROP migration?); ` +
+      `Table '${unexpected}' should NOT exist on Lakebase branch '${args.branchName}' ` +
+        `of ${args.projectName} (still present after a DROP migration?); ` +
         `actual tables: [${actualTables.join(', ')}]`,
     );
   }
+}
+
+/**
+ * Resolve the project's default (prod) Lakebase branch name. Use this
+ * when a caller needs to query "the prod tier" without hardcoding what
+ * the project decided to call it (it's usually 'production' but the
+ * substrate doesn't enforce that).
+ */
+export async function resolveDefaultBranchName(args: {
+  projectName: string;
+  databricksHost: string;
+}): Promise<string> {
+  const raw = dbcli(
+    `databricks postgres list-branches projects/${args.projectName} -o json`,
+    args.databricksHost,
+  );
+  const parsed = JSON.parse(raw) as unknown;
+  const branches = Array.isArray(parsed)
+    ? parsed as Array<{ name?: string; status?: { default?: boolean }; is_default?: boolean }>
+    : ((parsed as { branches?: unknown }).branches as Array<{ name?: string; status?: { default?: boolean }; is_default?: boolean }>) ?? [];
+  const defaultBranch = branches.find((b) => b.status?.default === true || b.is_default === true);
+  if (!defaultBranch?.name) {
+    throw new Error(`Could not locate default Lakebase branch for project ${args.projectName}`);
+  }
+  return defaultBranch.name.split('/').pop()!;
 }

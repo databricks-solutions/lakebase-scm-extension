@@ -27,8 +27,9 @@ import {
 } from './helpers';
 import {
   installFailureTracker, preservedResourcesBanner,
-  createStagingBranch, promoteStagingToMain,
-  assertBackupSnapshotLifecycle, assertProdSchemaContains,
+  createLongRunningBranch, release,
+  assertBackupSnapshotLifecycle, assertSchemaContainsOnBranch,
+  resolveDefaultBranchName,
 } from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from '../ecommerce/runner';
 import { scaffoldPythonProject } from './pythonProject';
@@ -240,7 +241,10 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     // scenarios PR into this; Step E promotes staging → main, which is
     // what actually exercises merge.yml's cut-backup + migrate-prod path.
     console.log(`    [setup] Cutting Lakebase staging branch + pushing git staging…`);
-    const stagingInfo = await createStagingBranch({
+    const stagingInfo = await createLongRunningBranch({
+      // Architect declares two-tier: 'staging' tier forked from 'main'.
+      name: 'staging',
+      forkFromBranch: 'main',
       projectName: PROJECT_NAME,
       projectDir: ctx.projectDir,
       fullRepoName: ctx.fullRepoName,
@@ -275,20 +279,22 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
   // the prod (default) Lakebase branch. After this, prod should carry
   // partner + asset (002, 003) plus the placeholder 001.
 
-  describe('Step E1: Promote staging → main (post-scenario 2)', function () {
+  describe('Step E1: Release staging → main (post-scenario 2)', function () {
     this.timeout(900000);
     before(function () { if (!created) { this.skip(); } });
 
-    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+    let releaseResult: Awaited<ReturnType<typeof release>>;
 
     it('opens + merges staging → main PR and merge.yml succeeds', async () => {
-      promotion = await promoteStagingToMain({
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
         fullRepoName: ctx.fullRepoName,
-        promotionLabel: 'post-scenario-2',
+        releaseLabel: 'post-scenario-2',
       });
       assert.strictEqual(
-        promotion.conclusion, 'success',
-        `merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+        releaseResult.conclusion, 'success',
+        `merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
       );
     });
 
@@ -296,16 +302,21 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
-        conclusion: promotion.conclusion,
+        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
       });
     });
 
     it('prod (default) Lakebase branch carries partner + asset tables', async () => {
-      await assertProdSchemaContains({
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
         lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
         expectedTables: ['partner', 'asset'],
       });
     });
@@ -331,20 +342,22 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
   // Final promotion exercises merge.yml against ALTER + DROP migrations
   // on prod. After this, partner + asset must be gone from prod.
 
-  describe('Step E2: Promote staging → main (final, post-scenario 4)', function () {
+  describe('Step E2: Release staging → main (final, post-scenario 4)', function () {
     this.timeout(900000);
     before(function () { if (!created) { this.skip(); } });
 
-    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+    let releaseResult: Awaited<ReturnType<typeof release>>;
 
     it('opens + merges final staging → main PR and merge.yml succeeds', async () => {
-      promotion = await promoteStagingToMain({
+      releaseResult = await release({
+        from: 'staging',
+        to: 'main',
         fullRepoName: ctx.fullRepoName,
-        promotionLabel: 'final-post-scenario-4',
+        releaseLabel: 'final-post-scenario-4',
       });
       assert.strictEqual(
-        promotion.conclusion, 'success',
-        `Final merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+        releaseResult.conclusion, 'success',
+        `Final merge.yml on staging→main must succeed; got ${releaseResult.conclusion}`,
       );
     });
 
@@ -352,16 +365,21 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
-        conclusion: promotion.conclusion,
+        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        conclusion: releaseResult.conclusion,
       });
     });
 
     it('prod has partner + asset DROPPED', async () => {
-      await assertProdSchemaContains({
+      const prodBranch = await resolveDefaultBranchName({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+      });
+      await assertSchemaContainsOnBranch({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
         lakebaseService: ctx.lakebaseService,
+        branchName: prodBranch,
         expectedTables: [],
         unexpectedTables: ['partner', 'asset'],
       });

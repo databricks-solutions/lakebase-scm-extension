@@ -66,6 +66,35 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
 // ── Lakebase helpers ─────────────────────────────────────────────────
 
 /**
+ * Print the .env values that drive the wrapper's parent-branch resolution.
+ * Run right before any createBranch call so a debugger can tell at a
+ * glance whether the post-checkout hook left .env in the expected shape.
+ * Only the non-secret fields - never the JWT.
+ */
+function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
+  const envPath = path.join(ctx.projectDir, '.env');
+  let projectId = '<unset>';
+  let branchId = '<unset>';
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+      const m = line.match(/^(LAKEBASE_PROJECT_ID|LAKEBASE_BRANCH_ID)=(.*)$/);
+      if (m) {
+        if (m[1] === 'LAKEBASE_PROJECT_ID') projectId = m[2] || '<empty>';
+        if (m[1] === 'LAKEBASE_BRANCH_ID') branchId = m[2] || '<empty>';
+      }
+    }
+  } else {
+    projectId = '<no .env file>';
+    branchId = '<no .env file>';
+  }
+  const headBranch = git(ctx, 'rev-parse --abbrev-ref HEAD');
+  console.log(
+    `    [env-before-branch] new='${newBranchName}', git HEAD='${headBranch}', ` +
+    `.env LAKEBASE_PROJECT_ID='${projectId}', LAKEBASE_BRANCH_ID='${branchId}'`,
+  );
+}
+
+/**
  * Create a Lakebase database branch and write Python-style .env connection.
  * Uses DATABASE_URL (not SPRING_DATASOURCE_*).
  */
@@ -80,6 +109,7 @@ export async function createLakebaseBranchAndConnect(
   // via getWorkspaceRoot(). The test's before() block sets
   // process.env.LAKEBASE_PROJECT_DIR = ctx.projectDir so the wrapper finds
   // the same .env that VS Code's open-folder would supply.
+  logEnvBeforeBranch(ctx, gitBranchName);
   const branch = await ctx.lakebaseService.createBranch(gitBranchName);
   if (!branch) {
     throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
@@ -141,11 +171,17 @@ export function verifyBranchConnection(ctx: ScenarioContext): { url: string } {
 
 /** A1a: Create a git feature branch from main */
 export function createFeatureBranch(ctx: ScenarioContext, branchName: string): void {
+  // Branch off ctx.baseBranch, not hardcoded 'main'. The post-checkout hook
+  // reads LAKEBASE_BRANCH_ID from .env as the parent for the new Lakebase
+  // branch; checking out main first would reset that pointer to production
+  // and the feature would fork from prod regardless of which tier the PR
+  // actually targets. See ecommerce/helpers.ts for the long-form rationale.
+  const base = ctx.baseBranch;
   const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
-  if (current !== 'main') {
-    try { git(ctx, 'checkout main'); } catch { git(ctx, 'branch -M main'); }
+  if (current !== base) {
+    try { git(ctx, `checkout ${base}`); } catch { git(ctx, `branch -M ${base}`); }
   }
-  git(ctx, 'pull origin main');
+  git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
 }
 
@@ -281,18 +317,17 @@ export function commitAndPush(ctx: ScenarioContext, message: string, branchName:
 // ── Phase B/C: PR + Merge ────────────────────────────────────────────
 
 /**
- * Create a PR; returns the PR number. Defaults to baseBranch='staging' so
- * scenario PRs ride the two-tier promotion flow (feature → staging, then
- * a separate staging → main promotion fires merge.yml against prod).
- * Pass an explicit base for off-pattern PRs.
+ * Create a PR; returns the PR number. Defaults to ctx.baseBranch so
+ * scenario PRs target the suite's configured base tier. Promotion PRs
+ * go through the release primitive in lib/staging-promotion.ts.
  */
 export const createPR = (
   ctx: ScenarioContext,
   title: string,
   branchName: string,
-  baseBranch: string = 'staging',
+  baseBranch?: string,
 ): Promise<number> =>
-  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated Python devloop test', baseBranch);
+  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated Python devloop test', baseBranch ?? ctx.baseBranch);
 
 /** Merge a PR (merge-commit, deletes the remote head branch). */
 export const mergePR = (ctx: ScenarioContext, prNumber: number): Promise<void> =>
@@ -315,7 +350,9 @@ export const getPRComments = (ctx: ScenarioContext, prNumber: number): Promise<s
 
 /** Delete the feature branch locally and remotely */
 export function cleanupBranch(ctx: ScenarioContext, branchName: string): void {
-  try { git(ctx, 'checkout main'); } catch {}
+  // Hop off the feature branch onto the tier we PR'd into. ctx.baseBranch
+  // is the suite's configured tier (two-tier: 'staging').
+  try { git(ctx, `checkout ${ctx.baseBranch}`); } catch {}
   try { git(ctx, `branch -D ${branchName}`); } catch {}
   try { git(ctx, `push origin --delete ${branchName}`); } catch {}
 }
@@ -345,57 +382,62 @@ export const waitForRunnerIdle = (ctx: ScenarioContext, timeoutMs = 300000, opts
 export const queryBranch = (ctx: ScenarioContext, branch: string, sql: string): Promise<string> =>
   lib.queryBranch(ctx.projectName, branch, sql);
 
-/** Back-compat shim. Queries 'staging' by default. */
+/** Query the project's prod (default) Lakebase branch. Used by Final
+ *  Verification after all releases have promoted up the chain. */
 export const queryProduction = (ctx: ScenarioContext, sql: string): Promise<string> =>
-  queryBranch(ctx, 'staging', sql);
+  lib.queryProduction(ctx.projectName, sql);
 
-/** Verify a table exists on the staging branch (where scenario merges land). */
+/** Verify a table exists on the branch where the scenario's merge lands
+ *  (defaults to ctx.baseBranch). */
 export async function verifyTableExists(
   ctx: ScenarioContext,
   tableName: string,
-  branch: string = 'staging',
+  branch?: string,
 ): Promise<boolean> {
-  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
   return result === 't';
 }
 
-/** Verify a table does NOT exist on the staging branch. */
+/** Verify a table does NOT exist on the branch (defaults to ctx.baseBranch). */
 export async function verifyTableNotExists(
   ctx: ScenarioContext,
   tableName: string,
-  branch: string = 'staging',
+  branch?: string,
 ): Promise<boolean> {
   return !(await verifyTableExists(ctx, tableName, branch));
 }
 
-/** Verify a column exists on the staging branch. */
+/** Verify a column exists on a table on the branch (defaults to ctx.baseBranch). */
 export async function verifyColumnExists(
   ctx: ScenarioContext,
   tableName: string,
   columnName: string,
-  branch: string = 'staging',
+  branch?: string,
 ): Promise<boolean> {
-  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
   return result === 't';
 }
 
-/** Verify a column does NOT exist on the staging branch. */
+/** Verify a column does NOT exist on the branch (defaults to ctx.baseBranch). */
 export async function verifyColumnNotExists(
   ctx: ScenarioContext,
   tableName: string,
   columnName: string,
-  branch: string = 'staging',
+  branch?: string,
 ): Promise<boolean> {
   return !(await verifyColumnExists(ctx, tableName, columnName, branch));
 }
 
-/** Verify an Alembic migration was applied on the staging branch. */
+/** Verify an Alembic migration was applied on the branch (defaults to ctx.baseBranch). */
 export async function verifyAlembicVersion(
   ctx: ScenarioContext,
   revision: string,
-  branch: string = 'staging',
+  branch?: string,
 ): Promise<boolean> {
-  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
+  const target = branch ?? ctx.baseBranch;
+  const result = await queryBranch(ctx, target, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
   return result === 't';
 }
 
