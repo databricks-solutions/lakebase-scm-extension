@@ -486,13 +486,6 @@ export function cleanupBranch(ctx: ScenarioContext, branchName: string): void {
   try { git(ctx, `push origin --delete ${branchName}`); } catch {}
 }
 
-// ── Workflow polling (runner executes pr.yml / merge.yml) ────────────
-
-export interface WorkflowRunResult {
-  conclusion: string;  // 'success' | 'failure' | 'cancelled' | ...
-  runId: number;
-}
-
 // ── Workflow polling (delegated to lib) ──────────────────────────────
 
 export const getLatestRunId = (ctx: ScenarioContext, workflowFile: string): Promise<number> =>

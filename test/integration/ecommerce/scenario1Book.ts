@@ -325,7 +325,7 @@ export function runScenario(ctx: ScenarioContext): void {
       assert.ok(comments.length > 0, 'PR should have at least one comment from the workflow');
       const schemaDiffComment = comments.find(c => c.includes('book'));
       assert.ok(schemaDiffComment, 'PR should have a comment mentioning the book table');
-      assert.ok(schemaDiffComment!.body.includes('CREATED') || schemaDiffComment!.body.includes('CREATE') || schemaDiffComment!.body.includes('schema'),
+      assert.ok(schemaDiffComment!.includes('CREATED') || schemaDiffComment!.includes('CREATE') || schemaDiffComment!.includes('schema'),
         'Schema diff comment should indicate table creation');
     });
   });
