@@ -191,6 +191,9 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       creationService,
       input,
       nextRevision: 2,
+      // Two-tier suite: scenarios PR into staging. N-tier suites would set
+      // this to whichever tier their working-branch types target.
+      baseBranch: 'staging',
     });
 
     console.log(`\n  Project: ${PROJECT_NAME}`);

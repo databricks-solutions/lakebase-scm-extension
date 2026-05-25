@@ -38,6 +38,13 @@ export interface ScenarioContext {
   input: ProjectCreationInput;
   /** Tracks the next Alembic revision number (starts at 2, since 001 is the placeholder) */
   nextRevision: number;
+  /**
+   * The long-running branch this scenario PRs into. Two-tier suites set
+   * 'staging'; three-tier suites would set 'dev'. Scenarios never hardcode
+   * 'main' or 'staging' - they pass ctx.baseBranch to waitForWorkflowRun
+   * and pullBaseBranch. See docs/two-tier-e2e-promotion-plan.md.
+   */
+  baseBranch: string;
 }
 
 // ── Shell helpers ────────────────────────────────────────────────────
@@ -284,10 +291,15 @@ export const createPR = (
 export const mergePR = (ctx: ScenarioContext, prNumber: number): Promise<void> =>
   lib.mergePR(ctx.fullRepoName, prNumber);
 
-/** Update local main after merge */
-export function pullMain(ctx: ScenarioContext): void {
-  git(ctx, 'checkout main');
-  git(ctx, 'pull origin main');
+/**
+ * Update the local working tree after a scenario PR merges into its base
+ * branch. Two-tier suites resolve ctx.baseBranch to 'staging'; N-tier
+ * suites resolve it to whatever tier this scenario was targeting. The
+ * helper is tier-agnostic; the call site is what's parameterized.
+ */
+export function pullBaseBranch(ctx: ScenarioContext): void {
+  git(ctx, `checkout ${ctx.baseBranch}`);
+  git(ctx, `pull origin ${ctx.baseBranch}`);
 }
 
 /** Get PR comment bodies. */

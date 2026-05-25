@@ -8,7 +8,7 @@
 import { strict as assert } from 'assert';
 import {
   ScenarioContext, git, createFeatureBranch, writePythonFile,
-  writeAlembicMigration, commitAndPush, createPR, mergePR, pullMain,
+  writeAlembicMigration, commitAndPush, createPR, mergePR, pullBaseBranch,
   cleanupBranch, waitForWorkflowRun, getLatestRunId, getWorkflowLogs,
   verifyTableExists, verifyAlembicVersion, verifyColumnExists,
   deleteLakebaseBranch, createLakebaseBranchAndConnect,
@@ -175,13 +175,13 @@ export function runScenario(ctx: ScenarioContext): void {
     it('C2: merges PR', async () => { await mergePR(ctx, prNumber); });
 
     it('C3: merge.yml succeeds', async () => {
-      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: 'main', event: 'push', afterRunId: beforeMergeRunId });
+      const result = await waitForWorkflowRun(ctx, 'merge.yml', { branch: ctx.baseBranch, event: 'push', afterRunId: beforeMergeRunId });
       if (result.conclusion !== 'success') {
         assert.fail(`merge.yml failed (${result.conclusion}). Logs:\n${getWorkflowLogs(ctx, result.runId)}`);
       }
     });
 
-    it('C4: pulls main', () => { pullMain(ctx); });
+    it('C4: pulls base branch', () => { pullBaseBranch(ctx); });
   });
 
   describe('Phase D: Verification', function () {
@@ -192,7 +192,7 @@ export function runScenario(ctx: ScenarioContext): void {
       assert.ok(await verifyAlembicVersion(ctx, '003'));
     });
 
-    it('D2: asset table exists on production', async () => {
+    it('D2: asset table exists on base branch', async () => {
       assert.ok(await verifyTableExists(ctx, 'asset'));
     });
 

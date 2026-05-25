@@ -177,6 +177,9 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       scaffoldService,
       creationService,
       input,
+      // Two-tier suite: scenarios PR into staging. N-tier suites would set
+      // this to whichever tier their working-branch types target.
+      baseBranch: 'staging',
     });
 
     console.log(`\n  Project: ${PROJECT_NAME}`);
