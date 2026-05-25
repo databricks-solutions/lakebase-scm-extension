@@ -121,51 +121,54 @@ substrate v0.3.0-alpha.17) — `github-hosted` rewrites `runs-on:
 self-hosted` → `runs-on: ubuntu-latest` across `.github/workflows/*.yml`;
 `self-hosted` keeps the template default + swaps in the local-JDK shim.
 
-**Real VS Code users:** Default is `github-hosted` — free, no local
-runner, different `runs-on:` in workflow YAML. The substrate fix above
-makes the YAML correct for that mode; remaining gaps are UX and
-discoverability:
+**Real VS Code users:** can already pick github-hosted at scaffold
+time via the createProject Quick Pick (`src/extension.ts` line 664). The
+substrate accepts it and `patchWorkflowsForRunnerType` rewrites
+`runs-on:` to `ubuntu-latest` correctly (FEIP-7121, alpha.17). The
+github-hosted code path is functional in the extension UI today.
 
-- **No UI choice in createProject.** The extension always passes the
-  default `runnerType` (self-hosted today) to substrate. There's no
-  picker to let a user choose github-hosted at scaffold time. The
-  substrate accepts the value; the extension never offers it.
-- **No documented default-flip plan.** Today the codebase + tests treat
-  self-hosted as the default, but most users want github-hosted out of
-  the box. Decide what we ship as default in the v1 release and whether
-  the extension exposes a setting to override.
+What still blocks the FULL end-to-end on github-hosted:
+
+- **Workspace IP allowlist (FEIP-7124).** Test runs surfaced that
+  `fevm-serverless-stable-ecparr` (and likely other internal test
+  workspaces) blocks GitHub Actions Azure egress IPs at the Databricks
+  network layer. When `pr.yml` runs on github-hosted and tries
+  `databricks postgres create-branch`, the auth fails with
+  "Source IP address: 20.168.x.x is blocked by Databricks IP ACL". Self-
+  hosted bypasses this because the runner is on the contributor's
+  allowlisted laptop. Resolution paths: a workspace without IP ACL, a
+  widened ACL, or a static-IP egress gateway. See FEIP-7124.
 - **No post-scaffold switcher.** A user who scaffolded as self-hosted
   and later wants github-hosted has no in-product path; they'd manually
   re-run `patchWorkflowsForRunnerType` or hand-edit the YAML.
-- **Docs.** The scaffold flow docs don't mention runner type today;
-  contributors hit it as a runtime surprise.
+- **No default-policy ADR.** Self-hosted is the current default in the
+  Quick Pick. Decide what we ship as default in the v1 release.
+- **No README runner-type section.** Contributors hit the runner-type
+  choice as a Quick Pick at scaffold time with no upstream doc context.
 
-**Risk:** Coverage gap closed for the substrate primitive
-(`test/integration/hook/githubHostedRunner.test.ts` will exercise both
-runner modes per FEIP-7104). UX gap above remains.
+**Coverage status:** substrate-primitive coverage closed by
+`test/integration/hook/githubHostedRunner.test.ts` (PR #16). Full E2E
+under FEIP-7104 blocked on FEIP-7124 (workspace IP ACL).
 
 **Action plan (roadmap):**
 
-1. **VS Code Quick Pick on createProject** — runner type chooser with
-   github-hosted as the recommended default. Persist the choice to the
-   project metadata so re-scaffolds + tier creates inherit it.
+1. **FEIP-7124** — resolve the workspace IP ACL blocker so a real
+   github-hosted CI run can succeed end-to-end.
 2. **`lakebaseSync.changeRunnerType` command** — for projects already
-   scaffolded, re-run `patchWorkflowsForRunnerType` against the
-   working tree, commit the diff with a templated message.
-3. **Default policy ADR** — short doc stating "github-hosted is the
-   v1 default" (or whichever direction we pick) with rationale, so the
-   default isn't ambiguous in future refactors.
-4. **README addition** — call out runner type in the scaffold flow + how
-   to change it post-scaffold (after #2 lands, points at the command).
+   scaffolded, re-run `patchWorkflowsForRunnerType` against the working
+   tree, commit the diff with a templated message.
+3. **Default policy ADR** — short doc stating which mode we ship as the
+   v1 default with rationale.
+4. **README addition** — call out runner type in the scaffold flow +
+   how to change it post-scaffold + note the workspace IP-ACL caveat
+   for github-hosted CI.
 
 Files likely to touch:
-- `src/extension.ts` — register `lakebaseSync.changeRunnerType` + add
-  the Quick Pick into `lakebaseSync.createProject`
-- `src/services/projectCreationService.ts` — accept + forward the
-  chosen runnerType to substrate
-- `src/services/lakebaseService.ts` — runnerType persistence
-- `package.json` — `contributes.commands` + `contributes.configuration`
-  entry for any default override
+- `src/extension.ts` — register `lakebaseSync.changeRunnerType`
+- `src/services/projectCreationService.ts` — already accepts +
+  forwards `runnerType` (existing)
+- `package.json` — `contributes.commands` for the change-runner-type
+  command
 - `docs/adr/` (new) — default-policy ADR
 - `README.md` — runner-type section
 
