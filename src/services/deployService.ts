@@ -1,5 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  createLakebaseProject,
+  getProjectInfo,
+  listBranches,
+  createBranch,
+} from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
 import { getWorkspaceRoot } from '../utils/config';
 
@@ -145,23 +151,20 @@ export class DeployService {
     branchId: string,
     progress?: ProgressCallback,
   ): Promise<void> {
-    // Check if project exists
+    // Resolve profile → host once; substrate's lakebase fns are host-driven,
+    // not profile-driven (single-seam credential contract in the substrate).
+    const host = await DeployService.resolveWorkspaceHost(profile);
+
+    // Check if project exists (substrate getProjectInfo returns undefined
+    // when the project is missing OR when the CLI errors — same fallback
+    // as the previous list-and-filter loop).
     progress?.(`Checking Lakebase project: ${projectId}...`, 'infra');
-    let projectExists = false;
-    try {
-      const raw = await exec(`databricks postgres list-projects -o json --profile "${profile}"`, { timeout: 30000 });
-      const parsed = JSON.parse(raw);
-      const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
-      projectExists = projects.some((p: any) =>
-        p.name === `projects/${projectId}` || p.uid === projectId || p.displayName === projectId
-      );
-    } catch {
-      // list-projects failed – try creating anyway
-    }
+    const projectInfo = await getProjectInfo({ projectId, host });
+    const projectExists = projectInfo !== undefined;
 
     if (!projectExists) {
       progress?.(`Creating Lakebase project: ${projectId} (this may take ~30s)...`, 'infra');
-      await exec(`databricks postgres create-project "${projectId}" -o json --profile "${profile}"`, { timeout: 120000 });
+      await createLakebaseProject({ projectId, host });
       progress?.('Lakebase project created', 'infra');
     }
 
@@ -169,16 +172,10 @@ export class DeployService {
     progress?.(`Checking Lakebase branch: ${branchId}...`, 'infra');
     let branchExists = false;
     try {
-      const raw = await exec(
-        `databricks postgres list-branches "projects/${projectId}" -o json --profile "${profile}"`,
-        { timeout: 30000 }
-      );
-      const parsed = JSON.parse(raw);
-      const branches = Array.isArray(parsed) ? parsed : parsed.branches || [];
-      branchExists = branches.some((b: any) => {
-        const name = b.name || '';
-        const id = name.split('/').pop() || '';
-        return id === branchId || b.branchId === branchId;
+      const branches = await listBranches({ instance: projectId, host });
+      branchExists = branches.some((b) => {
+        const id = (b.name || '').split('/').pop() || '';
+        return id === branchId;
       });
     } catch {
       // list-branches failed – branch might still exist
@@ -189,11 +186,16 @@ export class DeployService {
       // If it's the default branch, it was created with the project. Only create non-default branches.
       if (branchId !== 'production' && branchId !== 'main') {
         progress?.(`Creating Lakebase branch: ${branchId}...`, 'infra');
-        const spec = JSON.stringify({ spec: { source_branch: `projects/${projectId}/branches/main`, no_expiry: true } });
-        await exec(
-          `databricks postgres create-branch "projects/${projectId}" "${branchId}" --json '${spec}' --profile "${profile}"`,
-          { timeout: 120000 }
-        );
+        await createBranch({
+          instance: projectId,
+          branch: branchId,
+          parentBranch: 'main',
+          host,
+          // noExpiry defaults true in substrate alpha.19+; explicit here for
+          // readability + so the long-running deploy branch survives the
+          // post-merge cleanup hook (production-equivalent lifetime).
+          noExpiry: true,
+        });
         progress?.('Lakebase branch created', 'infra');
       }
     }

@@ -11,9 +11,9 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as cp from "child_process";
 import { getWorkspaceRoot } from "../utils/config";
 import { GitHubService } from "./githubService";
+import { LakebaseService } from "./lakebaseService";
 import {
   setupRunner as substrateSetupRunner,
   removeRunner as substrateRemoveRunner,
@@ -28,7 +28,10 @@ import {
 export type RunnerInfo = SubstrateRunnerInfo;
 
 export class RunnerService {
-  constructor(private githubService: GitHubService = new GitHubService()) {}
+  constructor(
+    private githubService: GitHubService = new GitHubService(),
+    private lakebaseService: LakebaseService = new LakebaseService(),
+  ) {}
 
   private runnerDir(projectName: string): string {
     return substrateRunnerDir(projectName);
@@ -46,7 +49,7 @@ export class RunnerService {
     progress?: (msg: string) => void,
   ): Promise<RunnerInfo> {
     const report = progress || (() => {});
-    this.preflightDatabricksAuth(report);
+    await this.preflightDatabricksAuth(report);
     return substrateSetupRunner({ fullRepoName, projectName, report });
   }
 
@@ -75,7 +78,7 @@ export class RunnerService {
    * surfaces a re-auth hint via the progress callback. Non-fatal – never
    * throws; the runner can still start.
    */
-  private preflightDatabricksAuth(report: (msg: string) => void): void {
+  private async preflightDatabricksAuth(report: (msg: string) => void): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { return; }
 
@@ -90,18 +93,15 @@ export class RunnerService {
       }
     } catch { /* non-fatal */ }
 
-    const profileArg = profile ? `--profile "${profile}"` : "";
-    try {
-      cp.execSync(`databricks current-user me ${profileArg} -o json`, { timeout: 10_000, stdio: "pipe" });
-    } catch (err: any) {
-      const stderr = (err.stderr?.toString() || err.message || "").toString();
+    const result = await this.lakebaseService.probeCliAuth({ profile, host });
+    if (!result.ok) {
       const profileSuffix = profile ? ` -p ${profile}` : "";
       const hostSuffix = host ? ` --host ${host}` : "";
       const reAuthCmd = `databricks auth login${hostSuffix}${profileSuffix}`;
-      if (/refresh token is invalid|cannot get access token|unauthenticated/i.test(stderr)) {
+      if (/refresh token is invalid|cannot get access token|unauthenticated/i.test(result.stderr)) {
         report(`⚠ Databricks CLI auth on the runner is expired. Re-auth before your next CI run:\n    ${reAuthCmd}`);
       } else {
-        report(`⚠ Could not verify Databricks CLI auth (${stderr.split("\n")[0].slice(0, 120)}). Re-auth if needed:\n    ${reAuthCmd}`);
+        report(`⚠ Could not verify Databricks CLI auth (${result.stderr.split("\n")[0].slice(0, 120)}). Re-auth if needed:\n    ${reAuthCmd}`);
       }
     }
   }
