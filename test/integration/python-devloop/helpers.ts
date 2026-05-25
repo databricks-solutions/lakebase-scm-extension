@@ -132,66 +132,49 @@ function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
 }
 
 /**
- * Create a Lakebase database branch and write Python-style .env connection.
- * Uses DATABASE_URL (not SPRING_DATASOURCE_*).
+ * Wait for the post-checkout hook to wire this branch's Lakebase connection
+ * into .env, then rewrite DATABASE_URL with the Python psycopg driver
+ * prefix.
+ *
+ * Before alpha.10 this helper duplicated the hook's work because the
+ * hook silently never fired (contributor's global core.hooksPath
+ * shadowed .git/hooks/). alpha.10's install-hook.sh pins core.hooksPath
+ * project-local, so the hook now does createBranch + endpoint +
+ * credential + .env write itself - exactly the same call shape VS Code
+ * triggers when a user runs `git checkout -b feature/...`. The hook
+ * writes DATABASE_URL with the bare `postgresql://` prefix; SQLAlchemy
+ * needs `postgresql+psycopg://` to select the psycopg driver, so we
+ * rewrite that single line here. The hook learning the language is
+ * future-work (see vs-code-parity-followups.md in this repo).
  */
 export async function createLakebaseBranchAndConnect(
   ctx: ScenarioContext,
   gitBranchName: string,
 ): Promise<{ branchId: string; host: string; username: string }> {
-  // Use the actual LakebaseService methods - exactly the call shape the
-  // VS Code extension makes when a user clicks "Create branch" in the UI.
-  // The wrapper reads the current Lakebase branch from <projectDir>/.env
-  // (kept current by the post-checkout hook), which getEnvConfig() resolves
-  // via getWorkspaceRoot(). The test's before() block sets
-  // process.env.LAKEBASE_PROJECT_DIR = ctx.projectDir so the wrapper finds
-  // the same .env that VS Code's open-folder would supply.
   logEnvBeforeBranch(ctx, gitBranchName);
-  const branch = await ctx.lakebaseService.createBranch(gitBranchName);
-  if (!branch) {
-    throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
-  }
-
-  const ep = await ctx.lakebaseService.getEndpoint(branch.uid);
-  if (!ep?.host) {
-    throw new Error(`LakebaseService.getEndpoint('${branch.uid}') returned no host`);
-  }
-
-  const cred = await ctx.lakebaseService.getCredential(branch.uid);
-  if (!cred.token || !cred.email) {
-    throw new Error(`LakebaseService.getCredential('${branch.uid}') returned empty credentials`);
-  }
-
-  const dbName = 'databricks_postgres';
-  const dbUrl = `postgresql+psycopg://${encodeURIComponent(cred.email)}:${encodeURIComponent(cred.token)}@${ep.host}:5432/${dbName}?sslmode=require`;
+  const expectedBranchId = sanitizeForLakebase(gitBranchName);
+  await waitForEnvBranchId(ctx, expectedBranchId);
 
   const envPath = path.join(ctx.projectDir, '.env');
-  let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+  let env = fs.readFileSync(envPath, 'utf-8');
+  const branchId = env.match(/^LAKEBASE_BRANCH_ID=(.+)$/m)?.[1];
+  const host = env.match(/^LAKEBASE_HOST=(.+)$/m)?.[1];
+  const username = env.match(/^DB_USERNAME=(.+)$/m)?.[1];
+  if (!branchId || !host || !username) {
+    throw new Error(
+      `Hook did not finish writing .env for ${gitBranchName}: ` +
+      `LAKEBASE_BRANCH_ID=${branchId} LAKEBASE_HOST=${host} DB_USERNAME=${username}`,
+    );
+  }
 
-  // Remove existing connection vars
-  envContent = envContent
-    .split('\n')
-    .filter(l =>
-      !l.startsWith('DATABASE_URL=') &&
-      !l.startsWith('DB_USERNAME=') &&
-      !l.startsWith('DB_PASSWORD=') &&
-      !l.startsWith('LAKEBASE_HOST=') &&
-      !l.startsWith('LAKEBASE_BRANCH_ID=')
-    )
-    .join('\n');
+  // Rewrite DATABASE_URL to use the psycopg driver. Hook wrote
+  // `postgresql://...`; SQLAlchemy needs `postgresql+psycopg://...`.
+  if (/^DATABASE_URL=postgresql:\/\//m.test(env)) {
+    env = env.replace(/^DATABASE_URL=postgresql:\/\//m, 'DATABASE_URL=postgresql+psycopg://');
+    fs.writeFileSync(envPath, env);
+  }
 
-  envContent += [
-    '',
-    `DATABASE_URL=${dbUrl}`,
-    `DB_USERNAME=${cred.email}`,
-    `DB_PASSWORD=${cred.token}`,
-    `LAKEBASE_HOST=${ep.host}`,
-    `LAKEBASE_BRANCH_ID=${branch.branchId}`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(envPath, envContent);
-
-  return { branchId: branch.branchId, host: ep.host, username: cred.email };
+  return { branchId, host, username };
 }
 
 /** Verify that .env has a DATABASE_URL set */
@@ -212,11 +195,16 @@ export async function createFeatureBranch(ctx: ScenarioContext, branchName: stri
   // post-checkout hook to update .env so the next operation reads the
   // correct LAKEBASE_BRANCH_ID. See ecommerce/helpers.ts for rationale.
   const base = ctx.baseBranch;
-  const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
-  if (current !== base) {
-    try { git(ctx, `checkout ${base}`); } catch { git(ctx, `branch -M ${base}`); }
-    await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
-  }
+  // ALWAYS check out base, even when already on it. Between scenarios,
+  // the previous scenario can leave the working tree on `base` but with
+  // .env's LAKEBASE_BRANCH_ID still pointing at the prior feature branch
+  // (no checkout happened since then to fire the hook). Skipping the
+  // explicit checkout means the next `git checkout -b` reads a stale
+  // parent and the new Lakebase branch forks from the wrong place. git's
+  // post-checkout fires even on a no-op `git checkout <samebranch>` so
+  // this reliably re-syncs .env to base.
+  try { git(ctx, `checkout ${base}`); } catch { git(ctx, `branch -M ${base}`); }
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
   await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));

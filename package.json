@@ -1434,7 +1434,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.8",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.12",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

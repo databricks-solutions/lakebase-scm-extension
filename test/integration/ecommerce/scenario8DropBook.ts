@@ -41,7 +41,8 @@ export function runScenario(ctx: ScenarioContext): void {
       if (this.currentTest?.state === 'failed') { phaseAFailed = true; }
     });
 
-    it('A1: creates feature/remove-book branch', () => {
+    it('A1: creates feature/remove-book branch', async function () {
+      this.timeout(300000);
       await createFeatureBranch(ctx, BRANCH);
       const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
       assert.strictEqual(current, BRANCH);

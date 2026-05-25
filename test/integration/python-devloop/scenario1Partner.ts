@@ -73,7 +73,8 @@ export function runScenario(ctx: ScenarioContext): void {
       if (this.currentTest?.state === 'failed') { phaseAFailed = true; }
     });
 
-    it('A1a: creates feature/partner branch', () => {
+    it('A1a: creates feature/partner branch', async function () {
+      this.timeout(300000);
       await createFeatureBranch(ctx, BRANCH);
       assert.strictEqual(git(ctx, 'rev-parse --abbrev-ref HEAD'), BRANCH);
     });

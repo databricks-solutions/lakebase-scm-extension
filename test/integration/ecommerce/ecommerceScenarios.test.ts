@@ -112,7 +112,7 @@ const installSignalHandlers = (): void =>
   });
 
 const reapOrphanProjects = (dbHost: string): Promise<void> =>
-  libReapOrphans('ecom-', dbHost);
+  libReapOrphans('ecom-', dbHost, parseInt(process.env.ECOM_REAP_AGE_MS || '3600000', 10));
 
 describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
   this.timeout(7200000); // 2 hours overall (8 scenarios × ~10 min each)
@@ -126,6 +126,26 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
 
   before(async function () {
     this.timeout(300000); // 5 min for setup
+
+    // Wipe stale diagnostic logs from prior runs so the post-run inspection
+    // never confuses an old failure with this run's. Keep anything modified
+    // in the last 60s - the launch-cli creates the current log via nohup
+    // redirect seconds before mocha boots, so an mtime cutoff reliably
+    // preserves the active file descriptor's target.
+    try {
+      const logDir = '/tmp/two-tier-runs';
+      if (fs.existsSync(logDir)) {
+        const cutoffMs = Date.now() - 60_000;
+        for (const f of fs.readdirSync(logDir)) {
+          if (!f.endsWith('.log')) continue;
+          const fp = path.join(logDir, f);
+          try {
+            const st = fs.statSync(fp);
+            if (st.mtimeMs < cutoffMs) fs.unlinkSync(fp);
+          } catch { /* ignore individual file errors */ }
+        }
+      }
+    } catch { /* never let log cleanup abort setup */ }
 
     // Refuse to start if another ecom integration run is already in progress.
     // Throws before any cloud resources are created, so a stray parallel

@@ -95,10 +95,7 @@ export interface AssertSchemaContainsArgs {
 export async function assertSchemaContainsOnBranch(
   args: AssertSchemaContainsArgs,
 ): Promise<void> {
-  const cred = await args.lakebaseService.getCredential({
-    instance: args.projectName,
-    branch: args.branchName,
-  });
+  const cred = await args.lakebaseService.getCredential(args.branchName);
   const c = cred as unknown as Record<string, string | number | undefined>;
   const host = String(c.host ?? c.endpoint ?? '');
   const port = String(c.port ?? '5432');

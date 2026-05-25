@@ -209,19 +209,21 @@ export async function createFeatureBranch(ctx: ScenarioContext, branchName: stri
   //      Branching off main and PR'ing into staging would test a migration
   //      against the wrong baseline.
   const base = ctx.baseBranch;
-  const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
-  if (current !== base) {
-    try {
-      git(ctx, `checkout ${base}`);
-    } catch {
-      git(ctx, `branch -M ${base}`);
-    }
-    // Hook fires on checkout. Wait for .env to reflect the base tier
-    // before proceeding - the next checkout's hook reads .env as its
-    // parent source, so a stale value here would silently mis-parent
-    // the feature branch.
-    await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
+  // ALWAYS check out base, even when the working tree is already on it.
+  // The reason: between scenarios, the previous scenario's Phase D may
+  // leave the working tree on `base` BUT .env's LAKEBASE_BRANCH_ID is
+  // still the prior feature branch's id (because no checkout happened
+  // since then to fire the hook). Skipping the explicit checkout here
+  // means the next `git checkout -b` reads a stale parent and the new
+  // feature Lakebase branch forks from the wrong place. git's
+  // post-checkout fires even on a no-op `git checkout <samebranch>`
+  // (BRANCH_CHECKOUT=1) so this reliably re-syncs .env to base.
+  try {
+    git(ctx, `checkout ${base}`);
+  } catch {
+    git(ctx, `branch -M ${base}`);
   }
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
   // Hook fires on -b. Wait for .env so subsequent createBranch calls
@@ -259,80 +261,56 @@ function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
 }
 
 /**
- * A1b: Create a Lakebase database branch and connect .env to it.
- * Exercises the actual extension service methods:
- *   LakebaseService.createBranch() → waitForBranchReady() → getEndpoint() → getCredential()
- * Then writes SPRING_DATASOURCE_URL/USERNAME/PASSWORD to .env + application-local.properties.
- * Returns the branch info for verification.
+ * A1b: Wait for the post-checkout hook to finish wiring this branch's
+ * Lakebase connection into .env + application-local.properties, then
+ * layer the one Java-specific test concern on top (suppress Spring
+ * Boot's auto-Flyway so it doesn't race with the substrate's
+ * applyMigrations step).
+ *
+ * Before alpha.10 this helper duplicated the hook's work because the
+ * hook silently never fired (contributor's global core.hooksPath
+ * shadowed .git/hooks/). alpha.10's install-hook.sh pins core.hooksPath
+ * project-local, so the hook now does the createBranch + endpoint +
+ * credential + .env write itself - exactly the same call shape VS Code
+ * triggers when a user runs `git checkout -b feature/...` in the
+ * extension's open project.
  */
 export async function createLakebaseBranchAndConnect(
   ctx: ScenarioContext,
   gitBranchName: string,
 ): Promise<{ branchId: string; host: string; username: string }> {
-  // Use the actual LakebaseService methods - exactly the call shape the
-  // VS Code extension makes when a user clicks "Create branch" in the UI.
-  // The wrapper reads the current Lakebase branch from <projectDir>/.env
-  // (kept current by the post-checkout hook), which getEnvConfig() resolves
-  // via getWorkspaceRoot(). The test's before() block sets
-  // process.env.LAKEBASE_PROJECT_DIR = ctx.projectDir so the wrapper finds
-  // the same .env that VS Code's open-folder would supply.
   logEnvBeforeBranch(ctx, gitBranchName);
-  const branch = await ctx.lakebaseService.createBranch(gitBranchName);
-  if (!branch) {
-    throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
-  }
-
-  const ep = await ctx.lakebaseService.getEndpoint(branch.uid);
-  if (!ep?.host) {
-    throw new Error(`LakebaseService.getEndpoint('${branch.uid}') returned no host`);
-  }
-
-  const cred = await ctx.lakebaseService.getCredential(branch.uid);
-  if (!cred.token || !cred.email) {
-    throw new Error(`LakebaseService.getCredential('${branch.uid}') returned empty credentials`);
-  }
-
-  // Write connection to .env (same as post-checkout hook does)
-  const dbName = 'databricks_postgres';
-  const jdbcUrl = `jdbc:postgresql://${ep.host}:5432/${dbName}?sslmode=require`;
+  const expectedBranchId = sanitizeForLakebase(gitBranchName);
+  await waitForEnvBranchId(ctx, expectedBranchId);
 
   const envPath = path.join(ctx.projectDir, '.env');
-  let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+  const env = fs.readFileSync(envPath, 'utf-8');
+  const branchId = env.match(/^LAKEBASE_BRANCH_ID=(.+)$/m)?.[1];
+  const host = env.match(/^LAKEBASE_HOST=(.+)$/m)?.[1];
+  const username = env.match(/^DB_USERNAME=(.+)$/m)?.[1];
+  if (!branchId || !host || !username) {
+    throw new Error(
+      `Hook did not finish writing .env for ${gitBranchName}: ` +
+      `LAKEBASE_BRANCH_ID=${branchId} LAKEBASE_HOST=${host} DB_USERNAME=${username}`,
+    );
+  }
 
-  // Remove existing connection vars
-  envContent = envContent
-    .split('\n')
-    .filter(l => !l.startsWith('SPRING_DATASOURCE_') && !l.startsWith('LAKEBASE_HOST=') && !l.startsWith('LAKEBASE_BRANCH_ID='))
-    .join('\n');
+  // Test-only layer on top of what the hook wrote: disable Spring Boot's
+  // auto-Flyway. The substrate's applyMigrations step runs Flyway before
+  // mvnw test; Spring Boot's would race with it and double-apply. The
+  // hook writes spring.datasource.* to application-local.properties for
+  // Java projects (pom.xml detected) but does NOT set spring.flyway.enabled.
+  // Append it without overwriting the hook's lines.
+  const propsPath = path.join(ctx.projectDir, 'application-local.properties');
+  const props = fs.existsSync(propsPath) ? fs.readFileSync(propsPath, 'utf-8') : '';
+  if (!/^spring\.flyway\.enabled\s*=/m.test(props)) {
+    fs.writeFileSync(
+      propsPath,
+      props + (props.endsWith('\n') ? '' : '\n') + 'spring.flyway.enabled=false\n',
+    );
+  }
 
-  // Append fresh connection
-  envContent += [
-    '',
-    `LAKEBASE_HOST=${ep.host}`,
-    `LAKEBASE_BRANCH_ID=${branch.branchId}`,
-    `SPRING_DATASOURCE_URL=${jdbcUrl}`,
-    `SPRING_DATASOURCE_USERNAME=${cred.email}`,
-    `SPRING_DATASOURCE_PASSWORD=${cred.token}`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(envPath, envContent);
-
-  // Also write application-local.properties (Maven/Spring reads this, not .env)
-  // spring.flyway.enabled=false because the kit substrate's applyMigrations
-  // runs the migration step before mvnw test (FEIP-7091 / FEIP-7098). The
-  // test exercises substrate end-to-end; Spring Boot's auto-flyway would
-  // race with it and double-apply.
-  const propsContent = [
-    `# Auto-generated by integration test for branch: ${branch.branchId}`,
-    `spring.datasource.url=${jdbcUrl}`,
-    `spring.datasource.username=${cred.email}`,
-    `spring.datasource.password=${cred.token}`,
-    `spring.flyway.enabled=false`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(path.join(ctx.projectDir, 'application-local.properties'), propsContent);
-
-  return { branchId: branch.branchId, host: ep.host, username: cred.email };
+  return { branchId, host, username };
 }
 
 /**
@@ -340,15 +318,22 @@ export async function createLakebaseBranchAndConnect(
  * Checks that SPRING_DATASOURCE_URL is a JDBC URL and USERNAME is set.
  */
 export function verifyBranchConnection(ctx: ScenarioContext): { url: string; username: string } {
-  const envPath = path.join(ctx.projectDir, '.env');
-  if (!fs.existsSync(envPath)) {
-    throw new Error('.env not found');
+  // After alpha.10 the post-checkout hook writes the live JDBC connection
+  // to application-local.properties (spring.datasource.*) for Maven/Spring
+  // projects (pom.xml detected) and the bare DATABASE_URL + DB_USERNAME to
+  // .env. Scenarios assert `conn.url.includes('jdbc:postgresql://')` to
+  // confirm the JDBC URL is wired, so read the properties file directly.
+  const propsPath = path.join(ctx.projectDir, 'application-local.properties');
+  if (!fs.existsSync(propsPath)) {
+    throw new Error(
+      'application-local.properties not found - the post-checkout hook should have written it',
+    );
   }
-  const content = fs.readFileSync(envPath, 'utf-8');
-  const urlMatch = content.match(/^SPRING_DATASOURCE_URL=(.+)$/m);
-  const userMatch = content.match(/^SPRING_DATASOURCE_USERNAME=(.+)$/m);
+  const content = fs.readFileSync(propsPath, 'utf-8');
+  const urlMatch = content.match(/^spring\.datasource\.url=(.+)$/m);
+  const userMatch = content.match(/^spring\.datasource\.username=(.+)$/m);
   if (!urlMatch || !urlMatch[1]) {
-    throw new Error('SPRING_DATASOURCE_URL not set in .env');
+    throw new Error('spring.datasource.url not set in application-local.properties');
   }
   return { url: urlMatch[1], username: userMatch ? userMatch[1] : '' };
 }

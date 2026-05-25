@@ -139,6 +139,26 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
   before(async function () {
     this.timeout(300000);
 
+    // Wipe stale diagnostic logs from prior runs so the post-run inspection
+    // never confuses an old failure with this run's. Keep anything modified
+    // in the last 60s - the launch-cli creates the current log via nohup
+    // redirect seconds before mocha boots, so an mtime cutoff reliably
+    // preserves the active file descriptor's target.
+    try {
+      const logDir = '/tmp/two-tier-runs';
+      if (fs.existsSync(logDir)) {
+        const cutoffMs = Date.now() - 60_000;
+        for (const f of fs.readdirSync(logDir)) {
+          if (!f.endsWith('.log')) continue;
+          const fp = path.join(logDir, f);
+          try {
+            const st = fs.statSync(fp);
+            if (st.mtimeMs < cutoffMs) fs.unlinkSync(fp);
+          } catch { /* ignore individual file errors */ }
+        }
+      }
+    } catch { /* never let log cleanup abort setup */ }
+
     // Refuse to start if another pydev integration run is already in progress.
     // Throws before any cloud resources are created, so a stray parallel
     // launch can't create orphaned Lakebase project + GitHub repo pairs.
