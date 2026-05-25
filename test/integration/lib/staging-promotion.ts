@@ -89,6 +89,18 @@ export async function createStagingBranch(args: StagingSetupArgs): Promise<{
   // that fork from it pick up the right parent automatically.
   cp.execSync('git checkout staging', { cwd: args.projectDir, stdio: 'pipe' });
 
+  // The post-checkout hook updates the project's `.env` file on disk
+  // (LAKEBASE_BRANCH_ID=staging), but the mocha test process never
+  // re-reads that file. resolveCreateBranchParent reads from
+  // process.env via getEnvConfig(), so subsequent scenario calls to
+  // createBranch(feature-X) would see an empty envBranchId and fall
+  // through to substrate's project-default (production) - forking
+  // features from prod instead of staging, defeating the two-tier
+  // flow. Mirror the hook's disk write by setting it in-process so
+  // the convention works end-to-end.
+  const sanitizedStaging = stagingLakebase.name.split('/').pop()!;
+  process.env.LAKEBASE_BRANCH_ID = sanitizedStaging;
+
   return {
     lakebaseBranchName: stagingLakebase.name,
     gitBranch: 'staging',
