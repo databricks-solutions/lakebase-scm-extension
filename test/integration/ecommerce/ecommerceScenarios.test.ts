@@ -18,8 +18,9 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import {
   ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
-  forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs,
+  saveFailedCiRunLogs,
 } from './helpers';
+import { installFailureTracker, preservedResourcesBanner } from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
 
@@ -52,48 +53,46 @@ let cleanupInFlight = false;
 const dbcli = (cmd: string, dbHost: string, timeoutMs = 30000): string =>
   cp.execSync(cmd, { timeout: timeoutMs, env: { ...process.env, DATABRICKS_HOST: dbHost } }).toString();
 
-// Shared cleanup entry – used by mocha after-hook AND signal handlers AND
-// uncaughtException. Idempotent. Drives deletes through retry-aware force*
-// helpers rather than the silently-swallowing ProjectCreationService.cleanupProject.
+// Shared end-of-run handler. Saves CI logs, stops the ephemeral runner,
+// then prints a banner naming every preserved resource + the exact
+// command to teardown later via test/integration/lib/cleanup-cli.ts.
+//
+// HARD RULE: this function never deletes Lakebase projects, GitHub repos,
+// or the local project directory. Teardown is exclusively the cleanup-CLI's
+// job, gated on per-resource y/N confirmation by a human. There is
+// intentionally no env-var bypass - "I'll just set the flag this once"
+// is exactly the mistake that destroyed prior runs' debugging trails.
 async function fullCleanup(reason: string): Promise<void> {
   if (cleanupInFlight) {
     console.log(`  [cleanup:${reason}] already in-flight, skipping`);
     return;
   }
   cleanupInFlight = true;
-  // Always save failed CI run logs first, even when teardown is gated.
-  // This is pure side-effect; failures here never block the cleanup path.
+  // Save CI run logs so a failing build-and-test job's log survives even
+  // if the operator later runs cleanup-cli. Pure side-effect; failures
+  // here never block the post-run banner.
   if (created && ctx.fullRepoName) {
     try { await saveFailedCiRunLogs(ctx.fullRepoName); }
     catch (e: any) { console.log(`  [ci-logs] save failed: ${e?.message || e}`); }
   }
-  if (process.env.ECOM_NO_TEARDOWN) {
-    console.log(`  [cleanup:${reason}] ECOM_NO_TEARDOWN=1 set, skipping`);
-    cleanupInFlight = false;
-    return;
-  }
+  // Stop the ephemeral self-hosted runner. The runner registration is
+  // tied to the (now-preserved) repo and would otherwise dangle, so
+  // stopping it is the one cleanup step we always do.
   if (runner) {
     try { runner.cleanup(ctx as any); console.log(`  [cleanup:runner] OK`); }
     catch (e: any) { console.log(`  [cleanup:runner] FAILED: ${e?.message || e}`); }
     runner = undefined;
   }
-  if (created && ctx.fullRepoName) {
-    await forceDeleteGithubRepo(ctx.fullRepoName);
+  // Print the banner so the operator sees exactly what survived + how
+  // to clean it up later.
+  if (created) {
+    console.log(preservedResourcesBanner({
+      githubRepo: ctx.fullRepoName,
+      lakebaseProject: ctx.projectName,
+      projectDir: ctx.projectDir,
+      databricksHost: process.env.DATABRICKS_HOST || process.env.DATABRICKS_TEST_HOST,
+    }));
   }
-  if (created && ctx.projectName) {
-    await forceDeleteLakebaseProject(ctx.projectName);
-  }
-  if (ctx.projectDir) {
-    try {
-      if (fs.existsSync(ctx.projectDir)) {
-        fs.rmSync(ctx.projectDir, { recursive: true, force: true });
-        console.log(`  [cleanup:dir] removed ${ctx.projectDir}`);
-      }
-    } catch (e: any) {
-      console.log(`  [cleanup:dir] FAILED: ${e?.message || e}`);
-    }
-  }
-  created = false;
   cleanupInFlight = false;
 }
 
@@ -112,6 +111,11 @@ const reapOrphanProjects = (dbHost: string): Promise<void> =>
 
 describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
   this.timeout(7200000); // 2 hours overall (8 scenarios × ~10 min each)
+
+  // Track which mocha tests failed so the preserved-resources banner can
+  // list them. The suite never auto-destroys regardless of pass/fail; this
+  // tracker is for the post-run summary, not for any teardown decision.
+  installFailureTracker();
 
   // ── Setup: Project + Maven + Runner ─────────────────────────────────
 
@@ -293,31 +297,13 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     });
   });
 
-  // ── Teardown ─────────────────────────────────────────────────────
-  // Set ECOM_NO_TEARDOWN=1 to skip cleanup (for manual review of resources)
-
-  describe('Teardown', () => {
-    it('stops runner and cleans up project (verified)', async function () {
-      if (!created) { this.skip(); return; }
-      if (process.env.ECOM_NO_TEARDOWN) {
-        console.log(`\n    Teardown SKIPPED (ECOM_NO_TEARDOWN=1).`);
-        console.log(`    GitHub repo: https://github.com/${ctx.fullRepoName}`);
-        console.log(`    Lakebase project: ${ctx.projectName}`);
-        console.log(`    Local dir: ${ctx.projectDir}\n`);
-        this.skip();
-        return;
-      }
-      this.timeout(600000); // up to 10 min: Lakebase delete + verify can take several minutes
-      console.log('\n    Cleaning up...');
-      await fullCleanup('teardown');
-      console.log('    Done.\n');
-    });
-  });
-
-  // Safety net – fires on natural mocha completion. Signal kills are handled
-  // separately by the installed SIGINT/SIGTERM handlers.
+  // ── End of run ───────────────────────────────────────────────────
+  // Hard rule: this suite NEVER destroys Lakebase projects or GitHub
+  // repos. `fullCleanup` only stops the ephemeral runner and prints the
+  // preserved-resources banner. To teardown later, run cleanup-cli.ts;
+  // see test/integration/lib/preserve-on-failure.ts for the rationale.
   after(async function () {
-    this.timeout(600000);
+    this.timeout(120000);
     await fullCleanup('after');
   });
 });

@@ -23,8 +23,9 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import {
   ScenarioContext, git, verifyTableNotExists, verifyAlembicVersion, queryProduction,
-  forceDeleteLakebaseProject, forceDeleteGithubRepo, saveFailedCiRunLogs,
+  saveFailedCiRunLogs,
 } from './helpers';
+import { installFailureTracker, preservedResourcesBanner } from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from '../ecommerce/runner';
 import { scaffoldPythonProject } from './pythonProject';
 
@@ -68,60 +69,42 @@ async function waitForLakebaseProjectGone(projectName: string, dbHost: string, t
   return false;
 }
 
-// Shared cleanup entry – used by mocha after-hook AND signal handlers AND
-// uncaughtException. Idempotent; safe to call repeatedly.
+// Shared end-of-run handler. Saves CI logs, stops the ephemeral runner,
+// then prints a banner naming every preserved resource + the exact
+// command to teardown later via test/integration/lib/cleanup-cli.ts.
 //
-// Drives deletes through the retry-aware force* helpers in helpers.ts
-// rather than ProjectCreationService.cleanupProject() – that service's
-// bare `try { ... } catch {}` blocks silently swallow delete failures,
-// which is exactly how Lakebase projects + GitHub repos were leaking
-// when the API returned a transient error.
+// HARD RULE: this function never deletes Lakebase projects, GitHub repos,
+// or the local project directory. Teardown is exclusively the cleanup-CLI's
+// job, gated on per-resource y/N confirmation by a human. There is
+// intentionally no env-var bypass.
 async function fullCleanup(reason: string): Promise<void> {
   if (cleanupInFlight) {
     console.log(`  [cleanup:${reason}] already in-flight, skipping`);
     return;
   }
   cleanupInFlight = true;
-  // Always save failed CI run logs first, even when teardown is gated.
-  // Pure side-effect; failures here never block the cleanup path.
+  // Save CI run logs so a failing build-and-test job's log survives even
+  // if the operator later runs cleanup-cli. Pure side-effect.
   if (created && ctx.fullRepoName) {
     try { await saveFailedCiRunLogs(ctx.fullRepoName); }
     catch (e: any) { console.log(`  [ci-logs] save failed: ${e?.message || e}`); }
   }
-  if (process.env.PYDEV_NO_TEARDOWN) {
-    console.log(`  [cleanup:${reason}] PYDEV_NO_TEARDOWN=1 set, skipping`);
-    cleanupInFlight = false;
-    return;
-  }
-  // 1. Stop self-hosted runner first so it's not consuming work + so deleteRepo
-  //    isn't blocked by an "online runner" precondition on the API side.
+  // Stop the ephemeral runner. Its registration is tied to the (preserved)
+  // repo and would otherwise dangle, so this is the one cleanup step we
+  // always do.
   if (runner) {
     try { runner.cleanup(ctx as any); console.log(`  [cleanup:runner] OK`); }
     catch (e: any) { console.log(`  [cleanup:runner] FAILED: ${e?.message || e}`); }
     runner = undefined;
   }
-  // 2. GitHub repo – retry-aware. We do this BEFORE Lakebase because the
-  //    GitHub repo's pre-push hook / Actions workflows can still trigger
-  //    new runs against the Lakebase branch while the repo exists.
-  if (created && ctx.fullRepoName) {
-    await forceDeleteGithubRepo(ctx.fullRepoName);
+  if (created) {
+    console.log(preservedResourcesBanner({
+      githubRepo: ctx.fullRepoName,
+      lakebaseProject: ctx.projectName,
+      projectDir: ctx.projectDir,
+      databricksHost: process.env.DATABRICKS_HOST || process.env.DATABRICKS_TEST_HOST,
+    }));
   }
-  // 3. Lakebase project – retry-aware with verify + re-issue on failure.
-  if (created && ctx.projectName) {
-    await forceDeleteLakebaseProject(ctx.projectName);
-  }
-  // 4. Local working directory.
-  if (ctx.projectDir) {
-    try {
-      if (fs.existsSync(ctx.projectDir)) {
-        fs.rmSync(ctx.projectDir, { recursive: true, force: true });
-        console.log(`  [cleanup:dir] removed ${ctx.projectDir}`);
-      }
-    } catch (e: any) {
-      console.log(`  [cleanup:dir] FAILED: ${e?.message || e}`);
-    }
-  }
-  created = false;
   cleanupInFlight = false;
 }
 
@@ -140,6 +123,11 @@ const reapOrphanProjects = (dbHost: string): Promise<void> =>
 
 describe('Python Dev Loop – 4 Iterative Scenarios', function () {
   this.timeout(3600000); // 1 hour overall (4 scenarios x ~10 min each)
+
+  // Track which mocha tests failed so the preserved-resources banner can
+  // list them. The suite never auto-destroys regardless of pass/fail; this
+  // tracker is for the post-run summary, not for any teardown decision.
+  installFailureTracker();
 
   // ── Setup: Project + Python scaffold + Runner ──────────────────
 
@@ -307,31 +295,13 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     });
   });
 
-  // ── Teardown ────────────────────────────────────────────────────
-  // Set PYDEV_NO_TEARDOWN=1 to skip cleanup (for manual review)
-
-  describe('Teardown', () => {
-    it('stops runner and cleans up project (verified)', async function () {
-      if (!created) { this.skip(); return; }
-      if (process.env.PYDEV_NO_TEARDOWN) {
-        console.log(`\n    Teardown SKIPPED (PYDEV_NO_TEARDOWN=1).`);
-        console.log(`    GitHub repo: https://github.com/${ctx.fullRepoName}`);
-        console.log(`    Lakebase project: ${ctx.projectName}`);
-        console.log(`    Local dir: ${ctx.projectDir}\n`);
-        this.skip();
-        return;
-      }
-      this.timeout(600000);
-      console.log('\n    Cleaning up...');
-      await fullCleanup('teardown');
-      console.log('    Done.\n');
-    });
-  });
-
-  // Safety net – fires on natural mocha completion (pass or fail). Signal
-  // kills are handled separately by the installed SIGINT/SIGTERM handlers.
+  // ── End of run ───────────────────────────────────────────────────
+  // Hard rule: this suite NEVER destroys Lakebase projects or GitHub
+  // repos. `fullCleanup` only stops the ephemeral runner and prints the
+  // preserved-resources banner. To teardown later, run cleanup-cli.ts;
+  // see test/integration/lib/preserve-on-failure.ts for the rationale.
   after(async function () {
-    this.timeout(600000);
+    this.timeout(120000);
     await fullCleanup('after');
   });
 });
