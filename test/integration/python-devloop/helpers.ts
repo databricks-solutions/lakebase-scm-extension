@@ -73,7 +73,13 @@ export async function createLakebaseBranchAndConnect(
   ctx: ScenarioContext,
   gitBranchName: string,
 ): Promise<{ branchId: string; host: string; username: string }> {
-  const branch = await ctx.lakebaseService.createBranch(gitBranchName);
+  // Pass ctx.baseBranch as baseBranchOverride so the new feature Lakebase
+  // branch forks from the suite's base tier (e.g. 'staging' for two-tier).
+  // In a VS Code session the wrapper would read LAKEBASE_BRANCH_ID from
+  // the project's .env (kept current by the post-checkout hook), but tests
+  // run outside a workspace - getEnvConfig() returns {} - so we wire the
+  // parent explicitly here. See docs/two-tier-e2e-promotion-plan.md.
+  const branch = await ctx.lakebaseService.createBranch(gitBranchName, ctx.baseBranch);
   if (!branch) {
     throw new Error(`LakebaseService.createBranch('${gitBranchName}') returned undefined`);
   }
