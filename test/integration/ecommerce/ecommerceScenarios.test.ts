@@ -20,7 +20,11 @@ import {
   ScenarioContext, git, verifyTableExists, verifyTableNotExists, verifyMigrationApplied, queryProduction,
   saveFailedCiRunLogs,
 } from './helpers';
-import { installFailureTracker, preservedResourcesBanner } from '../lib';
+import {
+  installFailureTracker, preservedResourcesBanner,
+  createStagingBranch, promoteStagingToMain,
+  assertBackupSnapshotLifecycle, assertProdSchemaContains,
+} from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from './runner';
 import { scaffoldMavenProject } from './mavenProject';
 
@@ -202,8 +206,22 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     runner = startRunner(ctx, runnerDir);
     console.log(`    [setup] Runner started (pid=${runner.pid}).\n`);
 
+    // Step 4: Cut the two-tier staging branch (Lakebase + git). Feature
+    // scenarios PR into this; Step E promotes staging → main, which is
+    // what actually exercises merge.yml's cut-backup + migrate-prod path.
+    console.log(`    [setup] Cutting Lakebase staging branch + pushing git staging…`);
+    const stagingInfo = await createStagingBranch({
+      projectName: PROJECT_NAME,
+      projectDir: ctx.projectDir,
+      fullRepoName: ctx.fullRepoName,
+      databricksHost: dbHost,
+      lakebaseService,
+      gitService,
+    });
+    console.log(`    [setup] Staging ready: lakebase=${stagingInfo.lakebaseBranchName}, git=${stagingInfo.gitBranch}.\n`);
+
     created = true;
-    console.log(`    [setup] Ready – 8 scenarios will execute.\n`);
+    console.log(`    [setup] Ready – 8 scenarios + 2 promotions will execute.\n`);
   });
 
   // ── Scenarios 1-6: All Entities (one branch, one PR, one merge) ──
@@ -222,12 +240,101 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     scenario7(ctx);
   });
 
+  // ── Step E1: Promote staging → main (after scenario 7) ───────────
+  // Exercises merge.yml's substrate-routed cut-backup + migrate against
+  // the prod (default) Lakebase branch. After this promotion, prod
+  // should carry V2..V8 (scenarios 1-6 entities + scenario 7's ALTER).
+
+  describe('Step E1: Promote staging → main (post-scenario 7)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+
+    it('opens + merges staging → main PR and merge.yml succeeds', async () => {
+      promotion = await promoteStagingToMain({
+        fullRepoName: ctx.fullRepoName,
+        promotionLabel: 'post-scenario-7',
+      });
+      assert.strictEqual(
+        promotion.conclusion, 'success',
+        `merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
+        conclusion: promotion.conclusion,
+      });
+    });
+
+    it('prod (default) Lakebase branch now carries scenario 1-7 tables', async () => {
+      await assertProdSchemaContains({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        expectedTables: [
+          'book', 'product', 'customer', 'cart', 'cart_item',
+          'orders', 'order_item', 'wishlist', 'wishlist_item',
+        ],
+      });
+    });
+  });
+
   // ── Scenario 8: DROP TABLE (Remove Book) ─────────────────────────
 
   describe('Scenario 8: DROP TABLE', function () {
     this.timeout(600000);
     before(function () { if (!created) { this.skip(); } });
     scenario8(ctx);
+  });
+
+  // ── Step E2: Promote staging → main (after scenario 8 / final) ──
+  // Final promotion exercises merge.yml against a DROP migration on
+  // prod. After this, the book table must be gone from prod and the
+  // remaining 8 tables present.
+
+  describe('Step E2: Promote staging → main (final, post-scenario 8)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+
+    it('opens + merges final staging → main PR and merge.yml succeeds', async () => {
+      promotion = await promoteStagingToMain({
+        fullRepoName: ctx.fullRepoName,
+        promotionLabel: 'final-post-scenario-8',
+      });
+      assert.strictEqual(
+        promotion.conclusion, 'success',
+        `Final merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
+        conclusion: promotion.conclusion,
+      });
+    });
+
+    it('prod has book DROPPED and the remaining 8 tables present', async () => {
+      await assertProdSchemaContains({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        expectedTables: [
+          'product', 'customer', 'cart', 'cart_item',
+          'orders', 'order_item', 'wishlist', 'wishlist_item',
+        ],
+        unexpectedTables: ['book'],
+      });
+    });
   });
 
   // ── Final Verification ───────────────────────────────────────────

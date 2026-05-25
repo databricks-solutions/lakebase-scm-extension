@@ -25,7 +25,11 @@ import {
   ScenarioContext, git, verifyTableNotExists, verifyAlembicVersion, queryProduction,
   saveFailedCiRunLogs,
 } from './helpers';
-import { installFailureTracker, preservedResourcesBanner } from '../lib';
+import {
+  installFailureTracker, preservedResourcesBanner,
+  createStagingBranch, promoteStagingToMain,
+  assertBackupSnapshotLifecycle, assertProdSchemaContains,
+} from '../lib';
 import { ensureRunnerBinary, startRunner, cleanupStaleRunners, RunnerHandle } from '../ecommerce/runner';
 import { scaffoldPythonProject } from './pythonProject';
 
@@ -222,8 +226,22 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     runner = startRunner(ctx as any, runnerDir);
     console.log(`    [setup] Runner started (pid=${runner.pid}).\n`);
 
+    // Step 4: Cut the two-tier staging branch (Lakebase + git). Feature
+    // scenarios PR into this; Step E promotes staging → main, which is
+    // what actually exercises merge.yml's cut-backup + migrate-prod path.
+    console.log(`    [setup] Cutting Lakebase staging branch + pushing git staging…`);
+    const stagingInfo = await createStagingBranch({
+      projectName: PROJECT_NAME,
+      projectDir: ctx.projectDir,
+      fullRepoName: ctx.fullRepoName,
+      databricksHost: dbHost,
+      lakebaseService,
+      gitService,
+    });
+    console.log(`    [setup] Staging ready: lakebase=${stagingInfo.lakebaseBranchName}, git=${stagingInfo.gitBranch}.\n`);
+
     created = true;
-    console.log(`    [setup] Ready – 4 scenarios will execute.\n`);
+    console.log(`    [setup] Ready – 4 scenarios + 2 promotions will execute.\n`);
   });
 
   // ── Scenario 1: Partner (CREATE TABLE) ──────────────────────────
@@ -242,6 +260,47 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     scenario2(ctx);
   });
 
+  // ── Step E1: Promote staging → main (after scenario 2) ──────────
+  // Exercises merge.yml's substrate-routed cut-backup + migrate against
+  // the prod (default) Lakebase branch. After this, prod should carry
+  // partner + asset (002, 003) plus the placeholder 001.
+
+  describe('Step E1: Promote staging → main (post-scenario 2)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+
+    it('opens + merges staging → main PR and merge.yml succeeds', async () => {
+      promotion = await promoteStagingToMain({
+        fullRepoName: ctx.fullRepoName,
+        promotionLabel: 'post-scenario-2',
+      });
+      assert.strictEqual(
+        promotion.conclusion, 'success',
+        `merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
+        conclusion: promotion.conclusion,
+      });
+    });
+
+    it('prod (default) Lakebase branch carries partner + asset tables', async () => {
+      await assertProdSchemaContains({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        expectedTables: ['partner', 'asset'],
+      });
+    });
+  });
+
   // ── Scenario 3: ALTER TABLE (Add review columns) ────────────────
 
   describe('Scenario 3: ALTER TABLE (Review Fields)', function () {
@@ -256,6 +315,47 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     this.timeout(600000);
     before(function () { if (!created) { this.skip(); } });
     scenario4(ctx);
+  });
+
+  // ── Step E2: Promote staging → main (after scenario 4 / final) ─
+  // Final promotion exercises merge.yml against ALTER + DROP migrations
+  // on prod. After this, partner + asset must be gone from prod.
+
+  describe('Step E2: Promote staging → main (final, post-scenario 4)', function () {
+    this.timeout(900000);
+    before(function () { if (!created) { this.skip(); } });
+
+    let promotion: Awaited<ReturnType<typeof promoteStagingToMain>>;
+
+    it('opens + merges final staging → main PR and merge.yml succeeds', async () => {
+      promotion = await promoteStagingToMain({
+        fullRepoName: ctx.fullRepoName,
+        promotionLabel: 'final-post-scenario-4',
+      });
+      assert.strictEqual(
+        promotion.conclusion, 'success',
+        `Final merge.yml on staging→main must succeed; got ${promotion.conclusion}`,
+      );
+    });
+
+    it('pre-migrate snapshot was created + cleaned up on success', async () => {
+      await assertBackupSnapshotLifecycle({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        prNumber: promotion.derivedPrNumberForSnapshot ?? promotion.prNumber,
+        conclusion: promotion.conclusion,
+      });
+    });
+
+    it('prod has partner + asset DROPPED', async () => {
+      await assertProdSchemaContains({
+        projectName: ctx.projectName,
+        databricksHost: ctx.dbHost,
+        lakebaseService: ctx.lakebaseService,
+        expectedTables: [],
+        unexpectedTables: ['partner', 'asset'],
+      });
+    });
   });
 
   // ── Final Verification ──────────────────────────────────────────
