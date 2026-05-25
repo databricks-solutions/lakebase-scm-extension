@@ -60,7 +60,7 @@ describe('Merge Awareness – main branch view', () => {
   describe('Lakebase group – production status', () => {
     it('shows production branch status on main', async () => {
       lakebaseStub.getDefaultBranch.resolves(makeBranch('br-prod-123', 'READY', true));
-      lakebaseStub.getConsoleUrl.returns('https://workspace.databricks.com/lakebase/projects/p1/branches/br-prod-123');
+      lakebaseStub.getConsoleUrl.resolves('https://workspace.databricks.com/lakebase/projects/p1/branches/br-prod-123');
 
       provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 150));
@@ -140,7 +140,7 @@ describe('Merge Awareness – main branch view', () => {
 
       migrationStub.listMigrations.returns([]);
       lakebaseStub.getDefaultBranch.resolves(makeBranch('prod', 'READY', true));
-      lakebaseStub.getConsoleUrl.returns('');
+      lakebaseStub.getConsoleUrl.resolves('');
 
       provider = new SchemaScmProvider(gitStub as any, migrationStub as any, schemaDiffStub as any, lakebaseStub as any, githubStub as any);
       await new Promise(r => setTimeout(r, 200));

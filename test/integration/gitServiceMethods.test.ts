@@ -17,6 +17,7 @@ import { strict as assert } from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 
 const cp = require('child_process');
 
@@ -27,6 +28,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let repoCreated = false;
 
 function git(cmd: string): string {
@@ -47,6 +49,7 @@ describe('GitService Methods – Live Integration', function () {
   before(async function () {
     this.timeout(90000);
     gitService = new GitService();
+    githubService = new GitHubService();
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     fullRepoName = `${ghUser}/${TEST_REPO}`;
     repoDir = path.join(require('os').tmpdir(), TEST_REPO);
@@ -55,7 +58,7 @@ describe('GitService Methods – Live Integration', function () {
     console.log(`  Dir:  ${repoDir}`);
 
     // Create and clone
-    await gitService.createRepo(fullRepoName, { private: true, description: 'GitService integration test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'GitService integration test' });
     repoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
 
@@ -173,8 +176,8 @@ describe('GitService Methods – Live Integration', function () {
         const p = l.split('\t'); return { status: p[0][0], path: p[p.length - 1] };
       });
       assert.ok(files.length >= 3, 'Auth commit should touch V2 migration, auth.ts, app.ts');
-      assert.ok(files.some(f => f.path.includes('V2__')), 'Should include sessions migration');
-      assert.ok(files.some(f => f.path.includes('auth.ts')), 'Should include auth.ts');
+      assert.ok(files.some((f: any) => f.path.includes('V2__')), 'Should include sessions migration');
+      assert.ok(files.some((f: any) => f.path.includes('auth.ts')), 'Should include auth.ts');
     });
 
     it('handles merge commit via first-parent diff', () => {
@@ -194,8 +197,8 @@ describe('GitService Methods – Live Integration', function () {
       const files = raw.split('\n').filter(Boolean).map((l: string) => {
         const p = l.split('\t'); return { status: p[0][0], path: p[p.length - 1] };
       });
-      const added = files.filter(f => f.status === 'A');
-      const modified = files.filter(f => f.status === 'M');
+      const added = files.filter((f: any) => f.status === 'A');
+      const modified = files.filter((f: any) => f.status === 'M');
       assert.ok(added.length >= 1, 'Should have added files (V2, auth.ts)');
       assert.ok(modified.length >= 1, 'Should have modified files (app.ts)');
     });
@@ -366,12 +369,12 @@ describe('GitService Methods – Live Integration', function () {
 
   describe('GitHub repo operations', () => {
     it('repoExists returns true for our test repo', async () => {
-      const exists = await gitService.repoExists(fullRepoName);
+      const exists = await githubService.repoExists(fullRepoName);
       assert.ok(exists);
     });
 
     it('setRepoSecret sets a secret', async () => {
-      await gitService.setRepoSecret(fullRepoName, 'TEST_GS_SECRET', 'value123');
+      await githubService.setRepoSecret(fullRepoName, 'TEST_GS_SECRET', 'value123');
       const raw = cp.execSync(`gh secret list --repo "${fullRepoName}"`, { timeout: 10000 }).toString();
       assert.ok(raw.includes('TEST_GS_SECRET'));
     });
@@ -497,9 +500,9 @@ describe('GitService Methods – Live Integration', function () {
       if (!repoCreated) { this.skip(); return; }
       this.timeout(30000);
       console.log(`    Deleting ${fullRepoName}...`);
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       repoCreated = false;
-      const exists = await gitService.repoExists(fullRepoName);
+      const exists = await githubService.repoExists(fullRepoName);
       assert.strictEqual(exists, false);
       console.log('    Deleted.');
     });
@@ -515,7 +518,7 @@ describe('GitService Methods – Live Integration', function () {
     this.timeout(60000);
     try { git('checkout main'); } catch {}
     if (repoCreated) {
-      try { await gitService.deleteRepo(fullRepoName); } catch (e: any) { console.log(`  [cleanup] ${e.message}`); }
+      try { await githubService.deleteRepo(fullRepoName); } catch (e: any) { console.log(`  [cleanup] ${e.message}`); }
     }
     if (repoDir && fs.existsSync(repoDir)) {
       try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {}

@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import { exec } from '../../src/utils/exec';
 import { SchemaMigrationService } from '../../src/services/schemaMigrationService';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 
 const cp = require('child_process');
 const timestamp = Date.now().toString(36);
@@ -23,6 +24,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let repoCreated = false;
 
 function git(cmd: string): string {
@@ -62,11 +64,12 @@ describe('R8 Small Patterns – Parity + Live', function () {
   before(async function () {
     this.timeout(60000);
     gitService = new GitService();
+    githubService = new GitHubService();
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     fullRepoName = `${ghUser}/${TEST_REPO}`;
     repoDir = path.join(require('os').tmpdir(), TEST_REPO);
 
-    await gitService.createRepo(fullRepoName, { private: true, description: 'R8 test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'R8 test' });
     repoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
 
@@ -246,7 +249,7 @@ describe('R8 Small Patterns – Parity + Live', function () {
   describe('Teardown', () => {
     it('deletes the GitHub repo', async function () {
       if (!repoCreated) { this.skip(); return; }
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       repoCreated = false;
     });
     it('cleans up', () => {
@@ -257,7 +260,7 @@ describe('R8 Small Patterns – Parity + Live', function () {
   after(async function () {
     this.timeout(30000);
     try { git('checkout main'); } catch {}
-    if (repoCreated) { try { await gitService.deleteRepo(fullRepoName); } catch {} }
+    if (repoCreated) { try { await githubService.deleteRepo(fullRepoName); } catch {} }
     if (fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {} }
   });
 });

@@ -48,14 +48,25 @@ export function assertIntegrationCredentials(): IntegrationCredentialsAssertion 
     );
   }
 
-  // Verify Databricks auth resolves to a real token for THIS host. We don't
-  // care about the token value – only that the call succeeds, which means
-  // the contributor has run `databricks auth login` against this host.
+  // Verify Databricks auth resolves end-to-end for THIS host. We use a real
+  // operation (`databricks postgres list-projects` with DATABRICKS_HOST
+  // exported) as the probe rather than `databricks auth token`. Reason:
+  // `auth token` requires a single profile to win the ambiguity resolution,
+  // and ~/.databrickscfg commonly has multiple profiles pointing at the
+  // same host (DEFAULT + a workspace-id-named profile). Real ops resolve
+  // auth through a broader chain (env, oauth cache, fallback profile) that
+  // works even when explicit `auth token --profile <p>` is stale. Probing
+  // exactly what the tests will downstream-call avoids false negatives.
   try {
-    execFileSync("databricks", ["auth", "token", "--host", host], {
-      stdio: "pipe",
-      timeout: 10_000,
-    });
+    execFileSync(
+      "databricks",
+      ["postgres", "list-projects", "-o", "json"],
+      {
+        stdio: "pipe",
+        timeout: 15_000,
+        env: { ...process.env, DATABRICKS_HOST: host },
+      },
+    );
   } catch (err: any) {
     const stderr =
       err?.stderr?.toString?.() || err?.message || String(err);
@@ -64,7 +75,7 @@ export function assertIntegrationCredentials(): IntegrationCredentialsAssertion 
       "",
       `Run:  databricks auth login --host "${host}"`,
       "",
-      "Underlying error from `databricks auth token`:",
+      "Underlying error from `databricks postgres list-projects`:",
       `  ${stderr.split("\n")[0].slice(0, 240)}`,
     ].join("\n"));
   }

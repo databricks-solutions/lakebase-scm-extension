@@ -11,6 +11,7 @@
  */
 
 import { strict as assert } from 'assert';
+import { assertIntegrationCredentials } from './lib/credentials';
 import { LakebaseService } from '../../src/services/lakebaseService';
 
 const cp = require('child_process');
@@ -36,7 +37,7 @@ describe('R4 Live Integration – syncConnection through service layer', functio
   before(async function () {
     this.timeout(60000);
     lakebaseService = new LakebaseService();
-    dbHost = process.env.DATABRICKS_HOST || 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    dbHost = assertIntegrationCredentials().databricksHost;
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
 

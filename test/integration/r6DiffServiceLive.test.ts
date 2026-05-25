@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec } from '../../src/utils/exec';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 
 const cp = require('child_process');
 const timestamp = Date.now().toString(36);
@@ -21,6 +22,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let repoCreated = false;
 let featureSha: string;
 let mergeSha: string;
@@ -55,11 +57,12 @@ describe('R6 DiffService – Live Integration', function () {
   before(async function () {
     this.timeout(60000);
     gitService = new GitService();
+    githubService = new GitHubService();
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     fullRepoName = `${ghUser}/${TEST_REPO}`;
     repoDir = path.join(require('os').tmpdir(), TEST_REPO);
 
-    await gitService.createRepo(fullRepoName, { private: true, description: 'R6 DiffService test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'R6 DiffService test' });
     repoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
 
@@ -191,7 +194,7 @@ describe('R6 DiffService – Live Integration', function () {
   describe('Teardown', () => {
     it('deletes the GitHub repo', async function () {
       if (!repoCreated) { this.skip(); return; }
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       repoCreated = false;
     });
     it('cleans up', () => {
@@ -201,7 +204,7 @@ describe('R6 DiffService – Live Integration', function () {
 
   after(async function () {
     this.timeout(30000);
-    if (repoCreated) { try { await gitService.deleteRepo(fullRepoName); } catch {} }
+    if (repoCreated) { try { await githubService.deleteRepo(fullRepoName); } catch {} }
     if (fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {} }
   });
 });
