@@ -131,52 +131,6 @@ function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
   );
 }
 
-/**
- * Wait for the post-checkout hook to wire this branch's Lakebase connection
- * into .env, then rewrite DATABASE_URL with the Python psycopg driver
- * prefix.
- *
- * Before alpha.10 this helper duplicated the hook's work because the
- * hook silently never fired (contributor's global core.hooksPath
- * shadowed .git/hooks/). alpha.10's install-hook.sh pins core.hooksPath
- * project-local, so the hook now does createBranch + endpoint +
- * credential + .env write itself - exactly the same call shape VS Code
- * triggers when a user runs `git checkout -b feature/...`. The hook
- * writes DATABASE_URL with the bare `postgresql://` prefix; SQLAlchemy
- * needs `postgresql+psycopg://` to select the psycopg driver, so we
- * rewrite that single line here. The hook learning the language is
- * future-work (see vs-code-parity-followups.md in this repo).
- */
-export async function createLakebaseBranchAndConnect(
-  ctx: ScenarioContext,
-  gitBranchName: string,
-): Promise<{ branchId: string; host: string; username: string }> {
-  logEnvBeforeBranch(ctx, gitBranchName);
-  const expectedBranchId = sanitizeForLakebase(gitBranchName);
-  await waitForEnvBranchId(ctx, expectedBranchId);
-
-  const envPath = path.join(ctx.projectDir, '.env');
-  let env = fs.readFileSync(envPath, 'utf-8');
-  const branchId = env.match(/^LAKEBASE_BRANCH_ID=(.+)$/m)?.[1];
-  const host = env.match(/^LAKEBASE_HOST=(.+)$/m)?.[1];
-  const username = env.match(/^DB_USERNAME=(.+)$/m)?.[1];
-  if (!branchId || !host || !username) {
-    throw new Error(
-      `Hook did not finish writing .env for ${gitBranchName}: ` +
-      `LAKEBASE_BRANCH_ID=${branchId} LAKEBASE_HOST=${host} DB_USERNAME=${username}`,
-    );
-  }
-
-  // Rewrite DATABASE_URL to use the psycopg driver. Hook wrote
-  // `postgresql://...`; SQLAlchemy needs `postgresql+psycopg://...`.
-  if (/^DATABASE_URL=postgresql:\/\//m.test(env)) {
-    env = env.replace(/^DATABASE_URL=postgresql:\/\//m, 'DATABASE_URL=postgresql+psycopg://');
-    fs.writeFileSync(envPath, env);
-  }
-
-  return { branchId, host, username };
-}
-
 /** Verify that .env has a DATABASE_URL set */
 export function verifyBranchConnection(ctx: ScenarioContext): { url: string } {
   const envPath = path.join(ctx.projectDir, '.env');
@@ -208,6 +162,19 @@ export async function createFeatureBranch(ctx: ScenarioContext, branchName: stri
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
   await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));
+
+  // Rewrite DATABASE_URL to use the psycopg driver. The hook writes
+  // `postgresql://...`; SQLAlchemy's create_engine needs the explicit
+  // `postgresql+psycopg://...` form for psycopg 3. This is the same
+  // adjustment a Python user would make in their .env after scaffold.
+  const envPath = path.join(ctx.projectDir, '.env');
+  if (fs.existsSync(envPath)) {
+    let env = fs.readFileSync(envPath, 'utf-8');
+    if (/^DATABASE_URL=postgresql:\/\//m.test(env)) {
+      env = env.replace(/^DATABASE_URL=postgresql:\/\//m, 'DATABASE_URL=postgresql+psycopg://');
+      fs.writeFileSync(envPath, env);
+    }
+  }
 }
 
 /** Write a Python source file (relative to project root) */

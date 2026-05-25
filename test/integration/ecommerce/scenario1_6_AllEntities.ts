@@ -12,7 +12,7 @@ import {
   waitForWorkflowRun, getLatestRunId, getWorkflowLogs, getPRComments,
   verifyTableExists, verifyMigrationApplied, verifyFileOnGitHub,
   parseMigrationSql, deleteLakebaseBranch, pauseIfRequested,
-  verifyBranchConnection, createLakebaseBranchAndConnect, writeJavaTestFile, runMavenTests,
+  verifyBranchConnection, writeJavaTestFile, runMavenTests,
   setCurrentScenario, waitForRunnerIdle,
 } from './helpers';
 
@@ -68,13 +68,6 @@ export function runScenario(ctx: ScenarioContext): void {
       this.timeout(300000);
       await createFeatureBranch(ctx, BRANCH);
       assert.strictEqual(git(ctx, 'rev-parse --abbrev-ref HEAD'), BRANCH);
-    });
-
-    it('A2: creates Lakebase branch', async function () {
-      this.timeout(180000);
-      const conn = await createLakebaseBranchAndConnect(ctx, BRANCH);
-      assert.ok(conn.branchId);
-      assert.ok(conn.host);
     });
 
     it('A3: writes all 6 migrations (V2-V7)', () => {

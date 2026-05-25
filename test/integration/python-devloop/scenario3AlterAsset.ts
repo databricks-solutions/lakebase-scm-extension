@@ -11,7 +11,7 @@ import {
   writeAlembicMigration, commitAndPush, createPR, mergePR, pullBaseBranch,
   cleanupBranch, waitForWorkflowRun, getLatestRunId, getWorkflowLogs,
   verifyColumnExists, verifyAlembicVersion,
-  deleteLakebaseBranch, createLakebaseBranchAndConnect,
+  deleteLakebaseBranch,
   runAlembicAndTests, waitForRunnerIdle,
 } from './helpers';
 import * as fs from 'fs';
@@ -116,12 +116,6 @@ export function runScenario(ctx: ScenarioContext): void {
       this.timeout(300000);
       await createFeatureBranch(ctx, BRANCH);
       assert.strictEqual(git(ctx, 'rev-parse --abbrev-ref HEAD'), BRANCH);
-    });
-
-    it('A1b: creates Lakebase branch and connects .env', async function () {
-      this.timeout(180000);
-      const conn = await createLakebaseBranchAndConnect(ctx, BRANCH);
-      assert.ok(conn.branchId);
     });
 
     it('A2: updates model with review fields', () => {
