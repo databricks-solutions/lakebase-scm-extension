@@ -115,18 +115,59 @@ that uses the real Initializr.
 ## 4. Self-hosted runner instead of GitHub-hosted
 
 **Today:** Test forces `runnerType=self-hosted`, downloads + registers an
-ephemeral runner per run.
+ephemeral runner per run. The substrate's `runnerType` setting now
+correctly patches the deployed workflows for both modes (FEIP-7121,
+substrate v0.3.0-alpha.17) — `github-hosted` rewrites `runs-on:
+self-hosted` → `runs-on: ubuntu-latest` across `.github/workflows/*.yml`;
+`self-hosted` keeps the template default + swaps in the local-JDK shim.
 
 **Real VS Code users:** Default is `github-hosted` — free, no local
-runner, different `runs-on:` in workflow YAML.
+runner, different `runs-on:` in workflow YAML. The substrate fix above
+makes the YAML correct for that mode; remaining gaps are UX and
+discoverability:
 
-**Risk:** YAML patching in `patchWorkflowsForRunnerType` only exercised
-for `self-hosted`. If we ship a bug that breaks github-hosted patching
-or the github-hosted-specific YAML, it won't be caught.
+- **No UI choice in createProject.** The extension always passes the
+  default `runnerType` (self-hosted today) to substrate. There's no
+  picker to let a user choose github-hosted at scaffold time. The
+  substrate accepts the value; the extension never offers it.
+- **No documented default-flip plan.** Today the codebase + tests treat
+  self-hosted as the default, but most users want github-hosted out of
+  the box. Decide what we ship as default in the v1 release and whether
+  the extension exposes a setting to override.
+- **No post-scaffold switcher.** A user who scaffolded as self-hosted
+  and later wants github-hosted has no in-product path; they'd manually
+  re-run `patchWorkflowsForRunnerType` or hand-edit the YAML.
+- **Docs.** The scaffold flow docs don't mention runner type today;
+  contributors hit it as a runtime surprise.
 
-**Action:** Add a small integration test that exercises a single PR
-through `github-hosted`. Doesn't need 8 scenarios — one create + one PR
-+ one merge is enough to confirm the YAML path works end-to-end.
+**Risk:** Coverage gap closed for the substrate primitive
+(`test/integration/hook/githubHostedRunner.test.ts` will exercise both
+runner modes per FEIP-7104). UX gap above remains.
+
+**Action plan (roadmap):**
+
+1. **VS Code Quick Pick on createProject** — runner type chooser with
+   github-hosted as the recommended default. Persist the choice to the
+   project metadata so re-scaffolds + tier creates inherit it.
+2. **`lakebaseSync.changeRunnerType` command** — for projects already
+   scaffolded, re-run `patchWorkflowsForRunnerType` against the
+   working tree, commit the diff with a templated message.
+3. **Default policy ADR** — short doc stating "github-hosted is the
+   v1 default" (or whichever direction we pick) with rationale, so the
+   default isn't ambiguous in future refactors.
+4. **README addition** — call out runner type in the scaffold flow + how
+   to change it post-scaffold (after #2 lands, points at the command).
+
+Files likely to touch:
+- `src/extension.ts` — register `lakebaseSync.changeRunnerType` + add
+  the Quick Pick into `lakebaseSync.createProject`
+- `src/services/projectCreationService.ts` — accept + forward the
+  chosen runnerType to substrate
+- `src/services/lakebaseService.ts` — runnerType persistence
+- `package.json` — `contributes.commands` + `contributes.configuration`
+  entry for any default override
+- `docs/adr/` (new) — default-policy ADR
+- `README.md` — runner-type section
 
 ## 5. PR creation bypasses the VS Code GitHub extension
 
