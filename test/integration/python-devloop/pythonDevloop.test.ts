@@ -170,6 +170,13 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     const parentDir = require('os').homedir();
     const projectDir = path.join(parentDir, PROJECT_NAME);
 
+    // Point the wrapper's getWorkspaceRoot() at the test project directory
+    // so getEnvConfig() reads <projectDir>/.env - exactly what VS Code does
+    // via workspaceFolders in a normal IDE session. This is what lets the
+    // post-checkout hook's LAKEBASE_BRANCH_ID writes flow through to
+    // resolveCreateBranchParent without scenarios passing override args.
+    process.env.LAKEBASE_PROJECT_DIR = projectDir;
+
     const input: ProjectCreationInput = {
       projectName: PROJECT_NAME,
       parentDir,
