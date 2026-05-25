@@ -1407,6 +1407,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "prepare": "husky",
     "compile": "webpack --mode production",
     "watch": "webpack --mode development --watch",
     "lint": "eslint src --ext ts",
@@ -1426,6 +1427,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.56.0",
+    "husky": "^9.1.7",
     "mocha": "^11.7.5",
     "sinon": "^17.0.0",
     "ts-loader": "^9.5.0",
