@@ -29,7 +29,6 @@
 
 import { strict as assert } from 'assert';
 import * as cp from 'child_process';
-import { getDefaultBranch } from '@databricks-solutions/lakebase-app-dev-kit';
 import { createPR, mergePR, waitForWorkflowRun, getLatestRunId } from './github';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { GitService } from '../../../src/services/gitService';
@@ -60,23 +59,15 @@ export async function createStagingBranch(args: StagingSetupArgs): Promise<{
   lakebaseBranchName: string;
   gitBranch: string;
 }> {
-  // Discover the project's default (prod) Lakebase branch and use it as
-  // the explicit parent. We can't rely on configured base / .env state
-  // since these helpers run outside the VS Code extension context.
-  const def = await getDefaultBranch({ instance: args.projectName });
-  if (!def) {
-    throw new Error(`No default Lakebase branch for project ${args.projectName}`);
-  }
-  const prodBranchName = def.name.split('/').pop()!;
-
-  // The extension's LakebaseService.createBranch takes the git-branch
-  // name as a bare string and resolves the project instance from
-  // setProjectIdOverride (already wired in the test's before() block).
-  // baseBranchOverride is passed verbatim to substrate as the parent.
-  const stagingLakebase = await args.lakebaseService.createBranch(
-    'staging',
-    prodBranchName,
-  );
+  // Fork a Lakebase staging branch. Per convention, createBranch with
+  // no explicit parent forks from the current branch (read from the
+  // project's .env LAKEBASE_BRANCH_ID). When no .env is loaded into
+  // process.env (the test runs outside the VS Code extension context),
+  // resolveCreateBranchParent falls through to undefined and substrate
+  // defaults to the project's main/prod branch - which is exactly
+  // what we want at the very start of the suite. Matches the pattern
+  // in test/integration/ecommerce/helpers.ts and python-devloop/helpers.ts.
+  const stagingLakebase = await args.lakebaseService.createBranch('staging');
   if (!stagingLakebase) {
     throw new Error(
       `Failed to create Lakebase staging branch for project ${args.projectName}`,
