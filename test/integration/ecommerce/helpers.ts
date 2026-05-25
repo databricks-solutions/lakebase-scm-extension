@@ -379,9 +379,19 @@ export function commitAndPush(ctx: ScenarioContext, message: string, branchName:
 
 // ── Phase B/C: PR + Merge ────────────────────────────────────────────
 
-/** Create a PR; returns the PR number. */
-export const createPR = (ctx: ScenarioContext, title: string, branchName: string): Promise<number> =>
-  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated e-commerce scenario test');
+/**
+ * Create a PR; returns the PR number. Defaults to baseBranch='staging' so
+ * scenario PRs ride the two-tier promotion flow (feature → staging, then
+ * a separate staging → main promotion fires merge.yml against prod).
+ * Pass an explicit base for off-pattern PRs.
+ */
+export const createPR = (
+  ctx: ScenarioContext,
+  title: string,
+  branchName: string,
+  baseBranch: string = 'staging',
+): Promise<number> =>
+  lib.createPR(ctx.fullRepoName, title, branchName, 'Automated e-commerce scenario test', baseBranch);
 
 /** Merge a PR (merge-commit, deletes remote head branch). */
 export const mergePR = (ctx: ScenarioContext, prNumber: number): Promise<void> =>

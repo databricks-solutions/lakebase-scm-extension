@@ -26,14 +26,26 @@ export interface WaitForWorkflowOptions {
   pollIntervalMs?: number;
 }
 
-/** Create a PR via substrate octokit; returns the PR number. */
-export async function createPR(ownerRepo: string, title: string, branchName: string, body: string): Promise<number> {
+/**
+ * Create a PR via substrate octokit; returns the PR number. baseBranch
+ * defaults to 'main' for back-compat with the single-tier flow, but
+ * the two-tier suites pass 'staging' here so feature PRs target the
+ * staging tier (and a separate staging→main promotion PR fires merge.yml
+ * against prod).
+ */
+export async function createPR(
+  ownerRepo: string,
+  title: string,
+  branchName: string,
+  body: string,
+  baseBranch: string = 'main',
+): Promise<number> {
   const url = await createPullRequest({
     ownerRepo,
     headBranch: branchName,
     title,
     body,
-    baseBranch: 'main',
+    baseBranch,
   });
   const match = url.match(/\/pull\/(\d+)/);
   if (!match) { throw new Error(`Could not extract PR number from: ${url}`); }

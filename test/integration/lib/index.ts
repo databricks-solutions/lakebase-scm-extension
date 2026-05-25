@@ -14,3 +14,4 @@ export * from './cleanup';
 export * from './lifecycle';
 export * from './credentials';
 export * from './preserve-on-failure';
+export * from './staging-promotion';
