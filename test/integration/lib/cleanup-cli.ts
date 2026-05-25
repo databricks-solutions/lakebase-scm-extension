@@ -72,17 +72,73 @@ Every destructive step prompts y/N before running. There is no batch
 mode. Re-run with the same flags if a step fails partway.
 `;
 
-function prompt(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
+// Line-buffered stdin reader. Robust to two failure modes the naive
+// readline.question() loop hits:
+//   1. Creating a fresh readline.Interface per question, then closing
+//      it, drops buffered stdin lines on the floor. Stalls on prompt #2.
+//   2. Even with a single readline.Interface, if stdin pipes 3 lines
+//      THEN EOFs (e.g. `printf 'y\ny\ny\n' | cmd`), readline's 'close'
+//      fires before subsequent question() listeners attach, so prompts
+//      after the first never receive their line. Stalls on prompt #2.
+//
+// Fix: subscribe to readline's 'line' events ONCE at startup. Push
+// every line into a queue. question() either returns the next queued
+// line or registers a waiter for the next 'line' event. EOF resolves
+// any outstanding waiters with empty string (treated as "no" by the
+// confirm() helper).
+class InputBuffer {
+  private rl: readline.Interface;
+  private queued: string[] = [];
+  private waiting: Array<(line: string) => void> = [];
+  private eof = false;
+
+  constructor() {
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: false,
     });
-  });
+    this.rl.on('line', (line) => {
+      if (this.waiting.length > 0) {
+        this.waiting.shift()!(line);
+      } else {
+        this.queued.push(line);
+      }
+    });
+    this.rl.on('close', () => {
+      this.eof = true;
+      while (this.waiting.length > 0) {
+        this.waiting.shift()!('');
+      }
+    });
+  }
+
+  async readLine(question: string): Promise<string> {
+    process.stdout.write(question);
+    if (this.queued.length > 0) {
+      return this.queued.shift()!;
+    }
+    if (this.eof) {
+      return '';
+    }
+    return new Promise<string>((resolve) => {
+      this.waiting.push(resolve);
+    });
+  }
+
+  close(): void {
+    this.rl.close();
+  }
+}
+
+let inputSingleton: InputBuffer | undefined;
+function getInput(): InputBuffer {
+  if (!inputSingleton) inputSingleton = new InputBuffer();
+  return inputSingleton;
+}
+
+async function prompt(question: string): Promise<string> {
+  return (await getInput().readLine(question)).trim();
 }
 
 async function confirm(label: string, detail: string): Promise<boolean> {
@@ -174,7 +230,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    inputSingleton?.close();
+  })
+  .catch((err) => {
+    inputSingleton?.close();
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
