@@ -2489,8 +2489,15 @@ export async function activate(context: vscode.ExtensionContext) {
             const root = getWorkspaceRoot();
             if (root) {
               try {
-                const { syncCiSecrets } = require('./utils/ciSecrets');
-                await syncCiSecrets(root, 'CI merge', 3600, githubService, gitService);
+                const { syncCiSecrets } = require('@databricks-solutions/lakebase-app-dev-kit');
+                const cfg = getConfig();
+                await syncCiSecrets({
+                  projectDir: root,
+                  databricksHost: cfg.databricksHost,
+                  lakebaseProjectId: cfg.lakebaseProjectId,
+                  comment: 'CI merge',
+                  lifetimeSeconds: 3600,
+                });
               } catch { /* non-fatal */ }
             }
 
@@ -2850,8 +2857,15 @@ export async function activate(context: vscode.ExtensionContext) {
         const root = getWorkspaceRoot();
         if (root) {
           try {
-            const { syncCiSecrets } = require('./utils/ciSecrets');
-            await syncCiSecrets(root, 'GitHub Actions CI', 86400, githubService, gitService);
+            const { syncCiSecrets } = require('@databricks-solutions/lakebase-app-dev-kit');
+            const cfg = getConfig();
+            await syncCiSecrets({
+              projectDir: root,
+              databricksHost: cfg.databricksHost,
+              lakebaseProjectId: cfg.lakebaseProjectId,
+              comment: 'GitHub Actions CI',
+              lifetimeSeconds: 86400,
+            });
           } catch {
             // Non-fatal – CI may still work with existing secrets
           }
