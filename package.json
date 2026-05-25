@@ -1412,7 +1412,8 @@
     "lint": "eslint src --ext ts",
     "test": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/suite/**/*.test.ts' 'test/equivalence/**/*.test.ts' --timeout 10000",
     "test:equivalence": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/equivalence/**/*.test.ts' --timeout 10000",
-    "test:integration": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/integration/**/*.test.ts' --timeout 120000"
+    "test:integration": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/integration/**/*.test.ts' --timeout 120000",
+    "test:integration:launch": "ts-node test/integration/lib/launch-cli.ts"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
