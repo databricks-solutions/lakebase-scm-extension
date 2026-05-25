@@ -65,7 +65,7 @@ export function runScenario(ctx: ScenarioContext): void {
     });
 
     it('A1: creates feature branch', () => {
-      createFeatureBranch(ctx, BRANCH);
+      await createFeatureBranch(ctx, BRANCH);
       assert.strictEqual(git(ctx, 'rev-parse --abbrev-ref HEAD'), BRANCH);
     });
 

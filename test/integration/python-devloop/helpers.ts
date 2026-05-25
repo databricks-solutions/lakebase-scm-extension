@@ -49,9 +49,46 @@ export interface ScenarioContext {
 
 // ── Shell helpers ────────────────────────────────────────────────────
 
-/** Run a git command in the project directory */
+/** Run a git command in the project directory. Timeout is generous (5 min)
+ *  because checkout fires the post-checkout hook, which provisions/refreshes
+ *  the Lakebase branch + endpoint + credentials. Aggressive timeouts here
+ *  killed the hook mid-flight before it could write .env. */
 export function git(ctx: ScenarioContext, cmd: string): string {
-  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 30000 }).toString().trim();
+  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 300000 }).toString().trim();
+}
+
+/** Poll <projectDir>/.env until LAKEBASE_BRANCH_ID matches the expected
+ *  value. Used after `git checkout` to gate scenario steps on the
+ *  post-checkout hook actually finishing its .env write. */
+export async function waitForEnvBranchId(
+  ctx: ScenarioContext,
+  expectedBranchId: string,
+  timeoutMs = 180000,
+): Promise<void> {
+  const envPath = path.join(ctx.projectDir, '.env');
+  const deadline = Date.now() + timeoutMs;
+  let last = '<unset>';
+  while (Date.now() < deadline) {
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      const m = content.match(/^LAKEBASE_BRANCH_ID=(.*)$/m);
+      last = m ? (m[1].trim() || '<empty>') : '<unset>';
+      if (last === expectedBranchId) {
+        return;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs / 1000}s waiting for ` +
+    `.env LAKEBASE_BRANCH_ID=${expectedBranchId} (last seen: '${last}'). ` +
+    `The post-checkout hook either didn't fire or failed before writing .env.`,
+  );
+}
+
+/** Sanitize a git branch name to the Lakebase branch ID the hook will use. */
+function sanitizeForLakebase(gitBranch: string): string {
+  return gitBranch.replace(/\//g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 }
 
 /** Run a shell command in the project directory */
@@ -170,19 +207,19 @@ export function verifyBranchConnection(ctx: ScenarioContext): { url: string } {
 // ── Phase A: Developer (Local) ───────────────────────────────────────
 
 /** A1a: Create a git feature branch from main */
-export function createFeatureBranch(ctx: ScenarioContext, branchName: string): void {
-  // Branch off ctx.baseBranch, not hardcoded 'main'. The post-checkout hook
-  // reads LAKEBASE_BRANCH_ID from .env as the parent for the new Lakebase
-  // branch; checking out main first would reset that pointer to production
-  // and the feature would fork from prod regardless of which tier the PR
-  // actually targets. See ecommerce/helpers.ts for the long-form rationale.
+export async function createFeatureBranch(ctx: ScenarioContext, branchName: string): Promise<void> {
+  // Branch off ctx.baseBranch. After each checkout, wait for the
+  // post-checkout hook to update .env so the next operation reads the
+  // correct LAKEBASE_BRANCH_ID. See ecommerce/helpers.ts for rationale.
   const base = ctx.baseBranch;
   const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
   if (current !== base) {
     try { git(ctx, `checkout ${base}`); } catch { git(ctx, `branch -M ${base}`); }
+    await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
   }
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));
 }
 
 /** Write a Python source file (relative to project root) */

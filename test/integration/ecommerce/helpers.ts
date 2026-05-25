@@ -129,9 +129,55 @@ export function pauseIfRequested(stepName: string, ctx?: ScenarioContext): void 
 
 // ── Shell helpers ────────────────────────────────────────────────────
 
-/** Run a git command in the project directory */
+/** Run a git command in the project directory. Timeout is generous (5 min)
+ *  because checkout fires the post-checkout hook, which provisions/refreshes
+ *  the Lakebase branch + endpoint + credentials. Aggressive timeouts here
+ *  killed the hook mid-flight before it could write .env, leaving stale
+ *  LAKEBASE_BRANCH_ID that broke parent resolution on the next createBranch. */
 export function git(ctx: ScenarioContext, cmd: string): string {
-  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 30000 }).toString().trim();
+  return cp.execSync(`git ${cmd}`, { cwd: ctx.projectDir, timeout: 300000 }).toString().trim();
+}
+
+/** Poll <projectDir>/.env until LAKEBASE_BRANCH_ID matches the expected
+ *  value (typically the sanitized git branch name the hook is provisioning
+ *  for). Use after every `git checkout` that should update .env to gate
+ *  scenario steps on the post-checkout hook actually finishing.
+ *
+ *  The hook can take 30-120s on a brand-new feature branch (Lakebase
+ *  branch creation + READY wait + endpoint provisioning + credential
+ *  generation). Polling here is the resilient alternative to a fixed
+ *  sleep. Throws if the deadline elapses without match. */
+export async function waitForEnvBranchId(
+  ctx: ScenarioContext,
+  expectedBranchId: string,
+  timeoutMs = 180000,
+): Promise<void> {
+  const envPath = path.join(ctx.projectDir, '.env');
+  const deadline = Date.now() + timeoutMs;
+  let last = '<unset>';
+  while (Date.now() < deadline) {
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      const m = content.match(/^LAKEBASE_BRANCH_ID=(.*)$/m);
+      last = m ? (m[1].trim() || '<empty>') : '<unset>';
+      if (last === expectedBranchId) {
+        return;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs / 1000}s waiting for ` +
+    `.env LAKEBASE_BRANCH_ID=${expectedBranchId} (last seen: '${last}'). ` +
+    `The post-checkout hook either didn't fire or failed before writing .env.`,
+  );
+}
+
+/** Sanitize a git branch name to the Lakebase branch ID the hook will
+ *  use. Matches the substrate's sanitize-branch-name.sh (slashes → dashes,
+ *  drop non-alphanumeric, lowercase). */
+function sanitizeForLakebase(gitBranch: string): string {
+  return gitBranch.replace(/\//g, '-').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 }
 
 /** Run a shell command in the project directory */
@@ -148,8 +194,10 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
 
 // ── Phase A: Developer (Local) ───────────────────────────────────────
 
-/** A1a: Create a git feature branch from main (just the git operation). */
-export function createFeatureBranch(ctx: ScenarioContext, branchName: string): void {
+/** A1a: Create a git feature branch from ctx.baseBranch. Waits for the
+ *  post-checkout hook to update .env after each checkout, so subsequent
+ *  steps (createLakebaseBranchAndConnect) read the right LAKEBASE_BRANCH_ID. */
+export async function createFeatureBranch(ctx: ScenarioContext, branchName: string): Promise<void> {
   // Branch off ctx.baseBranch, not hardcoded 'main'. Two reasons:
   //   1. The post-checkout hook reads LAKEBASE_BRANCH_ID from .env as the
   //      parent for the new Lakebase branch. If we check out main first,
@@ -168,9 +216,17 @@ export function createFeatureBranch(ctx: ScenarioContext, branchName: string): v
     } catch {
       git(ctx, `branch -M ${base}`);
     }
+    // Hook fires on checkout. Wait for .env to reflect the base tier
+    // before proceeding - the next checkout's hook reads .env as its
+    // parent source, so a stale value here would silently mis-parent
+    // the feature branch.
+    await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
   }
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
+  // Hook fires on -b. Wait for .env so subsequent createBranch calls
+  // see the feature branch's LAKEBASE_BRANCH_ID.
+  await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));
 }
 
 /**

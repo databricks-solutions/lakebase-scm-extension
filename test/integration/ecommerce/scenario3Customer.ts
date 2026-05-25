@@ -216,7 +216,7 @@ export function runScenario(ctx: ScenarioContext): void {
     });
 
     it('A1: creates feature/customer branch', () => {
-      createFeatureBranch(ctx, BRANCH);
+      await createFeatureBranch(ctx, BRANCH);
       const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
       assert.strictEqual(current, BRANCH);
     });
