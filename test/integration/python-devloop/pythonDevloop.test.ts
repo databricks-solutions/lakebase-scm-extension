@@ -245,12 +245,9 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       // Architect declares two-tier: 'staging' tier forked from 'main'.
       name: 'staging',
       forkFromBranch: 'main',
-      projectName: PROJECT_NAME,
-      projectDir: ctx.projectDir,
-      fullRepoName: ctx.fullRepoName,
+      projectId: PROJECT_NAME,
+      workTreeDir: ctx.projectDir,
       databricksHost: dbHost,
-      lakebaseService,
-      gitService,
     });
     console.log(`    [setup] Staging ready: lakebase=${stagingInfo.lakebaseBranchName}, git=${stagingInfo.gitBranch}.\n`);
 
@@ -289,7 +286,7 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       releaseResult = await release({
         from: 'staging',
         to: 'main',
-        fullRepoName: ctx.fullRepoName,
+        ownerRepo: ctx.fullRepoName,
         releaseLabel: 'post-scenario-2',
       });
       assert.strictEqual(
@@ -302,7 +299,7 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        prNumber: releaseResult.prNumber,
         conclusion: releaseResult.conclusion,
       });
     });
@@ -352,7 +349,7 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       releaseResult = await release({
         from: 'staging',
         to: 'main',
-        fullRepoName: ctx.fullRepoName,
+        ownerRepo: ctx.fullRepoName,
         releaseLabel: 'final-post-scenario-4',
       });
       assert.strictEqual(
@@ -365,7 +362,7 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        prNumber: releaseResult.prNumber,
         conclusion: releaseResult.conclusion,
       });
     });

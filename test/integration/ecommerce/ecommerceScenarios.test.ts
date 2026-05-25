@@ -225,12 +225,9 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       // Architect declares two-tier: 'staging' tier forked from 'main'.
       name: 'staging',
       forkFromBranch: 'main',
-      projectName: PROJECT_NAME,
-      projectDir: ctx.projectDir,
-      fullRepoName: ctx.fullRepoName,
+      projectId: PROJECT_NAME,
+      workTreeDir: ctx.projectDir,
       databricksHost: dbHost,
-      lakebaseService,
-      gitService,
     });
     console.log(`    [setup] Staging ready: lakebase=${stagingInfo.lakebaseBranchName}, git=${stagingInfo.gitBranch}.\n`);
 
@@ -269,7 +266,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       releaseResult = await release({
         from: 'staging',
         to: 'main',
-        fullRepoName: ctx.fullRepoName,
+        ownerRepo: ctx.fullRepoName,
         releaseLabel: 'post-scenario-7',
       });
       assert.strictEqual(
@@ -282,7 +279,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        prNumber: releaseResult.prNumber,
         conclusion: releaseResult.conclusion,
       });
     });
@@ -328,7 +325,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       releaseResult = await release({
         from: 'staging',
         to: 'main',
-        fullRepoName: ctx.fullRepoName,
+        ownerRepo: ctx.fullRepoName,
         releaseLabel: 'final-post-scenario-8',
       });
       assert.strictEqual(
@@ -341,7 +338,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       await assertBackupSnapshotLifecycle({
         projectName: ctx.projectName,
         databricksHost: ctx.dbHost,
-        prNumber: releaseResult.derivedPrNumberForSnapshot ?? releaseResult.prNumber,
+        prNumber: releaseResult.prNumber,
         conclusion: releaseResult.conclusion,
       });
     });
