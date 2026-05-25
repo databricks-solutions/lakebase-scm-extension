@@ -124,7 +124,11 @@ describe('pre-push hook (small repro)', function () {
     //    the hook. We do NOT push from setup - the test triggers the push.
     fs.writeFileSync(path.join(projectDir, 'README.md'), '# pre-push repro\n');
     cp.execSync('git add .gitignore README.md', { cwd: projectDir, stdio: 'pipe' });
-    cp.execSync('git commit -m initial', { cwd: projectDir, stdio: 'pipe' });
+    // Skip hooks on the setup commit: prepare-commit-msg.sh would mint a
+    // Lakebase credential + query schema diff (~30-60s) for content that
+    // doesn't affect the pre-push hook signal. The push below DOES fire
+    // pre-push - that's the hook under test. (FEIP-7117.)
+    cp.execSync('git -c core.hooksPath=/dev/null commit -m initial', { cwd: projectDir, stdio: 'pipe' });
     console.log(`  [setup] Local repo + GitHub repo ready.\n`);
   });
 

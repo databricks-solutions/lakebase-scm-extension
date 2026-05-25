@@ -116,27 +116,35 @@ describe('post-merge hook (small repro)', function () {
     //    feature branch, then delete it from the bare remote so the
     //    local branch shows `: gone]` on next fetch (mimicking what
     //    happens after a real PR merge with auto-delete-head-branch).
+    // Setup commits/checkouts go through `git -c core.hooksPath=/dev/null`
+    // to skip the substrate's prepare-commit-msg + post-checkout hooks.
+    // Those hooks make Lakebase round-trips (schema diff, branch provision)
+    // that add ~30-60s per setup git command without contributing to the
+    // post-merge hook signal we're actually testing. The post-merge hook
+    // is invoked explicitly in the it() block via `.git/hooks/post-merge`
+    // so it still fires. (FEIP-7117.)
+    const SKIP_HOOKS = '-c core.hooksPath=/dev/null';
     fs.writeFileSync(path.join(projectDir, 'README.md'), '# post-merge repro\n');
-    cp.execSync('git add .', { cwd: projectDir, stdio: 'pipe' });
-    cp.execSync('git commit -m initial', { cwd: projectDir, stdio: 'pipe' });
-    cp.execSync('git push -u origin main', { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} add .`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} commit -m initial`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} push -u origin main`, { cwd: projectDir, stdio: 'pipe' });
 
-    cp.execSync(`git checkout -b ${featureGit}`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} checkout -b ${featureGit}`, { cwd: projectDir, stdio: 'pipe' });
     fs.writeFileSync(path.join(projectDir, 'feature.md'), '# feature work\n');
-    cp.execSync('git add .', { cwd: projectDir, stdio: 'pipe' });
-    cp.execSync('git commit -m "feature work"', { cwd: projectDir, stdio: 'pipe' });
-    cp.execSync(`git push -u origin ${featureGit}`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} add .`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} commit -m "feature work"`, { cwd: projectDir, stdio: 'pipe' });
+    cp.execSync(`git ${SKIP_HOOKS} push -u origin ${featureGit}`, { cwd: projectDir, stdio: 'pipe' });
 
     // Simulate "branch auto-deleted on PR merge": remove from the bare
     // remote so the next `git fetch --prune` sees it as gone.
     cp.execSync(`git --git-dir="${bareRepoDir}" branch -D ${featureGit}`, { stdio: 'pipe' });
 
     // 7. Switch back to main + simulate a squash-merge of the feature.
-    //    The hook only runs on main and parses the commit message for
-    //    (#42) and "from feature/...", so produce exactly that.
-    cp.execSync('git checkout main', { cwd: projectDir, stdio: 'pipe' });
+    //    The hook reads PR_NUM from the subject (#42) and looks up the
+    //    feature branch via `gh pr view` at invocation time.
+    cp.execSync(`git ${SKIP_HOOKS} checkout main`, { cwd: projectDir, stdio: 'pipe' });
     cp.execSync(
-      `git commit --allow-empty -m "Feature work (#${prNumber}) from ${featureGit}"`,
+      `git ${SKIP_HOOKS} commit --allow-empty -m "Feature work (#${prNumber}) from ${featureGit}"`,
       { cwd: projectDir, stdio: 'pipe' },
     );
     console.log(`  [setup] Local repo + Lakebase branches staged.\n`);
