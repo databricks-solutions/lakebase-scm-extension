@@ -316,37 +316,67 @@ export const waitForRunnerIdle = (ctx: ScenarioContext, timeoutMs = 300000, opts
   lib.waitForRunnerIdle(ctx.fullRepoName, timeoutMs, opts);
 
 
-// ── Phase D: Production Verification ─────────────────────────────────
+// ── Phase D: Verification (staging by default, Step E asserts against prod) ──
 
-/** Run a SQL query on the production database via lib (substrate pg.Pool). */
+/**
+ * Run a SQL query on a named Lakebase branch. Two-tier flow: Phase D
+ * asserts the merge landed on STAGING. Step E asserts prod via
+ * branch='default'.
+ */
+export const queryBranch = (ctx: ScenarioContext, branch: string, sql: string): Promise<string> =>
+  lib.queryBranch(ctx.projectName, branch, sql);
+
+/** Back-compat shim. Queries 'staging' by default. */
 export const queryProduction = (ctx: ScenarioContext, sql: string): Promise<string> =>
-  lib.queryProduction(ctx.projectName, sql);
+  queryBranch(ctx, 'staging', sql);
 
-/** Verify a table exists on production */
-export async function verifyTableExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
+/** Verify a table exists on the staging branch (where scenario merges land). */
+export async function verifyTableExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
   return result === 't';
 }
 
-/** Verify a table does NOT exist on production */
-export async function verifyTableNotExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  return !(await verifyTableExists(ctx, tableName));
+/** Verify a table does NOT exist on the staging branch. */
+export async function verifyTableNotExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  return !(await verifyTableExists(ctx, tableName, branch));
 }
 
-/** Verify a column exists on production */
-export async function verifyColumnExists(ctx: ScenarioContext, tableName: string, columnName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
+/** Verify a column exists on the staging branch. */
+export async function verifyColumnExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  columnName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
   return result === 't';
 }
 
-/** Verify a column does NOT exist on production */
-export async function verifyColumnNotExists(ctx: ScenarioContext, tableName: string, columnName: string): Promise<boolean> {
-  return !(await verifyColumnExists(ctx, tableName, columnName));
+/** Verify a column does NOT exist on the staging branch. */
+export async function verifyColumnNotExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  columnName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  return !(await verifyColumnExists(ctx, tableName, columnName, branch));
 }
 
-/** Verify an Alembic migration was applied (exists in alembic_version) */
-export async function verifyAlembicVersion(ctx: ScenarioContext, revision: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
+/** Verify an Alembic migration was applied on the staging branch. */
+export async function verifyAlembicVersion(
+  ctx: ScenarioContext,
+  revision: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM alembic_version WHERE version_num='${revision}');`);
   return result === 't';
 }
 

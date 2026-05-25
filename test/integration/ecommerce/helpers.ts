@@ -439,30 +439,62 @@ export const waitForRunnerIdle = (ctx: ScenarioContext, timeoutMs = 300000, opts
 
 // ── Phase D: Production Verification ─────────────────────────────────
 
-/** Run a SQL query on the production database via lib (substrate pg.Pool). */
+/**
+ * Run a SQL query on the project's STAGING Lakebase branch. After
+ * two-tier flow landed, scenario Phase D assertions should verify
+ * staging state (the merge landed there, prod sees nothing until
+ * Step E promotes). Pass an explicit `branch` to override (Step E
+ * assertions pass 'default' to hit prod).
+ */
+export const queryBranch = (ctx: ScenarioContext, branch: string, sql: string): Promise<string> =>
+  lib.queryBranch(ctx.projectName, branch, sql);
+
+/**
+ * Back-compat shim. Existing scenario Phase D calls expect this to
+ * return rows from the branch where the merge just landed. Under
+ * two-tier flow that's 'staging'. Step E assertions use queryBranch
+ * with 'default' to hit prod.
+ */
 export const queryProduction = (ctx: ScenarioContext, sql: string): Promise<string> =>
-  lib.queryProduction(ctx.projectName, sql);
+  queryBranch(ctx, 'staging', sql);
 
-/** Verify a table exists on the production database */
-export async function verifyTableExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
+/** Verify a table exists on the staging branch (where scenario merges land). */
+export async function verifyTableExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='${tableName}');`);
   return result === 't';
 }
 
-/** Verify a table does NOT exist on the production database */
-export async function verifyTableNotExists(ctx: ScenarioContext, tableName: string): Promise<boolean> {
-  return !(await verifyTableExists(ctx, tableName));
+/** Verify a table does NOT exist on the staging branch. */
+export async function verifyTableNotExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  return !(await verifyTableExists(ctx, tableName, branch));
 }
 
-/** Verify a column exists on a table in the production database */
-export async function verifyColumnExists(ctx: ScenarioContext, tableName: string, columnName: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
+/** Verify a column exists on a table on the staging branch. */
+export async function verifyColumnExists(
+  ctx: ScenarioContext,
+  tableName: string,
+  columnName: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='${tableName}' AND column_name='${columnName}');`);
   return result === 't';
 }
 
-/** Verify a migration was applied (exists in flyway_schema_history with success=true) */
-export async function verifyMigrationApplied(ctx: ScenarioContext, version: string): Promise<boolean> {
-  const result = await queryProduction(ctx, `SELECT EXISTS (SELECT 1 FROM flyway_schema_history WHERE version='${version}' AND success=true);`);
+/** Verify a migration was applied (exists in flyway_schema_history with success=true) on the staging branch. */
+export async function verifyMigrationApplied(
+  ctx: ScenarioContext,
+  version: string,
+  branch: string = 'staging',
+): Promise<boolean> {
+  const result = await queryBranch(ctx, branch, `SELECT EXISTS (SELECT 1 FROM flyway_schema_history WHERE version='${version}' AND success=true);`);
   return result === 't';
 }
 
