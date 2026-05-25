@@ -12,7 +12,7 @@ import {
   waitForWorkflowRun, getLatestRunId, getWorkflowLogs, getPRComments,
   verifyTableExists, verifyMigrationApplied, verifyFileOnGitHub,
   parseMigrationSql, deleteLakebaseBranch, pauseIfRequested,
-  verifyBranchConnection, createLakebaseBranchAndConnect, writeJavaTestFile, deleteJavaTestFile, runMavenTests,
+  verifyBranchConnection, writeJavaTestFile, deleteJavaTestFile, runMavenTests,
   setCurrentScenario, waitForRunnerIdle,
 } from './helpers';
 
@@ -238,18 +238,11 @@ export function runScenario(ctx: ScenarioContext): void {
       if (stepName && this.currentTest?.state === 'passed') { pauseIfRequested(stepName, ctx); }
     });
 
-    it('A1: creates feature/book branch', () => {
+    it('A1: creates feature/book branch', async function () {
+      this.timeout(180000);
       await createFeatureBranch(ctx, BRANCH);
       const current = git(ctx, 'rev-parse --abbrev-ref HEAD');
       assert.strictEqual(current, BRANCH);
-    });
-
-    it('A1b: creates Lakebase branch via LakebaseService', async function () {
-      this.timeout(180000);
-      const conn = await createLakebaseBranchAndConnect(ctx, BRANCH);
-      assert.ok(conn.branchId, 'Lakebase branch ID should be set');
-      assert.ok(conn.host, 'Endpoint host should be set');
-      assert.ok(conn.username, 'Username should be set');
     });
 
     it('A1-verify: .env connected to Lakebase branch', () => {

@@ -194,9 +194,18 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
 
 // ── Phase A: Developer (Local) ───────────────────────────────────────
 
-/** A1a: Create a git feature branch from ctx.baseBranch. Waits for the
- *  post-checkout hook to update .env after each checkout, so subsequent
- *  steps (createLakebaseBranchAndConnect) read the right LAKEBASE_BRANCH_ID. */
+/** A1a: Create a git feature branch from ctx.baseBranch.
+ *
+ * Each git checkout fires the post-checkout hook, which creates the
+ * corresponding Lakebase branch and writes the live connection into
+ * `.env` + application-local.properties (Java) / DATABASE_URL in .env
+ * (Python). `waitForEnvBranchId` blocks until that's done.
+ *
+ * After the hook lands, we layer the one test-only piece of config
+ * the hook can't know about: suppress Spring Boot's auto-Flyway via
+ * application-local.properties (the substrate's applyMigrations step
+ * runs Flyway before `mvnw test`; Spring Boot's would race with it
+ * and double-apply). Only applied when pom.xml exists (Java/Spring). */
 export async function createFeatureBranch(ctx: ScenarioContext, branchName: string): Promise<void> {
   // Branch off ctx.baseBranch, not hardcoded 'main'. Two reasons:
   //   1. The post-checkout hook reads LAKEBASE_BRANCH_ID from .env as the
@@ -226,9 +235,24 @@ export async function createFeatureBranch(ctx: ScenarioContext, branchName: stri
   await waitForEnvBranchId(ctx, sanitizeForLakebase(base));
   git(ctx, `pull origin ${base}`);
   git(ctx, `checkout -b ${branchName}`);
-  // Hook fires on -b. Wait for .env so subsequent createBranch calls
-  // see the feature branch's LAKEBASE_BRANCH_ID.
+  // Hook fires on -b, creates feature Lakebase branch, writes
+  // application-local.properties. Wait for .env to be current before
+  // applying test-only overrides.
   await waitForEnvBranchId(ctx, sanitizeForLakebase(branchName));
+
+  // Test-only: suppress Spring Boot's auto-Flyway in
+  // application-local.properties. Applied after the hook lands; only
+  // matters for Java/Spring projects (skipped otherwise).
+  const propsPath = path.join(ctx.projectDir, 'application-local.properties');
+  if (fs.existsSync(propsPath) && fs.existsSync(path.join(ctx.projectDir, 'pom.xml'))) {
+    const props = fs.readFileSync(propsPath, 'utf-8');
+    if (!/^spring\.flyway\.enabled\s*=/m.test(props)) {
+      fs.writeFileSync(
+        propsPath,
+        props + (props.endsWith('\n') ? '' : '\n') + 'spring.flyway.enabled=false\n',
+      );
+    }
+  }
 }
 
 /**
@@ -258,59 +282,6 @@ function logEnvBeforeBranch(ctx: ScenarioContext, newBranchName: string): void {
     `    [env-before-branch] new='${newBranchName}', git HEAD='${headBranch}', ` +
     `.env LAKEBASE_PROJECT_ID='${projectId}', LAKEBASE_BRANCH_ID='${branchId}'`,
   );
-}
-
-/**
- * A1b: Wait for the post-checkout hook to finish wiring this branch's
- * Lakebase connection into .env + application-local.properties, then
- * layer the one Java-specific test concern on top (suppress Spring
- * Boot's auto-Flyway so it doesn't race with the substrate's
- * applyMigrations step).
- *
- * Before alpha.10 this helper duplicated the hook's work because the
- * hook silently never fired (contributor's global core.hooksPath
- * shadowed .git/hooks/). alpha.10's install-hook.sh pins core.hooksPath
- * project-local, so the hook now does the createBranch + endpoint +
- * credential + .env write itself - exactly the same call shape VS Code
- * triggers when a user runs `git checkout -b feature/...` in the
- * extension's open project.
- */
-export async function createLakebaseBranchAndConnect(
-  ctx: ScenarioContext,
-  gitBranchName: string,
-): Promise<{ branchId: string; host: string; username: string }> {
-  logEnvBeforeBranch(ctx, gitBranchName);
-  const expectedBranchId = sanitizeForLakebase(gitBranchName);
-  await waitForEnvBranchId(ctx, expectedBranchId);
-
-  const envPath = path.join(ctx.projectDir, '.env');
-  const env = fs.readFileSync(envPath, 'utf-8');
-  const branchId = env.match(/^LAKEBASE_BRANCH_ID=(.+)$/m)?.[1];
-  const host = env.match(/^LAKEBASE_HOST=(.+)$/m)?.[1];
-  const username = env.match(/^DB_USERNAME=(.+)$/m)?.[1];
-  if (!branchId || !host || !username) {
-    throw new Error(
-      `Hook did not finish writing .env for ${gitBranchName}: ` +
-      `LAKEBASE_BRANCH_ID=${branchId} LAKEBASE_HOST=${host} DB_USERNAME=${username}`,
-    );
-  }
-
-  // Test-only layer on top of what the hook wrote: disable Spring Boot's
-  // auto-Flyway. The substrate's applyMigrations step runs Flyway before
-  // mvnw test; Spring Boot's would race with it and double-apply. The
-  // hook writes spring.datasource.* to application-local.properties for
-  // Java projects (pom.xml detected) but does NOT set spring.flyway.enabled.
-  // Append it without overwriting the hook's lines.
-  const propsPath = path.join(ctx.projectDir, 'application-local.properties');
-  const props = fs.existsSync(propsPath) ? fs.readFileSync(propsPath, 'utf-8') : '';
-  if (!/^spring\.flyway\.enabled\s*=/m.test(props)) {
-    fs.writeFileSync(
-      propsPath,
-      props + (props.endsWith('\n') ? '' : '\n') + 'spring.flyway.enabled=false\n',
-    );
-  }
-
-  return { branchId, host, username };
 }
 
 /**
@@ -375,13 +346,13 @@ export function writeMigration(ctx: ScenarioContext, filename: string, sql: stri
   fs.writeFileSync(path.join(migDir, filename), sql);
 }
 
-/** Pull LAKEBASE_BRANCH_ID out of the project's .env (created by
- *  createLakebaseBranchAndConnect). Throws with a clear message when
- *  missing - the substrate's applyMigrations needs an explicit branch. */
+/** Pull LAKEBASE_BRANCH_ID out of the project's .env (written by the
+ *  post-checkout hook). Throws with a clear message when missing - the
+ *  substrate's applyMigrations needs an explicit branch. */
 function readBranchFromEnv(projectDir: string): string {
   const envPath = path.join(projectDir, '.env');
   if (!fs.existsSync(envPath)) {
-    throw new Error(`Expected ${envPath} to exist; createLakebaseBranchAndConnect should have written it.`);
+    throw new Error(`Expected ${envPath} to exist; the post-checkout hook should have written it.`);
   }
   for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
     const m = line.match(/^\s*LAKEBASE_BRANCH_ID\s*=\s*(.+?)\s*$/);

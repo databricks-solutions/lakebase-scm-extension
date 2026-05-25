@@ -10,8 +10,8 @@
  *
  * The only remaining test-side concern is that substrate's createProject Step 6
  * writes `.env` (with non-secret HOST + project-id) and commits it. Once tracked,
- * the scenarios' createLakebaseBranchAndConnect rewrite of .env (with a real JWT)
- * gets staged and the Databricks pre-commit gitleaks hook blocks the commit.
+ * the post-checkout hook's rewrite of .env (with a real JWT) gets staged and
+ * the Databricks pre-commit gitleaks hook blocks the commit.
  * `ensureSecretsGitignored` patches that by appending the entries to .gitignore
  * (idempotent) and `git rm --cached`ing the tracked copy.
  */

@@ -16,7 +16,7 @@ now pin `core.hooksPath` project-local). With the hook actually firing on
 every git checkout, several test patterns that previously hid the bug now
 need re-examination.
 
-## 1. `createLakebaseBranchAndConnect` is now redundant with the hook
+## 1. `createLakebaseBranchAndConnect` is now redundant with the hook (DONE — FEIP-7099)
 
 **Today:** The integration test helpers explicitly call
 `createLakebaseBranchAndConnect(ctx, BRANCH)` after `git checkout -b
