@@ -99,7 +99,7 @@ async function offerCiSecretsSetup(
   defaults: { host: string; projectId: string },
   opts: { force?: boolean } = {},
 ): Promise<void> {
-  const runnerService = new RunnerService(githubService);
+  const runnerService = new RunnerService(githubService, lakebaseService);
 
   const { missing, present } = await runnerService.checkCiSecrets(fullRepoName);
   if (!opts.force && missing.length === 0) {
@@ -904,7 +904,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
               { location: vscode.ProgressLocation.Notification, title: `Setting up runner for ${fullRepoName}`, cancellable: false },
               async (progress) => {
-                const runnerService = new RunnerService(githubService);
+                const runnerService = new RunnerService(githubService, lakebaseService);
                 await runnerService.setupRunner(fullRepoName, projectId, (msg: string) => progress.report({ message: msg }));
               }
             );
@@ -1206,7 +1206,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       try {
-        const runnerService = new RunnerService(githubService);
+        const runnerService = new RunnerService(githubService, lakebaseService);
 
         // Get GitHub repo name
         const repoUrl = await gitService.getGitHubUrl();
@@ -1303,7 +1303,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const config = getConfig();
       if (!config.lakebaseProjectId) { return; }
       try {
-        const runnerService = new RunnerService(githubService);
+        const runnerService = new RunnerService(githubService, lakebaseService);
         runnerService.stopRunner(config.lakebaseProjectId);
         vscode.window.showInformationMessage(`Runner stopped for ${config.lakebaseProjectId}`);
         runnerTreeProvider.refresh();

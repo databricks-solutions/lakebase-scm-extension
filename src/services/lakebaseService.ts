@@ -252,6 +252,29 @@ export class LakebaseService {
     }
   }
 
+  /**
+   * Probe whether the local Databricks CLI is authenticated for the given
+   * profile/host. Returns rich result so callers can surface a profile-aware
+   * re-auth message (substitute for runnerService's inline current-user call,
+   * FEIP-7129). The profile path is needed because runnerService verifies a
+   * specific profile read from a project's .env, distinct from the
+   * extension's configured workspace.
+   */
+  async probeCliAuth(opts: { profile?: string; host?: string } = {}): Promise<
+    { ok: true } | { ok: false; stderr: string }
+  > {
+    const profileArg = opts.profile ? ` --profile "${opts.profile}"` : "";
+    const env = opts.host ? { DATABRICKS_HOST: opts.host } : undefined;
+    try {
+      await lakebaseExec(`databricks current-user me${profileArg} -o json`, undefined, env);
+      return { ok: true };
+    } catch (err: unknown) {
+      const e = err as { stderr?: { toString?: () => string }; message?: string };
+      const stderr = e?.stderr?.toString?.() || e?.message || String(err);
+      return { ok: false, stderr };
+    }
+  }
+
   // ── Substrate-routed: branch CRUD ──────────────────────────────
 
   async listBranches(): Promise<LakebaseBranch[]> {
