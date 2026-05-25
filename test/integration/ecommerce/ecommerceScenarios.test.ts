@@ -13,6 +13,7 @@ import { strict as assert } from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from '../../../src/services/gitService';
+import { GitHubService } from '../../../src/services/githubService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
@@ -156,6 +157,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     cleanupStaleRunners();
 
     const gitService = new GitService();
+    const githubService = new GitHubService();
     const lakebaseService = new LakebaseService();
     // Pre-flight: requires DATABRICKS_TEST_HOST + authenticated databricks
     // CLI + authenticated gh CLI. Throws IntegrationSetupError with exact
@@ -175,7 +177,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
     lakebaseService.setProjectIdOverride(PROJECT_NAME);
 
     const scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../../'));
-    const creationService = new ProjectCreationService(gitService, lakebaseService, scaffoldService);
+    const creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     const parentDir = require('os').homedir();
     const projectDir = path.join(parentDir, PROJECT_NAME);
 
@@ -229,7 +231,7 @@ describe('E-Commerce Backend – 8 Iterative Scenarios', function () {
       }
     });
     assert.ok(result.projectDir.includes(PROJECT_NAME));
-    assert.ok(result.githubRepoUrl.includes(PROJECT_NAME));
+    assert.ok(result.githubRepoUrl!.includes(PROJECT_NAME));
     console.log(`    [setup] Project created (with Maven scaffold).\n`);
 
     // Step 3: Download and start ephemeral self-hosted runner

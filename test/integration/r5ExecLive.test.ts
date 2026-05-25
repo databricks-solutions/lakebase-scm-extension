@@ -13,9 +13,11 @@
  */
 
 import { strict as assert } from 'assert';
+import { assertIntegrationCredentials } from './lib/credentials';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 import { LakebaseService } from '../../src/services/lakebaseService';
 import { exec as sharedExec } from '../../src/utils/exec';
 
@@ -28,6 +30,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let lakebaseService: LakebaseService;
 let repoCreated = false;
 let projectCreated = false;
@@ -43,8 +46,9 @@ describe('R5 Live Integration – Shared exec through services', function () {
   before(async function () {
     this.timeout(90000);
     gitService = new GitService();
+    githubService = new GitHubService();
     lakebaseService = new LakebaseService();
-    dbHost = process.env.DATABRICKS_HOST || 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    dbHost = assertIntegrationCredentials().databricksHost;
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
@@ -56,7 +60,7 @@ describe('R5 Live Integration – Shared exec through services', function () {
 
     // Create GitHub repo with commits
     console.log('  Creating GitHub repo...');
-    await gitService.createRepo(fullRepoName, { private: true, description: 'R5 exec live test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'R5 exec live test' });
     repoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
     fs.writeFileSync(path.join(repoDir, 'README.md'), '# R5 Live Test\n');
@@ -186,7 +190,7 @@ describe('R5 Live Integration – Shared exec through services', function () {
     });
 
     it('gh secret set via shared exec (pipe)', async () => {
-      await gitService.setRepoSecret(fullRepoName, 'R5_LIVE_SECRET', 'r5-value');
+      await githubService.setRepoSecret(fullRepoName, 'R5_LIVE_SECRET', 'r5-value');
       const raw = cp.execSync(`gh secret list --repo "${fullRepoName}"`, { timeout: 10000 }).toString();
       assert.ok(raw.includes('R5_LIVE_SECRET'));
     });
@@ -276,7 +280,7 @@ describe('R5 Live Integration – Shared exec through services', function () {
     it('deletes the GitHub repo', async function () {
       if (!repoCreated) { this.skip(); return; }
       this.timeout(30000);
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       repoCreated = false;
     });
 
@@ -297,7 +301,7 @@ describe('R5 Live Integration – Shared exec through services', function () {
   after(async function () {
     this.timeout(90000);
     try { cp.execSync('git checkout main', { cwd: repoDir, timeout: 5000 }); } catch {}
-    if (repoCreated) { try { await gitService.deleteRepo(fullRepoName); } catch {} }
+    if (repoCreated) { try { await githubService.deleteRepo(fullRepoName); } catch {} }
     if (projectCreated) { try { await lakebaseService.deleteProject(TEST_PROJECT); } catch {} }
     if (repoDir && fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {} }
   });

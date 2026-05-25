@@ -11,10 +11,12 @@
  */
 
 import { strict as assert } from 'assert';
+import { assertIntegrationCredentials } from '../lib/credentials';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as cp from 'child_process';
 import { GitService } from '../../../src/services/gitService';
+import { GitHubService } from '../../../src/services/githubService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
@@ -36,6 +38,7 @@ describe('Self-Hosted Runner – Full CI/CD Pipeline', function () {
   let dbHost: string;
   let input: ProjectCreationInput;
   let gitService: GitService;
+let githubService: GitHubService;
   let lakebaseService: LakebaseService;
   let creationService: ProjectCreationService;
   let created = false;
@@ -44,14 +47,15 @@ describe('Self-Hosted Runner – Full CI/CD Pipeline', function () {
     this.timeout(300000);
 
     gitService = new GitService();
+    githubService = new GitHubService();
     lakebaseService = new LakebaseService();
-    dbHost = process.env.DATABRICKS_HOST || 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    dbHost = assertIntegrationCredentials().databricksHost;
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
     lakebaseService.setProjectIdOverride(PROJECT_NAME);
 
     const scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../../'));
-    creationService = new ProjectCreationService(gitService, lakebaseService, scaffoldService);
+    creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     projectDir = path.join(require('os').homedir(), PROJECT_NAME);
 

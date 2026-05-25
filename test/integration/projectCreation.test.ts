@@ -11,9 +11,11 @@ import { strict as assert } from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 import { LakebaseService } from '../../src/services/lakebaseService';
 import { ScaffoldService } from '../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../src/services/projectCreationService';
+import { assertIntegrationCredentials } from './lib/credentials';
 
 const cp = require('child_process');
 const timestamp = Date.now().toString(36);
@@ -22,6 +24,7 @@ const PROJECT_NAME = `newproj-${timestamp}`;
 let ghUser: string;
 let dbHost: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let lakebaseService: LakebaseService;
 let scaffoldService: ScaffoldService;
 let creationService: ProjectCreationService;
@@ -30,7 +33,10 @@ let projectDir: string;
 let created = false;
 
 function git(cmd: string): string {
-  return cp.execSync(`git ${cmd}`, { cwd: projectDir, timeout: 15000 }).toString().trim();
+  // Hooks chain (prepare-commit-msg, pre-push) reach out to Lakebase for
+  // schema-diff. Cold-start Lakebase latency can push a single commit past
+  // 15s. 5 min matches the ecommerce + python-devloop helper timeout.
+  return cp.execSync(`git ${cmd}`, { cwd: projectDir, timeout: 300000 }).toString().trim();
 }
 
 describe('ProjectCreationService – Full End-to-End', function () {
@@ -39,12 +45,13 @@ describe('ProjectCreationService – Full End-to-End', function () {
   before(async function () {
     this.timeout(30000);
     gitService = new GitService();
+    githubService = new GitHubService();
     lakebaseService = new LakebaseService();
-    dbHost = process.env.DATABRICKS_HOST || 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    dbHost = assertIntegrationCredentials().databricksHost;
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
     scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../'));
-    creationService = new ProjectCreationService(gitService, lakebaseService, scaffoldService);
+    creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     projectDir = path.join(require('os').tmpdir(), PROJECT_NAME);
 
@@ -75,7 +82,7 @@ describe('ProjectCreationService – Full End-to-End', function () {
 
       created = true;
       assert.ok(result.projectDir.includes(PROJECT_NAME), 'Project dir contains name');
-      assert.ok(result.githubRepoUrl.includes(PROJECT_NAME), 'GitHub URL contains name');
+      assert.ok(result.githubRepoUrl!.includes(PROJECT_NAME), 'GitHub URL contains name');
       assert.ok(result.lakebaseProjectId, 'Lakebase project ID returned');
 
       // Verify all steps were reported
@@ -93,7 +100,7 @@ describe('ProjectCreationService – Full End-to-End', function () {
     before(function () { if (!created) { this.skip(); } });
 
     it('repo exists on GitHub', async () => {
-      const exists = await gitService.repoExists(`${ghUser}/${PROJECT_NAME}`);
+      const exists = await githubService.repoExists(`${ghUser}/${PROJECT_NAME}`);
       assert.ok(exists);
     });
 
@@ -291,7 +298,7 @@ describe('ProjectCreationService – Full End-to-End', function () {
       created = false;
 
       // Verify cleanup
-      const exists = await gitService.repoExists(`${ghUser}/${PROJECT_NAME}`);
+      const exists = await githubService.repoExists(`${ghUser}/${PROJECT_NAME}`);
       assert.strictEqual(exists, false, 'GitHub repo should be deleted');
       assert.ok(!fs.existsSync(projectDir), 'Local dir should be deleted');
       console.log('    Done.');

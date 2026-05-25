@@ -4,15 +4,16 @@
  * Tests the new create/delete branch features against LIVE Lakebase APIs.
  *
  * Prerequisites:
- * - `databricks auth login` – authenticated to a workspace with Lakebase
- * - DATABRICKS_HOST env var or ~/.databrickscfg configured
- * - LAKEBASE_PROJECT_ID env var or .env with a valid project
+ * - `databricks auth login` – authenticated to the chosen workspace
+ * - DATABRICKS_TEST_HOST env var – the workspace this run targets
+ * - LAKEBASE_TEST_INSTANCE env var – an existing Lakebase project on that host
  *
  * Run: npm run test:integration -- --grep "Branch Lifecycle"
  */
 
 import { strict as assert } from 'assert';
 import { LakebaseService } from '../../src/services/lakebaseService';
+import { assertIntegrationCredentials } from './lib/credentials';
 
 const timestamp = Date.now().toString(36);
 const TEST_BRANCH_NAME = `int-test-${timestamp}`;
@@ -26,12 +27,18 @@ describe('Branch Lifecycle Integration', function () {
   before(async () => {
     lakebaseService = new LakebaseService();
 
-    if (!process.env.DATABRICKS_HOST) {
-      process.env.DATABRICKS_HOST = 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
-    }
-    lakebaseService.setHostOverride(process.env.DATABRICKS_HOST);
+    const { databricksHost } = assertIntegrationCredentials();
+    process.env.DATABRICKS_HOST = databricksHost;
+    lakebaseService.setHostOverride(databricksHost);
 
-    const projectId = process.env.LAKEBASE_PROJECT_ID || 'lakebase-ecommerce-demo';
+    const projectId = (process.env.LAKEBASE_TEST_INSTANCE || '').trim();
+    if (!projectId) {
+      throw new Error(
+        'LAKEBASE_TEST_INSTANCE is not set. This suite expects an existing Lakebase ' +
+        'project on $DATABRICKS_TEST_HOST to list branches against. Export ' +
+        'LAKEBASE_TEST_INSTANCE=<project-id> (see README "Live integration tests").'
+      );
+    }
     lakebaseService.setProjectIdOverride(projectId);
     console.log(`  Using project: ${projectId}`);
 

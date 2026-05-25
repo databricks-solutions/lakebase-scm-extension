@@ -18,8 +18,10 @@ import { strict as assert } from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 import { LakebaseService } from '../../src/services/lakebaseService';
 import { SchemaMigrationService } from '../../src/services/schemaMigrationService';
+import { isMainBranch } from '../../src/utils/theme';
 
 const cp = require('child_process');
 
@@ -31,6 +33,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let lakebaseService: LakebaseService;
 let githubRepoCreated = false;
 let lakebaseProjectCreated = false;
@@ -55,6 +58,7 @@ describe('Refactoring Phase Integration Tests', function () {
   before(async function () {
     this.timeout(120000);
     gitService = new GitService();
+    githubService = new GitHubService();
     lakebaseService = new LakebaseService();
 
     if (!process.env.DATABRICKS_HOST) {
@@ -73,7 +77,7 @@ describe('Refactoring Phase Integration Tests', function () {
 
     // 1. Create GitHub repo and clone
     console.log('    Creating GitHub repo...');
-    await gitService.createRepo(fullRepoName, { private: true, clone: false, description: 'Refactoring integration test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'Refactoring integration test' });
     githubRepoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
 
@@ -471,7 +475,7 @@ describe('Refactoring Phase Integration Tests', function () {
         return { status: p[0][0], path: p[p.length - 1] };
       });
       assert.ok(files.length >= 2, 'Should have multiple changed files');
-      assert.ok(files.some(f => f.status === 'A'), 'Should have added files');
+      assert.ok(files.some((f: any) => f.status === 'A'), 'Should have added files');
     });
 
     it('migration files can be separated from code files', () => {
@@ -504,7 +508,7 @@ describe('Refactoring Phase Integration Tests', function () {
     it('sets and lists secrets on the test repo', async function () {
       this.timeout(30000);
       // Set a test secret
-      await gitService.setRepoSecret(fullRepoName, 'TEST_R7_SECRET', 'test-value-r7');
+      await githubService.setRepoSecret(fullRepoName, 'TEST_R7_SECRET', 'test-value-r7');
 
       // Verify it appears in the list
       const raw = cp.execSync(`gh secret list --repo "${fullRepoName}"`, { timeout: 10000 }).toString();
@@ -513,14 +517,14 @@ describe('Refactoring Phase Integration Tests', function () {
 
     it('sets DATABRICKS_HOST secret', async function () {
       this.timeout(15000);
-      await gitService.setRepoSecret(fullRepoName, 'DATABRICKS_HOST', process.env.DATABRICKS_HOST || 'test-host');
+      await githubService.setRepoSecret(fullRepoName, 'DATABRICKS_HOST', process.env.DATABRICKS_HOST || 'test-host');
       const raw = cp.execSync(`gh secret list --repo "${fullRepoName}"`, { timeout: 10000 }).toString();
       assert.ok(raw.includes('DATABRICKS_HOST'), 'DATABRICKS_HOST should be set');
     });
 
     it('sets LAKEBASE_PROJECT_ID secret', async function () {
       this.timeout(15000);
-      await gitService.setRepoSecret(fullRepoName, 'LAKEBASE_PROJECT_ID', TEST_PROJECT_ID);
+      await githubService.setRepoSecret(fullRepoName, 'LAKEBASE_PROJECT_ID', TEST_PROJECT_ID);
       const raw = cp.execSync(`gh secret list --repo "${fullRepoName}"`, { timeout: 10000 }).toString();
       assert.ok(raw.includes('LAKEBASE_PROJECT_ID'), 'LAKEBASE_PROJECT_ID should be set');
     });
@@ -550,13 +554,13 @@ describe('Refactoring Phase Integration Tests', function () {
   describe('R8: Small Patterns', () => {
     describe('R8a: isMainBranch', () => {
       it('identifies main as main branch', () => {
-        assert.ok('main' === 'main' || 'main' === 'master');
+        assert.ok(isMainBranch('main'));
       });
       it('identifies master as main branch', () => {
-        assert.ok('master' === 'main' || 'master' === 'master');
+        assert.ok(isMainBranch('master'));
       });
       it('does not identify feature branches as main', () => {
-        assert.ok('feature/orders' !== 'main' && 'feature/orders' !== 'master');
+        assert.ok(!isMainBranch('feature/orders'));
       });
     });
 
@@ -607,8 +611,8 @@ describe('Refactoring Phase Integration Tests', function () {
       if (!githubRepoCreated) { this.skip(); return; }
       this.timeout(30000);
       console.log(`    Deleting GitHub repo ${fullRepoName}...`);
-      await gitService.deleteRepo(fullRepoName);
-      const exists = await gitService.repoExists(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
+      const exists = await githubService.repoExists(fullRepoName);
       assert.strictEqual(exists, false);
       githubRepoCreated = false;
       console.log('    Deleted.');
@@ -634,7 +638,7 @@ describe('Refactoring Phase Integration Tests', function () {
   after(async function () {
     this.timeout(120000);
     if (githubRepoCreated) {
-      try { await gitService.deleteRepo(fullRepoName); } catch (e: any) { console.log(`  [cleanup] GitHub: ${e.message}`); }
+      try { await githubService.deleteRepo(fullRepoName); } catch (e: any) { console.log(`  [cleanup] GitHub: ${e.message}`); }
     }
     if (lakebaseProjectCreated) {
       try { await lakebaseService.deleteProject(TEST_PROJECT_ID); } catch (e: any) { console.log(`  [cleanup] Lakebase: ${e.message}`); }

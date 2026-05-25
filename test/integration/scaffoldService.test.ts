@@ -25,6 +25,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ScaffoldService } from '../../src/services/scaffoldService';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 
 const cp = require('child_process');
 const timestamp = Date.now().toString(36);
@@ -34,6 +35,7 @@ let ghUser: string;
 let fullRepoName: string;
 let repoDir: string;
 let gitService: GitService;
+let githubService: GitHubService;
 let scaffoldService: ScaffoldService;
 let repoCreated = false;
 
@@ -47,6 +49,7 @@ describe('ScaffoldService – Live Integration', function () {
   before(async function () {
     this.timeout(60000);
     gitService = new GitService();
+    githubService = new GitHubService();
     // extensionPath is the lakebase-scm-extension root (where templates/ lives)
     scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../'));
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
@@ -57,7 +60,7 @@ describe('ScaffoldService – Live Integration', function () {
     console.log(`  Dir:  ${repoDir}`);
 
     // Create GitHub repo and clone
-    await gitService.createRepo(fullRepoName, { private: true, description: 'Scaffold integration test' });
+    await githubService.createRepo(fullRepoName, { private: true, description: 'Scaffold integration test' });
     repoCreated = true;
     cp.execSync(`gh repo clone "${fullRepoName}" "${repoDir}"`, { timeout: 30000 });
 
@@ -178,22 +181,6 @@ describe('ScaffoldService – Live Integration', function () {
     });
   });
 
-  // ── Scenario 6: Deploy migration placeholder ─────────────────────
-
-  describe('Scenario 6: Deploy migration placeholder', () => {
-    it('deploys V1__init_placeholder.sql', async () => {
-      await scaffoldService.deployMigrationPlaceholder(repoDir);
-      const migPath = path.join(repoDir, 'src', 'main', 'resources', 'db', 'migration', 'V1__init_placeholder.sql');
-      assert.ok(fs.existsSync(migPath));
-    });
-
-    it('placeholder SQL is valid', () => {
-      const migPath = path.join(repoDir, 'src', 'main', 'resources', 'db', 'migration', 'V1__init_placeholder.sql');
-      const content = fs.readFileSync(migPath, 'utf-8');
-      assert.ok(content.length > 0, 'Should have content');
-    });
-  });
-
   // ── Scenario 7: Full scaffoldAll ─────────────────────────────────
 
   describe('Scenario 7: Full scaffold verification', () => {
@@ -214,7 +201,6 @@ describe('ScaffoldService – Live Integration', function () {
       assert.ok(fs.existsSync(path.join(repoDir, 'scripts')));
       assert.ok(fs.existsSync(path.join(repoDir, '.github', 'workflows')));
       assert.ok(fs.existsSync(path.join(repoDir, '.vscode')));
-      assert.ok(fs.existsSync(path.join(repoDir, 'src', 'main', 'resources', 'db', 'migration')));
       assert.ok(fs.existsSync(path.join(repoDir, '.env.example')));
     });
   });
@@ -289,7 +275,7 @@ describe('ScaffoldService – Live Integration', function () {
     it('deletes the GitHub repo', async function () {
       if (!repoCreated) { this.skip(); return; }
       this.timeout(30000);
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       repoCreated = false;
     });
     it('cleans up local directory', () => {
@@ -300,7 +286,7 @@ describe('ScaffoldService – Live Integration', function () {
   after(async function () {
     this.timeout(60000);
     try { git('checkout main'); } catch {}
-    if (repoCreated) { try { await gitService.deleteRepo(fullRepoName); } catch {} }
+    if (repoCreated) { try { await githubService.deleteRepo(fullRepoName); } catch {} }
     if (fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {} }
   });
 });

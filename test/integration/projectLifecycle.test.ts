@@ -15,6 +15,7 @@
 
 import { strict as assert } from 'assert';
 import { GitService } from '../../src/services/gitService';
+import { GitHubService } from '../../src/services/githubService';
 import { LakebaseService } from '../../src/services/lakebaseService';
 
 // Unique test identifiers to avoid collisions
@@ -27,6 +28,7 @@ describe('Project Lifecycle Integration', function () {
   this.timeout(120000);
 
   let gitService: GitService;
+let githubService: GitHubService;
   let lakebaseService: LakebaseService;
   let ghUser: string;
   let fullRepoName: string;
@@ -35,6 +37,7 @@ describe('Project Lifecycle Integration', function () {
 
   before(async () => {
     gitService = new GitService();
+    githubService = new GitHubService();
     lakebaseService = new LakebaseService();
 
     // Ensure DATABRICKS_HOST is set for the CLI
@@ -57,9 +60,8 @@ describe('Project Lifecycle Integration', function () {
 
   describe('GitHub Repository', () => {
     it('creates a private repo', async () => {
-      const result = await gitService.createRepo(fullRepoName, {
+      const result = await githubService.createRepo(fullRepoName, {
         private: true,
-        clone: false,
         description: 'Integration test – auto-created, safe to delete',
       });
       console.log(`    Created: ${result}`);
@@ -68,17 +70,17 @@ describe('Project Lifecycle Integration', function () {
     });
 
     it('verifies repo exists', async () => {
-      const exists = await gitService.repoExists(fullRepoName);
+      const exists = await githubService.repoExists(fullRepoName);
       assert.ok(exists, 'Repo should exist after creation');
     });
 
     it('can set a secret on the repo', async () => {
-      await gitService.setRepoSecret(fullRepoName, 'TEST_SECRET', 'test-value-12345');
+      await githubService.setRepoSecret(fullRepoName, 'TEST_SECRET', 'test-value-12345');
       // No error means success – gh secret set doesn't return output
     });
 
     it('verifies non-existent repo returns false', async () => {
-      const exists = await gitService.repoExists(`${ghUser}/nonexistent-repo-${timestamp}`);
+      const exists = await githubService.repoExists(`${ghUser}/nonexistent-repo-${timestamp}`);
       assert.strictEqual(exists, false);
     });
   });
@@ -102,7 +104,7 @@ describe('Project Lifecycle Integration', function () {
       const cp = require('child_process');
       const raw = cp.execSync('databricks postgres list-projects -o json', {
         timeout: 15000,
-        env: { ...process.env, ...lakebaseService['cliEnv']() },
+        env: process.env,
       }).toString();
       const parsed = JSON.parse(raw);
       const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
@@ -121,11 +123,11 @@ describe('Project Lifecycle Integration', function () {
       if (!githubRepoCreated) { this.skip(); return; }
       this.timeout(30000);
       console.log(`    Deleting GitHub repo ${fullRepoName}...`);
-      await gitService.deleteRepo(fullRepoName);
+      await githubService.deleteRepo(fullRepoName);
       console.log(`    Deleted.`);
 
       // Verify it's gone
-      const exists = await gitService.repoExists(fullRepoName);
+      const exists = await githubService.repoExists(fullRepoName);
       assert.strictEqual(exists, false, 'Repo should not exist after deletion');
     });
 
@@ -143,10 +145,10 @@ describe('Project Lifecycle Integration', function () {
     this.timeout(120000);
     if (githubRepoCreated) {
       try {
-        const exists = await gitService.repoExists(fullRepoName);
+        const exists = await githubService.repoExists(fullRepoName);
         if (exists) {
           console.log(`  [cleanup] Deleting leftover GitHub repo ${fullRepoName}`);
-          await gitService.deleteRepo(fullRepoName);
+          await githubService.deleteRepo(fullRepoName);
         }
       } catch (e: any) { console.log(`  [cleanup] GitHub cleanup failed: ${e.message}`); }
     }
