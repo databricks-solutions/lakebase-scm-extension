@@ -32,7 +32,9 @@ import {
   queryBranchSchema as substrateQueryBranchSchema,
   queryBranchTables as substrateQueryBranchTables,
   sanitizeBranchName as substrateSanitizeBranchName,
+  createLongRunningBranch as substrateCreateLongRunningBranch,
   type LakebaseBranchInfo,
+  type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
 
 export interface LakebaseBranch {
@@ -322,6 +324,32 @@ export class LakebaseService {
       })
     );
     return adaptBranchInfo(created);
+  }
+
+  /**
+   * Cut a long-running tier (staging, uat, perf, custom). Forks both a
+   * Lakebase branch and a matching git branch from `forkFromBranch`, then
+   * pushes the git branch to origin. Used by the `cutLongRunningBranch`
+   * VS Code command (FEIP-7097).
+   *
+   * Delegates to substrate's createLongRunningBranch primitive; this
+   * wrapper handles workspace-host mutation via withHost and surfaces a
+   * typed result the command can use for the success toast.
+   */
+  async createLongRunningBranch(args: {
+    name: string;
+    forkFromBranch: string;
+    workTreeDir: string;
+  }): Promise<CreateLongRunningBranchResult> {
+    return this.withHost(() =>
+      substrateCreateLongRunningBranch({
+        name: args.name,
+        forkFromBranch: args.forkFromBranch,
+        projectId: this.projectInstance(),
+        workTreeDir: args.workTreeDir,
+        databricksHost: this.getEffectiveHost(),
+      })
+    );
   }
 
   async waitForBranchReady(branchName: string, maxAttempts = 24): Promise<LakebaseBranch | undefined> {

@@ -996,6 +996,95 @@ export async function activate(context: vscode.ExtensionContext) {
       );
     }),
 
+    // FEIP-7097: cut a long-running tier (staging/uat/perf/custom).
+    // Delegates to substrate's createLongRunningBranch, which forks both
+    // the Lakebase branch and the git branch in one call and pushes the
+    // git branch to origin. Unlike createUnifiedBranch (which is for
+    // feature work and uses no_expiry: false), tiers are explicit user
+    // gestures that release PRs target.
+    vscode.commands.registerCommand('lakebaseSync.cutLongRunningBranch', async () => {
+      const CUSTOM_TIER = '$(edit) Custom tier name...';
+      const tierPick = await vscode.window.showQuickPick(
+        ['staging', 'uat', 'perf', CUSTOM_TIER],
+        {
+          placeHolder: 'Tier name (release PRs target this branch)',
+          ignoreFocusOut: true,
+        },
+      );
+      if (!tierPick) { return; }
+
+      let tier = tierPick;
+      if (tierPick === CUSTOM_TIER) {
+        const custom = await vscode.window.showInputBox({
+          prompt: 'Custom tier name',
+          placeHolder: 'dev, qa, ...',
+          validateInput: (v) => {
+            if (!v.trim()) { return 'Tier name is required'; }
+            if (!/^[a-z0-9-]+$/i.test(v)) { return 'Use letters, digits, and hyphens only'; }
+            return undefined;
+          },
+        });
+        if (!custom) { return; }
+        tier = custom.trim();
+      }
+
+      const currentBranch = await gitService.getCurrentBranch().catch(() => undefined);
+      const localBranches = await gitService.listLocalBranches().catch(() => []);
+      const branchNames = localBranches.map((b) => b.name);
+      const forkPickItems: string[] = [];
+      if (currentBranch) { forkPickItems.push(currentBranch); }
+      for (const name of branchNames) {
+        if (name !== currentBranch) { forkPickItems.push(name); }
+      }
+      const forkPick = await vscode.window.showQuickPick(forkPickItems, {
+        placeHolder: `Fork "${tier}" from which branch?`,
+        ignoreFocusOut: true,
+      });
+      if (!forkPick) { return; }
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Cut tier "${tier}" forked from "${forkPick}"?`,
+        {
+          modal: true,
+          detail:
+            `This creates both a Lakebase branch and a matching git branch that release PRs target. ` +
+            `The Lakebase branch is created with no_expiry so the tier does not get garbage-collected ` +
+            `like feature branches do. The git branch is pushed to origin.`,
+        },
+        'Cut Tier',
+      );
+      if (confirm !== 'Cut Tier') { return; }
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Cutting tier: ${tier}`,
+          cancellable: false,
+        },
+        async (progress) => {
+          try {
+            progress.report({ message: `Forking from ${forkPick}...` });
+            const workTreeDir = await gitService.getRepoRoot();
+            const result = await lakebaseService.createLongRunningBranch({
+              name: tier,
+              forkFromBranch: forkPick,
+              workTreeDir,
+            });
+            vscode.window.showInformationMessage(
+              `Tier "${tier}" cut: ${result.lakebaseBranchName} + git branch pushed to origin.`,
+            );
+          } catch (err: any) {
+            if (!(await handleAuthError(lakebaseService, err))) {
+              vscode.window.showErrorMessage(`Failed to cut tier: ${err.message}`);
+            }
+          } finally {
+            statusBarProvider.refresh();
+            branchTreeProvider.refresh();
+          }
+        },
+      );
+    }),
+
     vscode.commands.registerCommand('lakebaseSync.deleteBranch', async (item?: any) => {
       let branchName: string;
 
@@ -1544,6 +1633,7 @@ export async function activate(context: vscode.ExtensionContext) {
         { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
         { label: 'Create Branch...', command: 'lakebaseSync.createUnifiedBranch' },
         { label: 'Create Branch From...', command: 'lakebaseSync.createUnifiedBranchFrom' },
+        { label: 'Cut Long-Running Tier...', command: 'lakebaseSync.cutLongRunningBranch' },
         { label: 'Rename Branch...', command: 'lakebaseSync.renameBranch' },
         { label: 'Delete Branch...', command: 'lakebaseSync.deleteBranch' },
         { label: 'Merge Branch...', command: 'lakebaseSync.mergeBranch' },

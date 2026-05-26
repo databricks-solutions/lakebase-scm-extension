@@ -110,4 +110,34 @@ describe("equivalence: lakebase branch lifecycle", () => {
     assert.strictEqual(args.timeoutMs, 12 * 5_000);
     assert.deepStrictEqual(result, expectedBranchAdapter(sampleBranchInfo({ state: "READY" })));
   });
+
+  it("createLongRunningBranch – forwards { name, forkFromBranch, projectId, workTreeDir, databricksHost } (FEIP-7097)", async () => {
+    const stubResult = {
+      lakebaseBranchName: "projects/proj-x/branches/staging",
+      gitBranch: "staging",
+      lakebase: sampleBranchInfo({ uid: "br-staging", name: "projects/proj-x/branches/staging" }),
+    };
+    const tracker = stubSubstrate("createLongRunningBranch", stubResult);
+
+    const result = await service.createLongRunningBranch({
+      name: "staging",
+      forkFromBranch: "main",
+      workTreeDir: "/tmp/proj",
+    });
+
+    assert.strictEqual(tracker.callCount, 1);
+    const args = tracker.firstCall!.args[0] as {
+      name: string;
+      forkFromBranch: string;
+      projectId: string;
+      workTreeDir: string;
+      databricksHost?: string;
+    };
+    assert.strictEqual(args.name, "staging");
+    assert.strictEqual(args.forkFromBranch, "main");
+    assert.strictEqual(args.projectId, "proj-x");
+    assert.strictEqual(args.workTreeDir, "/tmp/proj");
+    assert.strictEqual(args.databricksHost, "https://example.cloud.databricks.com");
+    assert.deepStrictEqual(result, stubResult);
+  });
 });
