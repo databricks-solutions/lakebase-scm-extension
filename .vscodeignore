@@ -1,6 +1,11 @@
 .mocharc.yml
 test/**
 node_modules/**
+# Ship adm-zip at runtime (externalized in webpack.config.js because the
+# bundled prototype assignment "Cannot set properties of undefined
+# (setting 'overheadLength')" crashes activate()). Zero runtime deps,
+# ~80 KB.
+!node_modules/adm-zip/**
 src/**
 docs/**
 *.vsix

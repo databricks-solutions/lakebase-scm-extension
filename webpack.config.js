@@ -20,6 +20,16 @@ const config = {
     // Mark it external so the bundle doesn't warn, and nothing loads it at
     // runtime unless pg.native is explicitly imported (which we don't).
     'pg-native': 'commonjs pg-native',
+    // adm-zip's ZipFile/ZipEntry classes do prototype-property assignments
+    // (e.g. `X.prototype.overheadLength = ...`) at module-load time. webpack
+    // production bundling can leave the prototype undefined under some
+    // module-graph shapes, throwing "Cannot set properties of undefined
+    // (setting 'overheadLength')" during activate() and killing the entire
+    // extension (no commands, no tree providers). Externalize so it's
+    // `require()`d from the vsix-shipped node_modules at runtime, where the
+    // prototype is intact. The dep travels via substrate's
+    // spring-initializr.ts.
+    'adm-zip': 'commonjs adm-zip',
   },
   resolve: {
     extensions: ['.ts', '.js'],
