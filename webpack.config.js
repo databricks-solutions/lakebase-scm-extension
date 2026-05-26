@@ -20,15 +20,19 @@ const config = {
     // Mark it external so the bundle doesn't warn, and nothing loads it at
     // runtime unless pg.native is explicitly imported (which we don't).
     'pg-native': 'commonjs pg-native',
-    // adm-zip's ZipFile/ZipEntry classes do prototype-property assignments
-    // (e.g. `X.prototype.overheadLength = ...`) at module-load time. webpack
-    // production bundling can leave the prototype undefined under some
-    // module-graph shapes, throwing "Cannot set properties of undefined
-    // (setting 'overheadLength')" during activate() and killing the entire
-    // extension (no commands, no tree providers). Externalize so it's
-    // `require()`d from the vsix-shipped node_modules at runtime, where the
-    // prototype is intact. The dep travels via substrate's
-    // spring-initializr.ts.
+    // tweetsodium does `module.exports.overheadLength = nacl.box.overheadLength
+    // + nacl.box.publicKeyLength` at module load. webpack's CJS wrapper
+    // `(e=n.hmd(e)).exports` returns undefined under this module-graph
+    // shape, throwing "Cannot set properties of undefined (setting
+    // 'overheadLength')" during activate() and killing the entire extension
+    // (no commands, no tree providers). Externalize so it's `require()`d
+    // from the vsix-shipped node_modules at runtime, where module.exports
+    // is intact. The dep travels via substrate's github/secrets.ts (GitHub
+    // Actions secret encryption).
+    tweetsodium: 'commonjs tweetsodium',
+    // adm-zip also gets externalized as belt-and-suspenders: it has the
+    // same class-of-bug potential (prototype-property assignments at
+    // module load). The dep travels via substrate's spring-initializr.ts.
     'adm-zip': 'commonjs adm-zip',
   },
   resolve: {

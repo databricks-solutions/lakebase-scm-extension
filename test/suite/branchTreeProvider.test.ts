@@ -46,21 +46,26 @@ describe('BranchTreeProvider', () => {
 
     it('project item expands to connection + section headers', async () => {
       lakebaseStub.checkAuth.resolves({ authenticated: true, currentHost: 'ws.databricks.com', expectedHost: 'ws.databricks.com', mismatch: false });
+      // getCurrentBranch is now called eagerly in getProjectDetails to
+      // decide between "Current Branch" and "Current Tier" labeling.
+      gitStub.getCurrentBranch.resolves('feature-x');
 
       const root = await provider.getChildren();
       const projectItem = root[0];
       const children = await provider.getChildren(projectItem);
 
-      // Should have at minimum: Current Branch header + Other Branches header
-      // (GitHub, Lakebase project, and connection items depend on environment)
-      assert.ok(children.length >= 2);
+      // Three branch-section headers: Current (Branch|Tier) + Tiers + Other Branches.
+      assert.ok(children.length >= 3);
+      // Non-tier current → "Current Branch"
       const currentHeader = children.find(c => c.label === 'Current Branch');
       assert.ok(currentHeader, 'should have Current Branch section');
+      const tiersHeader = children.find(c => c.label === 'Tiers');
+      assert.ok(tiersHeader, 'should have Tiers section');
       const otherHeader = children.find(c => c.label === 'Other Branches');
       assert.ok(otherHeader, 'should have Other Branches section');
     });
 
-    it('lists current branch under Current Branch section', async () => {
+    it('lists current branch under Current Tier section when on a tier', async () => {
       lakebaseStub.checkAuth.resolves({ authenticated: true, currentHost: 'ws.databricks.com', expectedHost: 'ws.databricks.com', mismatch: false });
       gitStub.listLocalBranches.resolves([
         { name: 'main', isCurrent: true, isRemote: false },
@@ -75,7 +80,8 @@ describe('BranchTreeProvider', () => {
 
       const root = await provider.getChildren();
       const projectChildren = await provider.getChildren(root[0]);
-      const currentHeader = projectChildren.find(c => c.label === 'Current Branch')!;
+      // `main` is a tier (trunk), so the current header reads as "Current Tier".
+      const currentHeader = projectChildren.find(c => c.label === 'Current Tier')!;
       const currentBranches = await provider.getChildren(currentHeader);
 
       assert.strictEqual(currentBranches.length, 1);

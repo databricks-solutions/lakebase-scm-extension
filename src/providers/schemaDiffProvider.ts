@@ -126,7 +126,7 @@ export class SchemaDiffProvider {
     }
 
     if (diff.inSync && !diff.error) {
-      const targetName = diff.comparisonBranchName || 'production';
+      const targetName = diff.comparisonBranchName || 'parent';
       schemaHtml += `<p class="sync-msg">No schema changes – branch and ${esc(targetName)} are in sync.</p>`;
     }
 
@@ -276,7 +276,7 @@ export class SchemaDiffProvider {
 <body>
   <div class="header">
     <h1>Branch Diff Summary</h1>
-    <div class="subtitle">${esc(branchName)} vs ${esc(diff.comparisonBranchName || 'production')} &mdash; ${timestamp}</div>
+    <div class="subtitle">${esc(branchName)} vs ${esc(diff.comparisonBranchName || 'parent')} &mdash; ${timestamp}</div>
   </div>
 
   <div class="two-col">
@@ -303,23 +303,53 @@ export class SchemaDiffProvider {
     </div>`;
   }
 
-  /** Show schema diff for a single table */
-  async showTableDiff(tableName: string, diffType: 'created' | 'modified' | 'removed', diff?: SchemaDiffResult): Promise<void> {
-    if (!diff) {
-      diff = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: `Loading schema for ${tableName}...`,
-          cancellable: false,
-        },
-        () => this.schemaDiffService.compareBranchSchemas()
-      );
-    }
+  /**
+   * Show schema diff for a single table.
+   *
+   * @param branchName  Lakebase branchId the diff should target (matches the
+   *   tree row the user clicked). When omitted, falls back to the branch in
+   *   `.env` (LAKEBASE_BRANCH_ID) — only correct when the tree row is the
+   *   active branch. Without this arg, expanding a non-active branch in the
+   *   tree shows a diff for whatever branch is checked out, not the row's
+   *   branch.
+   */
+  async showTableDiff(
+    tableName: string,
+    diffType: 'created' | 'modified' | 'removed' | 'unchanged',
+    diff?: SchemaDiffResult,
+    branchName?: string,
+  ): Promise<void> {
+    // Always refresh the diff against the resolved parent before rendering.
+    // A passed-in `diff` from upstream may predate a recent migration or have
+    // been built against a stale parent — symptom: tree marks a table amber
+    // but the panel renders empty rows because diff.modified hasn't caught up.
+    diff = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Loading schema for ${tableName}...`,
+        cancellable: false,
+      },
+      () => this.schemaDiffService.compareBranchSchemas(branchName, true),
+    );
 
     if (!diff || diff.error) {
       vscode.window.showErrorMessage(diff?.error || 'Could not load schema diff');
       return;
     }
+
+    // Re-classify the table from the actual diff data. The caller's diffType
+    // is just a hint from the tree row; substrate's set-equality classification
+    // is the authoritative one for what we can actually render.
+    const inCreated = diff.created.some(o => o.name === tableName);
+    const inModified = diff.modified.some(o => o.name === tableName);
+    const inRemoved = diff.removed.some(o => o.name === tableName);
+    const inBranch = diff.branchTables.some(t => t.name === tableName);
+    let resolvedType: 'created' | 'modified' | 'removed' | 'unchanged' | undefined;
+    if (inCreated) { resolvedType = 'created'; }
+    else if (inRemoved) { resolvedType = 'removed'; }
+    else if (inModified) { resolvedType = 'modified'; }
+    else if (inBranch) { resolvedType = 'unchanged'; }
+    if (resolvedType) { diffType = resolvedType; }
 
     const existing = this.tablePanels.get(tableName);
     if (existing) {
@@ -343,13 +373,13 @@ export class SchemaDiffProvider {
     const branchName = diff.branchName || 'current branch';
     const timestamp = new Date(diff.timestamp).toLocaleString();
 
-    const typeLabels: Record<string, string> = { created: 'CREATED', modified: 'MODIFIED', removed: 'REMOVED' };
+    const typeLabels: Record<string, string> = { created: 'CREATED', modified: 'MODIFIED', removed: 'REMOVED', unchanged: 'UNCHANGED' };
     const label = typeLabels[diffType] || diffType.toUpperCase();
 
     // Build side-by-side rows: { left, right } where each is an HTML string for one table row
     type Row = { left: string; right: string };
     const rows: Row[] = [];
-    const targetName = diff.comparisonBranchName || 'production';
+    const targetName = diff.comparisonBranchName || 'parent';
     let leftTitle = esc(targetName.charAt(0).toUpperCase() + targetName.slice(1));
     let rightTitle = `Branch: ${esc(branchName)}`;
     let leftTableClass = '';
@@ -399,7 +429,27 @@ export class SchemaDiffProvider {
       }
     } else if (diffType === 'modified') {
       const obj = diff.modified.find(o => o.name === tableName);
-      if (obj) {
+      if (!obj) {
+        // Caller said modified but the diff doesn't classify this table that
+        // way. Tree-vs-substrate classification mismatch (or a stale diff
+        // even after force-refresh). Render whatever we have so the panel
+        // is informative instead of blank.
+        useRows = false;
+        const branchTable = diff.branchTables.find(t => t.name === tableName);
+        const branchCols = branchTable?.columns || [];
+        leftCount = 0;
+        rightCount = 0;
+        leftIndependent = `<div class="empty-msg">Comparison schema unavailable for this table (diff classified it as identical or unknown).</div>`;
+        if (branchCols.length > 0) {
+          rightIndependent = `<table><tr><th></th><th>Column</th><th>Type</th></tr>`;
+          for (const col of branchCols) {
+            rightIndependent += `<tr><td class="indicator"></td><td>${esc(col.name)}</td><td>${esc(col.dataType)}</td></tr>`;
+          }
+          rightIndependent += `</table>`;
+        } else {
+          rightIndependent = `<div class="empty-msg">No column data available for branch.</div>`;
+        }
+      } else if (obj) {
         const prodCols = obj.prodColumns || [];
         const branchCols = obj.columns || [];
         const branchByName = new Map(branchCols.map(c => [c.name, c]));
@@ -454,6 +504,19 @@ export class SchemaDiffProvider {
             });
           }
         }
+      }
+    } else if (diffType === 'unchanged') {
+      // Table is identical on both sides. Render side-by-side rows with no
+      // diff styling – column-by-column parity, no badges. Both sides come
+      // from branchTables (which is the live snapshot read for this branch);
+      // for an unchanged table the parent side has the same definition.
+      const table = diff.branchTables.find(t => t.name === tableName);
+      const cols = table?.columns || [];
+      leftCount = 0;
+      rightCount = 0;
+      for (const c of cols) {
+        const row = `<tr><td class="indicator"></td><td>${esc(c.name)}</td><td>${esc(c.dataType)}</td></tr>`;
+        rows.push({ left: row, right: row });
       }
     }
 
@@ -550,7 +613,7 @@ export class SchemaDiffProvider {
 <body>
   <div class="header">
     <h1>Schema Diff <span class="badge badge-yellow">${label}</span></h1>
-    <div class="subtitle">${esc(branchName)} vs ${esc(diff.comparisonBranchName || 'production')} &mdash; ${timestamp}</div>
+    <div class="subtitle">${esc(branchName)} vs ${esc(diff.comparisonBranchName || 'parent')} &mdash; ${timestamp}</div>
   </div>
   <div class="two-col">
     <div class="col">
