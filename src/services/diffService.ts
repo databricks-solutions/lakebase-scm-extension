@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { GitService } from './gitService';
 import { SchemaMigrationService } from './schemaMigrationService';
 import { getWorkspaceRoot } from '../utils/config';
+import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
 export type DiffTuple = [vscode.Uri, vscode.Uri | undefined, vscode.Uri | undefined];
 
@@ -162,7 +163,7 @@ export class DiffService {
       try {
         const sql = await this.gitService.getFileAtRef(sha, mf);
         for (const tc of SchemaMigrationService.parseSql(sql)) {
-          if (tc.tableName === 'flyway_schema_history' || seen.has(tc.tableName)) { continue; }
+          if (isMigrationMetadataTable(tc.tableName) || seen.has(tc.tableName)) { continue; }
           seen.add(tc.tableName);
           changes.push([
             vscode.Uri.parse(`lakebase-schema-content://branch/${tc.tableName}`),

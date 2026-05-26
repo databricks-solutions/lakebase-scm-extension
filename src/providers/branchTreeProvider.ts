@@ -5,6 +5,7 @@ import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService } from '../services/schemaDiffService';
 import { isMainBranch, isStagingBranch } from '../utils/theme';
 import { getConfig } from '../utils/config';
+import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
 type ItemType = 'project' | 'branch' | 'currentBranch' | 'detail' | 'sectionHeader'
   | 'migrationList' | 'tableList' | 'fileList';
@@ -436,7 +437,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     // Query actual tables + columns from the Lakebase branch database, diff against production
     if (lakebaseBranch) {
       const branchSchema = await this.lakebaseService.queryBranchSchema(lakebaseBranch.uid);
-      const filtered = branchSchema.filter(t => t.name !== 'flyway_schema_history');
+      const filtered = branchSchema.filter(t => !isMigrationMetadataTable(t.name));
 
       if (filtered.length === 0 && lakebaseBranch.isDefault) {
         const emptyItem = new BranchItem(undefined, undefined, 'detail', 'No tables');
@@ -464,7 +465,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             const targetTables = await this.lakebaseService.queryBranchSchema(target.uid);
             prodSchema = new Map();
             for (const t of targetTables) {
-              if (t.name === 'flyway_schema_history') { continue; }
+              if (isMigrationMetadataTable(t.name)) { continue; }
               prodSchema.set(t.name, t.columns.map(c => `${c.name}:${c.dataType}`).sort());
             }
           }
