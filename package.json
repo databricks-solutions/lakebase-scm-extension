@@ -99,6 +99,11 @@
         "icon": "$(git-branch-create)"
       },
       {
+        "command": "lakebaseSync.cutLongRunningBranch",
+        "title": "Cut Long-Running Tier...",
+        "category": "Lakebase Sync"
+      },
+      {
         "command": "lakebaseSync.deleteBranch",
         "title": "Delete Lakebase Branch",
         "icon": "$(trash)"
