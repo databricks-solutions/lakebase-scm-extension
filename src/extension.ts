@@ -6,7 +6,7 @@ import { LakebaseService } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
-import { BranchTreeProvider, BranchItem } from './providers/branchTreeProvider';
+import { BranchTreeProvider, BranchItem, isLongRunningTier } from './providers/branchTreeProvider';
 import { SchemaDiffProvider } from './providers/schemaDiffProvider';
 import { SchemaScmProvider } from './providers/schemaScmProvider';
 import { SchemaContentProvider } from './providers/schemaContentProvider';
@@ -1573,10 +1573,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('lakebaseSync.openBranchTableDiff', async (tableName: string, changeType: 'new' | 'modified' | 'removed') => {
       // Force a live compare so SchemaContentProvider reads fresh data for both
-      // sides. Without this, a stale cache entry can cause production and branch
+      // sides. Without this, a stale cache entry can cause the two
       // URIs to fall back to the same branchTables entry → empty diff.
+      let diff;
       try {
-        await schemaDiffService.compareBranchSchemas(undefined, true);
+        diff = await schemaDiffService.compareBranchSchemas(undefined, true);
       } catch (err: any) {
         if (!await handleAuthError(lakebaseService, err)) {
           vscode.window.showErrorMessage(`Schema refresh failed: ${err.message}`);
@@ -1584,25 +1585,34 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
       const branchUri = vscode.Uri.parse(`lakebase-schema-content://branch/${tableName}`);
+      // URI authority stays `production` for SchemaContentProvider routing
+      // (it's a routing key, not a user-visible name). The LABEL uses the
+      // resolved comparison branch (e.g. `staging` when forking from staging
+      // on a 3-tier setup) so the diff title matches Branch Diff Summary.
       const prodUri = vscode.Uri.parse(`lakebase-schema-content://production/${tableName}`);
+      const parentName = diff?.comparisonBranchName?.split('/branches/').pop() || diff?.comparisonBranchName || 'parent';
       const labels: Record<string, string> = {
         new: `${tableName} (new on branch)`,
-        modified: `${tableName} (production ↔ branch)`,
+        modified: `${tableName} (${parentName} ↔ branch)`,
         removed: `${tableName} (removed on branch)`,
       };
       await vscode.commands.executeCommand('vscode.diff', prodUri, branchUri, labels[changeType]);
     }),
 
-    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string) => {
+    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
       if (!tableName || !diffType) {
         return;
       }
       try {
-        const diff = schemaScmProvider.getLastDiff();
+        // Pass branchName so the diff is computed for the tree row's branch
+        // rather than whichever branch happens to be active in .env. Drops
+        // through to .env's LAKEBASE_BRANCH_ID when undefined (call sites
+        // without branch context).
         await schemaDiffProvider.showTableDiff(
           tableName,
-          diffType as 'created' | 'modified' | 'removed',
-          diff
+          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
+          undefined,
+          branchName,
         );
       } catch (err: any) {
         if (!await handleAuthError(lakebaseService, err)) {
@@ -2159,7 +2169,7 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         await gitService.renameBranch(newName);
         // Delete old Lakebase branch (new one will be auto-created by onBranchChanged)
-        if (oldBranch && oldBranch !== 'main' && oldBranch !== 'master') {
+        if (oldBranch && !isLongRunningTier(oldBranch)) {
           try {
             const oldLb = await lakebaseService.getBranchByName(oldBranch);
             if (oldLb) {
@@ -2194,7 +2204,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         schemaDiffService.clearCache();
         // Offer to clean up the merged branch's Lakebase branch
-        if (pick.label !== 'main' && pick.label !== 'master') {
+        if (!isLongRunningTier(pick.label)) {
           try {
             const mergedLb = await lakebaseService.getBranchByName(pick.label);
             if (mergedLb) {
@@ -2269,7 +2279,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const defaultLb = lakebaseBranches.find((b: any) => b.isDefault);
 
         interface BranchPickItem extends vscode.QuickPickItem {
-          action?: 'create' | 'create-from' | 'detach';
+          action?: 'create' | 'create-from' | 'cut-tier' | 'detach';
           branchName?: string;
           isRemote?: boolean;
         }
@@ -2305,6 +2315,22 @@ export async function activate(context: vscode.ExtensionContext) {
           description: 'select a base branch',
           action: 'create-from',
         });
+        // Long-running tiers get a purple `$(versions)` icon as a leading
+        // ThemeIcon plus a `[tier]` tag in the description. Two channels
+        // (color + text) so colorblind / screen-reader users get the
+        // signal too.
+        const tierIcon = new vscode.ThemeIcon('versions', new vscode.ThemeColor('charts.purple'));
+        const knownTiers = new Set(['staging', 'uat', 'perf']);
+        const cfgTier = getConfig().stagingBranch;
+        const isLongRunningTier = (name: string): boolean =>
+          knownTiers.has(name) || (!!cfgTier && name === cfgTier);
+
+        items.push({
+          label: 'Cut Long-Running Tier...',
+          iconPath: tierIcon,
+          description: 'staging / uat / perf / custom (no_expiry; release PRs target it)',
+          action: 'cut-tier',
+        });
         items.push({
           label: '$(debug-disconnect) Checkout Detached...',
           description: 'detach HEAD at a commit',
@@ -2316,9 +2342,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
         for (const gb of gitBranches) {
           const isCurrent = gb.name === currentBranch;
+          const isTier = isLongRunningTier(gb.name);
+          const lakebaseInfo = getLakebaseInfo(gb.name);
+          // Tier rows get THREE visual signals (overkill is fine, Cursor /
+          // VS Code differ on whether they render iconPath color):
+          //   1. Leading purple ThemeIcon via iconPath
+          //   2. Inline $(versions) codicon in the label (always visible)
+          //   3. Bracketed `[tier]` tag in the description (text fallback)
           items.push({
-            label: `${isCurrent ? '$(check) ' : ''}${gb.name}`,
-            description: getLakebaseInfo(gb.name),
+            label: `${isCurrent ? '$(check) ' : ''}${isTier ? '$(versions) ' : ''}${gb.name}`,
+            iconPath: isTier ? tierIcon : undefined,
+            description: isTier ? `${lakebaseInfo}  [tier]` : lakebaseInfo,
             detail: gb.tracking ? `tracking: ${gb.tracking}` : undefined,
             branchName: gb.name,
           });
@@ -2329,9 +2363,12 @@ export async function activate(context: vscode.ExtensionContext) {
           items.push({ label: 'Remote Branches', kind: vscode.QuickPickItemKind.Separator } as any);
 
           for (const rb of remoteBranches) {
+            const isTier = isLongRunningTier(rb.name);
+            const lakebaseInfo = getLakebaseInfo(rb.name);
             items.push({
-              label: `$(cloud) ${rb.name}`,
-              description: getLakebaseInfo(rb.name),
+              label: `${isTier ? '$(versions)' : '$(cloud)'} ${rb.name}`,
+              iconPath: isTier ? tierIcon : undefined,
+              description: isTier ? `${lakebaseInfo}  [tier]` : lakebaseInfo,
               detail: `remote: ${rb.tracking}`,
               branchName: rb.name,
               isRemote: true,
@@ -2341,7 +2378,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const pick = await vscode.window.showQuickPick(items, {
           placeHolder: 'Select a branch or tag to checkout',
-          title: 'Switch Branch (Code + Database)',
+          title: 'Branches (Code + Database)',
         });
 
         if (!pick) { return; }
@@ -2349,6 +2386,11 @@ export async function activate(context: vscode.ExtensionContext) {
         if (pick.action === 'create') {
           // Delegate to the unified branch creation command
           vscode.commands.executeCommand('lakebaseSync.createUnifiedBranch');
+          return;
+        }
+
+        if (pick.action === 'cut-tier') {
+          vscode.commands.executeCommand('lakebaseSync.cutLongRunningBranch');
           return;
         }
 
@@ -3036,8 +3078,10 @@ export async function activate(context: vscode.ExtensionContext) {
             progress.report({ message: 'Pushing to remote...' });
             await gitService.publishBranch();
 
-            // Sync Lakebase connection if branch exists
-            if (currentBranch && currentBranch !== 'main' && currentBranch !== 'master') {
+            // Sync Lakebase connection if branch exists. Skip when on the
+            // trunk (configured trunkBranch / main / master) – trunk has no
+            // paired Lakebase branch under the conventional setup.
+            if (currentBranch && !isMainBranch(currentBranch, getConfig().trunkBranch)) {
               try {
                 progress.report({ message: 'Syncing Lakebase...' });
                 const lb = await lakebaseService.getBranchByName(currentBranch);
@@ -3069,7 +3113,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await gitService.sync();
             // Refresh Lakebase credentials after sync
             const currentBranch = await gitService.getCurrentBranch();
-            if (currentBranch && currentBranch !== 'main' && currentBranch !== 'master') {
+            if (currentBranch && !isMainBranch(currentBranch, getConfig().trunkBranch)) {
               try {
                 const lb = await lakebaseService.getBranchByName(currentBranch);
                 if (lb) { await lakebaseService.syncConnection(lb.branchId); }
@@ -3139,7 +3183,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const remote = remotes.length === 1 ? remotes[0] :
         (await vscode.window.showQuickPick(remotes, { placeHolder: 'Select remote' }));
       if (!remote) { return; }
-      const branch = await vscode.window.showInputBox({ prompt: `Branch to pull from ${remote}`, placeHolder: 'main' });
+      const branch = await vscode.window.showInputBox({ prompt: `Branch to pull from ${remote}`, placeHolder: getConfig().trunkBranch || 'main' });
       if (!branch) { return; }
       try {
         await vscode.window.withProgress(
@@ -3782,13 +3826,21 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!lbProject) { return; }
 
         // Step 6: Lakebase branch
+        // Prefer the project's actual default branch (lookup is best-effort
+        // since the project may not exist yet for first-time setup); fall
+        // back to `production` which is the PSA convention default.
         const stepLbBranch = isEdit ? 5 : 6;
-        const defaultLbBranch = defaults?.lakebase_branch ?? 'production';
+        let projectDefaultBranchId = 'production';
+        try {
+          const def = await lakebaseService.getDefaultBranch();
+          if (def?.branchId) { projectDefaultBranchId = def.branchId; }
+        } catch { /* project may not exist yet – fall through to convention */ }
+        const defaultLbBranch = defaults?.lakebase_branch ?? projectDefaultBranchId;
         const lbBranch = await vscode.window.showInputBox({
           title: `${wizardTitle} (${stepLbBranch}/${totalSteps})`,
           prompt: 'Lakebase branch for this deploy target',
           value: defaultLbBranch,
-          placeHolder: 'production',
+          placeHolder: projectDefaultBranchId,
           validateInput: (val) => val.trim() ? undefined : 'Branch name is required',
         });
         if (!lbBranch) { return; }

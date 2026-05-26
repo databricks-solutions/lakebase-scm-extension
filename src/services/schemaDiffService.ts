@@ -17,6 +17,8 @@ import { exec } from "../utils/exec";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 
+const KNOWN_TIERS = new Set(["main", "master", "staging", "uat", "perf"]);
+
 export interface SchemaObject {
   type: "TABLE" | "INDEX";
   name: string;
@@ -242,9 +244,11 @@ export class SchemaDiffService {
 
     let result: SchemaDiffResult;
     try {
+      const comparisonBranch = await this.resolveComparisonBranch(branchId);
       const sub = await substrateGetSchemaDiff({
         instance: this.projectInstance(),
         branch: branchId,
+        ...(comparisonBranch ? { comparisonBranch } : {}),
       });
       result = { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
     } catch (err: any) {
@@ -266,6 +270,33 @@ export class SchemaDiffService {
 
   private projectInstance(): string {
     return getConfig().lakebaseProjectId;
+  }
+
+  /**
+   * Pick the comparison branch the diff should be computed against. Substrate's
+   * getSchemaDiff defaults to the project's default branch (typically
+   * production), which is wrong for feature/test/uat/perf branches that fork
+   * from staging. Resolution order:
+   *   1. If substrate already knows the parent (target.sourceBranchId set),
+   *      return undefined so substrate's own resolver kicks in.
+   *   2. If the target IS a long-running tier (main/staging/uat/perf), return
+   *      undefined – the default-branch comparison is correct for tiers.
+   *   3. Otherwise prefer the configured stagingBranch (PSA convention).
+   *   4. Fall through to substrate's default.
+   */
+  private async resolveComparisonBranch(branchId: string): Promise<string | undefined> {
+    if (KNOWN_TIERS.has(branchId)) { return undefined; }
+    const cfg = getConfig();
+    if (cfg.trunkBranch && branchId === cfg.trunkBranch) { return undefined; }
+    if (cfg.stagingBranch && branchId === cfg.stagingBranch) { return undefined; }
+
+    try {
+      const target = await this.lakebaseService.getBranchByName(branchId);
+      if (target?.sourceBranchId) { return undefined; }
+    } catch { /* substrate already returns undefined if metadata missing */ }
+
+    if (cfg.stagingBranch) { return cfg.stagingBranch; }
+    return undefined;
   }
 
   /** Read existing schema-diff.md without regenerating. */

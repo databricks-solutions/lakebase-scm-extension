@@ -33,6 +33,7 @@ import {
   queryBranchTables as substrateQueryBranchTables,
   sanitizeBranchName as substrateSanitizeBranchName,
   createLongRunningBranch as substrateCreateLongRunningBranch,
+  createFeatureBranch as substrateCreateFeatureBranch,
   type LakebaseBranchInfo,
   type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
@@ -316,8 +317,14 @@ export class LakebaseService {
       warn: (msg) => console.warn(msg),
     });
 
+    // Use substrate's createFeatureBranch convention helper (FEIP-7095)
+    // so feature branches get the methodology's default TTL (30d) rather
+    // than substrate's raw `no_expiry: true` default. The parent is the
+    // resolved parent above, not the convention helper's "staging"
+    // default — the extension's parent-resolution honors the user's
+    // current branch / explicit base override.
     const created = await this.withHost(() =>
-      substrateCreateBranch({
+      substrateCreateFeatureBranch({
         instance: this.projectInstance(),
         branch: gitBranch,
         parentBranch,
@@ -402,7 +409,11 @@ export class LakebaseService {
     return Promise.all(
       branches.map(async (b) => {
         try {
-          const ep = await this.getEndpoint(b.uid);
+          // Substrate routes through `databricks postgres ...` CLI subresource
+          // paths under `branches/{x}/endpoints/...`, which only accept the
+          // friendly branch_id (e.g. "demo-feature"), not the uid (e.g.
+          // "br-broad-sky-d2k5gewt"). Substrate hardening tracked in FEIP-7145.
+          const ep = await this.getEndpoint(b.branchId);
           return { ...b, endpointHost: ep?.host, endpointState: ep?.state };
         } catch {
           return b;
@@ -455,6 +466,32 @@ export class LakebaseService {
     } catch (err: any) {
       console.error(`[lakebase-scm] queryBranchTables failed: ${err?.message || err}`);
       return [];
+    }
+  }
+
+  /**
+   * Same query as `queryBranchSchema` but surfaces failures so callers can
+   * render a visible diagnostic instead of a silent empty list. Used by
+   * the branch tree to differentiate "branch genuinely has no tables" from
+   * "schema query failed" — the silent-catch variant below masks the
+   * second case.
+   */
+  async queryBranchSchemaWithError(
+    branchNameOrUid: string,
+  ): Promise<{ tables: Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>; error?: string }> {
+    try {
+      const tables = await this.withHost(() =>
+        substrateQueryBranchSchema({
+          instance: this.projectInstance(),
+          branch: branchNameOrUid,
+          database: getProjectDatabase(),
+        })
+      );
+      return { tables };
+    } catch (err: any) {
+      const message = err?.message || String(err);
+      console.error(`[lakebase-scm] queryBranchSchema failed: ${message}`);
+      return { tables: [], error: message };
     }
   }
 

@@ -104,6 +104,11 @@
         "category": "Lakebase Sync"
       },
       {
+        "command": "lakebaseSync.openBranchTableDiff",
+        "title": "Open Branch Table Diff",
+        "category": "Lakebase Sync"
+      },
+      {
         "command": "lakebaseSync.deleteBranch",
         "title": "Delete Lakebase Branch",
         "icon": "$(trash)"
@@ -1414,6 +1419,7 @@
     "vscode:prepublish": "npm run compile",
     "prepare": "husky",
     "compile": "webpack --mode production",
+    "package": "vsce package",
     "watch": "webpack --mode development --watch",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
     "test": "TS_NODE_TRANSPILE_ONLY=1 mocha --require test/setup.js --require ts-node/register 'test/suite/**/*.test.ts' 'test/equivalence/**/*.test.ts' --timeout 10000",
@@ -1438,7 +1444,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.19",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.21",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

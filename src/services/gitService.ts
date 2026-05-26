@@ -221,26 +221,75 @@ export class GitService {
     }
   }
 
-  /** Get the merge-base commit between HEAD and main/master */
-  async getMergeBase(): Promise<string> {
+  /**
+   * Pick the nearest parent of `tip` (default HEAD) across the configured
+   * candidate branches (trunkBranch, main, master, stagingBranch, staging).
+   * Returns the candidate whose merge-base with the tip has the most recent
+   * commit timestamp. In a 3-tier setup where a feature forks from staging,
+   * staging's merge-base is later than main's, so the parent resolves to
+   * staging.
+   *
+   * Returns undefined when no candidate branch exists locally.
+   */
+  async resolveNearestParent(
+    tip?: string,
+  ): Promise<{ name: string; baseSha: string } | undefined> {
+    const root = getWorkspaceRoot();
+    if (!root) { return undefined; }
+    const cfg = getConfig();
+    const tipRef = tip && tip.length > 0 ? tip : 'HEAD';
+    let tipBranchName = '';
+    try { tipBranchName = (await exec('git rev-parse --abbrev-ref HEAD', root)).trim(); } catch { /* ignore */ }
+    if (tip && tip.length > 0) { tipBranchName = tip; }
+
+    const candidates = Array.from(new Set(
+      [cfg.trunkBranch, 'main', 'master', cfg.stagingBranch, 'staging'].filter(Boolean) as string[],
+    ));
+    let best: { name: string; baseSha: string; ts: number } | undefined;
+    for (const c of candidates) {
+      if (c === tipBranchName) { continue; }
+      try {
+        const baseSha = (await exec(`git merge-base "${tipRef}" "${c}"`, root)).trim();
+        if (!baseSha) { continue; }
+        const ts = parseInt((await exec(`git log -1 --format=%at "${baseSha}"`, root)).trim(), 10) || 0;
+        if (!best || ts > best.ts) { best = { name: c, baseSha, ts }; }
+      } catch { /* candidate not present – skip */ }
+    }
+    return best ? { name: best.name, baseSha: best.baseSha } : undefined;
+  }
+
+  /**
+   * Resolve just the nearest parent branch NAME (for labels / UI). Returns
+   * empty string when no candidate is found.
+   */
+  async getNearestParentName(tip?: string): Promise<string> {
+    const parent = await this.resolveNearestParent(tip);
+    return parent?.name ?? '';
+  }
+
+  /**
+   * Get the merge-base commit between `tip` (default HEAD) and the nearest
+   * parent across configured candidates (trunk, main, master, staging).
+   *
+   * Historical note: this used to hardcode `main`. After the 3-tier release
+   * methodology, features fork from staging and the diff base must follow –
+   * otherwise file-diffs against the base content show the wrong "before"
+   * version.
+   */
+  async getMergeBase(tip?: string): Promise<string> {
+    const parent = await this.resolveNearestParent(tip);
+    if (parent?.baseSha) { return parent.baseSha; }
+    // Last-ditch fallback: try main/master directly so legacy two-branch
+    // projects still get a useful diff base.
     const root = getWorkspaceRoot();
     if (!root) { return ''; }
-    let baseBranch = 'main';
-    try {
-      await exec('git rev-parse --verify main', root);
-    } catch {
+    for (const candidate of ['main', 'master']) {
       try {
-        await exec('git rev-parse --verify master', root);
-        baseBranch = 'master';
-      } catch {
-        return '';
-      }
+        await exec(`git rev-parse --verify ${candidate}`, root);
+        return await exec(`git merge-base ${candidate} ${tip ?? 'HEAD'}`, root);
+      } catch { /* try next */ }
     }
-    try {
-      return await exec(`git merge-base ${baseBranch} HEAD`, root);
-    } catch {
-      return '';
-    }
+    return '';
   }
 
   async checkoutBranch(branchName: string, create: boolean = false, startPoint?: string): Promise<void> {

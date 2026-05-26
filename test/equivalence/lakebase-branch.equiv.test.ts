@@ -25,8 +25,12 @@ describe("equivalence: lakebase branch lifecycle", () => {
     restoreSubstrate();
   });
 
-  it("createBranch – forwards { instance, branch, parentBranch } and adapts result", async () => {
-    const tracker = stubSubstrate("createBranch", sampleBranchInfo({ uid: "br-new" }));
+  it("createBranch – delegates to createFeatureBranch convention helper for 30d TTL default", async () => {
+    // Service routes through substrate's createFeatureBranch (FEIP-7095)
+    // so feature branches get the methodology's 30-day TTL rather than
+    // raw createBranch's no_expiry: true default. The extension's resolved
+    // parent still wins over the convention helper's "staging" default.
+    const tracker = stubSubstrate("createFeatureBranch", sampleBranchInfo({ uid: "br-new" }));
 
     const result = await service.createBranch("customer-entity", "main", "main");
 

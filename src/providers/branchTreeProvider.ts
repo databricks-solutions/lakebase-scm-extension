@@ -7,6 +7,26 @@ import { isMainBranch, isStagingBranch } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
+/**
+ * Long-running tier detection (name-based today; FEIP follow-up will switch
+ * this to Lakebase `no_expiry` once substrate exposes the field on
+ * LakebaseBranchInfo). A branch counts as a tier when its git name is one
+ * of:
+ *   - the trunk (`main`/`master` or configured `trunkBranch`) — production tier
+ *   - the configured `stagingBranch` alias — staging tier
+ *   - `staging`/`uat`/`perf` — standard methodology tiers
+ */
+const KNOWN_TIERS = new Set(['main', 'master', 'staging', 'uat', 'perf']);
+export function isLongRunningTier(branchName: string): boolean {
+  if (KNOWN_TIERS.has(branchName)) return true;
+  const cfg = getConfig();
+  if (cfg.trunkBranch && branchName === cfg.trunkBranch) return true;
+  if (cfg.stagingBranch && branchName === cfg.stagingBranch) return true;
+  return false;
+}
+export const TIER_THEME_COLOR = new vscode.ThemeColor('charts.purple');
+export const TIER_THEME_ICON = new vscode.ThemeIcon('versions', TIER_THEME_COLOR);
+
 type ItemType = 'project' | 'branch' | 'currentBranch' | 'detail' | 'sectionHeader'
   | 'migrationList' | 'tableList' | 'fileList';
 
@@ -36,6 +56,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   private schemaDiffService: SchemaDiffService;
   private cachedData: BranchItem[] = [];
   private _suppressRefresh = false;
+  private shownSchemaErrors = new Set<string>();
 
   constructor(
     gitService: GitService,
@@ -166,13 +187,31 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       items.push(lbItem);
     }
 
-    // Current Branch section
+    // Three section layout: Current (auto-relabels to "Current Tier" when
+    // current branch is a long-running tier), then a dedicated "Tiers"
+    // collapsible section for staging/uat/perf/etc., then "Other Branches"
+    // for everything else (non-tier git branches). Section labels are
+    // load-bearing — getSectionChildren dispatches by label string.
+    const currentBranchName = await this.gitService.getCurrentBranch().catch(() => undefined);
+    const currentIsTier = !!currentBranchName && isLongRunningTier(currentBranchName);
+
+    const currentHeaderLabel = currentIsTier ? 'Current Tier' : 'Current Branch';
     const currentHeader = new BranchItem(undefined, undefined, 'sectionHeader',
-      'Current Branch',
+      currentHeaderLabel,
       vscode.TreeItemCollapsibleState.Expanded
     );
     currentHeader.iconPath = new vscode.ThemeIcon('git-branch');
     items.push(currentHeader);
+
+    // Tiers section (trunk + staging/uat/perf + configured aliases).
+    // Section header uses the plain git-branch icon; only the tier-branch
+    // rows underneath get the purple `$(versions)` tier icon.
+    const tiersHeader = new BranchItem(undefined, undefined, 'sectionHeader',
+      'Tiers',
+      vscode.TreeItemCollapsibleState.Collapsed
+    );
+    tiersHeader.iconPath = new vscode.ThemeIcon('git-branch');
+    items.push(tiersHeader);
 
     // Other Branches section
     const otherHeader = new BranchItem(undefined, undefined, 'sectionHeader',
@@ -210,15 +249,25 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
 
       const currentGitBranch = currentGitBranchEarly;
 
-      if (sectionLabel === 'Current Branch') {
+      if (sectionLabel === 'Current Branch' || sectionLabel === 'Current Tier') {
         const gb = gitBranches.find(b => b.name === currentGitBranch);
         if (gb) {
           const item = this.makeBranchItem(gb, lakebaseBranches, currentGitBranch, true);
           items.push(item);
         }
+      } else if (sectionLabel === 'Tiers') {
+        // Only tier-named git branches; skip current (it's surfaced above).
+        for (const gb of gitBranches) {
+          if (gb.name === currentGitBranch) { continue; }
+          if (!isLongRunningTier(gb.name)) { continue; }
+          const item = this.makeBranchItem(gb, lakebaseBranches, currentGitBranch, false);
+          items.push(item);
+        }
       } else {
         for (const gb of gitBranches) {
           if (gb.name === currentGitBranch) { continue; }
+          // Tier branches live in the Tiers section, not here.
+          if (isLongRunningTier(gb.name)) { continue; }
           const item = this.makeBranchItem(gb, lakebaseBranches, currentGitBranch, false);
           items.push(item);
         }
@@ -289,14 +338,28 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       );
     }
 
+    const isTier = isLongRunningTier(gb.name);
+
+    // Trunk-only label override: when the row is for `main`/`master`/configured
+    // trunkBranch AND we found a matching Lakebase default branch, the
+    // top-level label uses the Lakebase branch name (typically `production`)
+    // so the methodology surfaces. The git branch name still appears in the
+    // expanded details. Other tier branches keep their git name (usually
+    // identical to their Lakebase counterpart anyway).
+    const displayLabel = isMain && lb?.branchId ? lb.branchId : gb.name;
+
     const item = new BranchItem(
       gb, lb,
       isCurrent ? 'currentBranch' : 'branch',
-      gb.name,
+      displayLabel,
       vscode.TreeItemCollapsibleState.Collapsed
     );
 
-    item.iconPath = this.getStateThemeIcon(lb);
+    // Tier branches get the canonical purple `$(versions)` icon regardless
+    // of Lakebase state, so they read as tiers at a glance. Non-tier
+    // branches use the state-colored icon (READY=green, PROVISIONING=yellow,
+    // etc.) the user is already trained on.
+    item.iconPath = isTier ? TIER_THEME_ICON : this.getStateThemeIcon(lb);
 
     if (isCurrent) {
       const lbState = lb?.state || 'no db branch';
@@ -416,27 +479,59 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     });
   }
 
-  private makeTableCommand(tableName: string, changeType: 'new' | 'modified' | 'removed' | 'unchanged'): vscode.Command {
-    const branchUri = vscode.Uri.parse(`lakebase-schema-content://branch/${tableName}`);
-    if (changeType === 'unchanged') {
-      // No diff needed – just show the DDL
-      return { command: 'vscode.open', title: 'View Table', arguments: [branchUri] };
-    }
-    // Force a fresh compareBranchSchemas before dispatching vscode.diff, so
-    // SchemaContentProvider's cache reflects the same live snapshot that drove
-    // the branch tree's own modified/new/removed decision. Otherwise a stale
-    // cache can make both panes render identical DDL (empty diff).
+  private makeTableCommand(tableName: string, changeType: 'new' | 'modified' | 'removed' | 'unchanged', branchName?: string): vscode.Command {
+    // Dispatch to the per-table webview (side-by-side rows, matches the
+    // Branch Diff Summary aesthetic for a single table). showTableDiff
+    // refreshes the cached diff internally so the panel reflects the live
+    // schema comparison against the resolved parent branch.
+    // showTableDiff accepts 'created' | 'modified' | 'removed' | 'unchanged';
+    // map our tree-internal 'new' onto 'created'.
+    // `branchName` (the Lakebase branchId of the row's branch) flows through
+    // so the diff is computed for THAT branch, not whichever branch happens
+    // to be active in .env. Without it, expanding a non-active branch in the
+    // tree and clicking a table fetches the wrong diff.
+    const diffType = changeType === 'new' ? 'created' : changeType;
     return {
-      command: 'lakebaseSync.openBranchTableDiff',
+      command: 'lakebaseSync.showTableDiff',
       title: 'Schema Diff',
-      arguments: [tableName, changeType],
+      arguments: [tableName, diffType, branchName],
     };
   }
 
   private async getTableList(branchName?: string, lakebaseBranch?: LakebaseBranch): Promise<BranchItem[]> {
     // Query actual tables + columns from the Lakebase branch database, diff against production
     if (lakebaseBranch) {
-      const branchSchema = await this.lakebaseService.queryBranchSchema(lakebaseBranch.uid);
+      // Use the error-aware variant so failures surface in the UI instead
+      // of silently returning an empty table list — "no tables" used to
+      // mean either "genuinely empty" or "query exploded" and the user
+      // couldn't tell the difference. The diagnostic row below shows the
+      // actual error message so they can act on it.
+      // Pass the friendly branchId, not the uid. Substrate's mintCredential
+      // builds a CLI subresource path like `branches/{x}/endpoints/primary`,
+      // which only resolves against branch_ids (e.g. "demo-feature"), not
+      // uids (e.g. "br-broad-sky-d2k5gewt"). Substrate hardening tracked in a
+      // separate FEIP to accept either form.
+      const { tables: branchSchema, error: schemaError } =
+        await this.lakebaseService.queryBranchSchemaWithError(lakebaseBranch.branchId);
+
+      if (schemaError) {
+        // Surface the actual error via a popup so it's copy-able from the
+        // notification area, the same way other extension errors appear.
+        // Dedupe per (branch, error) so refreshes don't spam the user.
+        const dedupeKey = `${lakebaseBranch.uid}::${schemaError}`;
+        if (!this.shownSchemaErrors.has(dedupeKey)) {
+          this.shownSchemaErrors.add(dedupeKey);
+          vscode.window.showErrorMessage(
+            `Lakebase schema query failed for ${lakebaseBranch.branchId}: ${schemaError}`
+          );
+        }
+        const errorItem = new BranchItem(undefined, undefined, 'detail',
+          'Schema query failed');
+        errorItem.iconPath = new vscode.ThemeIcon('warning',
+          new vscode.ThemeColor('editorWarning.foreground'));
+        return [errorItem];
+      }
+
       const filtered = branchSchema.filter(t => !isMigrationMetadataTable(t.name));
 
       if (filtered.length === 0 && lakebaseBranch.isDefault) {
@@ -462,7 +557,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           }
           if (target) {
             comparisonName = target.branchId;
-            const targetTables = await this.lakebaseService.queryBranchSchema(target.uid);
+            const targetTables = await this.lakebaseService.queryBranchSchema(target.branchId);
             prodSchema = new Map();
             for (const t of targetTables) {
               if (isMigrationMetadataTable(t.name)) { continue; }
@@ -513,7 +608,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           `**${table.name}**${status !== 'unchanged' ? ` (${status})` : ''}\n\n` +
           (colList ? `\`\`\`\n${colList}\n\`\`\`` : 'No columns')
         );
-        item.command = this.makeTableCommand(table.name, status === 'new' ? 'new' : status === 'modified' ? 'modified' : 'unchanged');
+        item.command = this.makeTableCommand(table.name, status === 'new' ? 'new' : status === 'modified' ? 'modified' : 'unchanged', lakebaseBranch.branchId);
         return item;
       });
 
@@ -526,7 +621,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             const item = new BranchItem(undefined, undefined, 'detail', name);
             item.iconPath = new vscode.ThemeIcon('diff-removed', new vscode.ThemeColor('charts.red'));
             item.description = 'removed';
-            item.command = this.makeTableCommand(name, 'removed');
+            item.command = this.makeTableCommand(name, 'removed', lakebaseBranch.branchId);
             removedItems.push(item);
           }
         }
@@ -588,7 +683,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             `**${table.name}**${status ? ` (${status})` : ''}\n\n` +
             (colList ? `\`\`\`\n${table.columns!.map(c => `${c.name}: ${c.dataType}`).join('\n')}\n\`\`\`` : 'No column data')
           );
-          item.command = this.makeTableCommand(table.name, isNew ? 'new' : isMod ? 'modified' : 'unchanged');
+          item.command = this.makeTableCommand(table.name, isNew ? 'new' : isMod ? 'modified' : 'unchanged', branchName);
           return item;
         });
 
@@ -602,7 +697,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             `**${table.name}** (removed)\n\n` +
             (colList ? `\`\`\`\n${colList}\n\`\`\`` : '')
           );
-          item.command = this.makeTableCommand(table.name, 'removed');
+          item.command = this.makeTableCommand(table.name, 'removed', branchName);
           items.push(item);
         }
 
@@ -613,15 +708,23 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     // Fallback: parse migration files, compare against main to determine diff status
     const allMigrations = this.migrationService.listMigrations();
     if (allMigrations.length > 0) {
-      // Find which migrations are new on this branch (not on main)
+      // Find which migrations are new on this branch (not on trunk). Use the
+      // configured trunk branch (LAKEBASE_TRUNK_BRANCH / lakebaseSync.trunkBranch)
+      // when set, falling back to main then master for legacy projects.
       const config = getConfig();
-      let mainMigrationSet = new Set<string>();
-      try {
-        const mainFiles = await this.gitService.listMigrationsOnBranch('main', config.migrationPath);
-        mainMigrationSet = new Set(mainFiles);
-      } catch { /* main may not exist */ }
+      const trunkCandidates = Array.from(new Set(
+        [config.trunkBranch, 'main', 'master'].filter(Boolean) as string[],
+      ));
+      let trunkMigrationSet = new Set<string>();
+      for (const candidate of trunkCandidates) {
+        try {
+          const trunkFiles = await this.gitService.listMigrationsOnBranch(candidate, config.migrationPath);
+          trunkMigrationSet = new Set(trunkFiles);
+          break;
+        } catch { /* candidate not present – try next */ }
+      }
 
-      const newMigrations = allMigrations.filter(m => !mainMigrationSet.has(m.filename));
+      const newMigrations = allMigrations.filter(m => !trunkMigrationSet.has(m.filename));
 
       // Parse all migrations for the full table inventory with columns
       const allChanges = this.migrationService.parseMigrationSchemaChanges(allMigrations);
@@ -665,7 +768,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             (colList ? `\`\`\`\n${colList}\n\`\`\`` : 'No column data')
           );
           const cmdType = changeType === 'created' ? 'new' : changeType === 'modified' ? 'modified' : changeType === 'removed' ? 'removed' : 'unchanged';
-          item.command = this.makeTableCommand(name, cmdType as any);
+          item.command = this.makeTableCommand(name, cmdType as any, branchName);
           return item;
         });
       }
@@ -694,8 +797,16 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       const changes = await this.gitService.getChangedFiles(
         forCurrentBranch ? undefined : branchName
       );
+      // Resolve the nearest parent branch (staging for a feature off staging,
+      // main for a tier-rooted feature). Used in both the empty-state copy
+      // and the per-file diff label so what the user sees matches what git
+      // actually compared against.
+      const parentName = (await this.gitService.getNearestParentName(
+        forCurrentBranch ? undefined : branchName,
+      )) || 'parent';
+
       if (changes.length === 0) {
-        const item = new BranchItem(undefined, undefined, 'detail', 'No changes vs trunk');
+        const item = new BranchItem(undefined, undefined, 'detail', `No changes vs ${parentName}`);
         item.iconPath = new vscode.ThemeIcon('check');
         return [item];
       }
@@ -730,7 +841,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           } else {
             const diffPath = file.status === 'renamed' && file.oldPath ? file.oldPath : file.path;
             const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${diffPath}`);
-            item.command = { command: 'vscode.diff', title: 'Show Diff', arguments: [baseUri, fileUri, `${file.path} (main ↔ branch)`] };
+            item.command = { command: 'vscode.diff', title: 'Show Diff', arguments: [baseUri, fileUri, `${file.path} (${parentName} ↔ branch)`] };
           }
         }
 

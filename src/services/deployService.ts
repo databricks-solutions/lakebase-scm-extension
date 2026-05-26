@@ -7,7 +7,8 @@ import {
   createBranch,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
-import { getWorkspaceRoot } from '../utils/config';
+import { getConfig, getWorkspaceRoot } from '../utils/config';
+import { isLongRunningTier } from '../providers/branchTreeProvider';
 
 export interface DeployTarget {
   workspace_profile: string;
@@ -182,14 +183,19 @@ export class DeployService {
     }
 
     if (!branchExists) {
-      // For deploy targets, the branch is typically "production" (the default).
-      // If it's the default branch, it was created with the project. Only create non-default branches.
-      if (branchId !== 'production' && branchId !== 'main') {
-        progress?.(`Creating Lakebase branch: ${branchId}...`, 'infra');
+      // Skip auto-creation when the deploy target is a tier (production /
+      // staging / uat / perf / configured trunk) – tiers are provisioned by
+      // their own workflow (createLongRunningBranch / project bootstrap),
+      // not by ad-hoc deploys. For other targets, fork from the configured
+      // trunk branch.
+      if (!isLongRunningTier(branchId)) {
+        const cfg = getConfig();
+        const parentBranch = cfg.trunkBranch || 'main';
+        progress?.(`Creating Lakebase branch: ${branchId} off ${parentBranch}...`, 'infra');
         await createBranch({
           instance: projectId,
           branch: branchId,
-          parentBranch: 'main',
+          parentBranch,
           host,
           // noExpiry defaults true in substrate alpha.19+; explicit here for
           // readability + so the long-running deploy branch survives the

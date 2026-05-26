@@ -37,6 +37,17 @@ class RelativePattern {
   constructor(base, pattern) { this.base = base; this.pattern = pattern; }
 }
 
+class MarkdownString {
+  constructor(value, supportThemeIcons) {
+    this.value = value || '';
+    this.supportThemeIcons = !!supportThemeIcons;
+    this.isTrusted = false;
+  }
+  appendText(t) { this.value += t; return this; }
+  appendMarkdown(m) { this.value += m; return this; }
+  appendCodeblock(c, lang) { this.value += '\n```' + (lang || '') + '\n' + c + '\n```\n'; return this; }
+}
+
 const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
 const ProgressLocation = { Notification: 15, SourceControl: 1, Window: 10 };
 const QuickPickItemKind = { Separator: -1, Default: 0 };
@@ -137,6 +148,7 @@ module.exports = {
   ThemeColor,
   ThemeColor,
   RelativePattern,
+  MarkdownString,
   TreeItem,
   TreeItemCollapsibleState,
   ProgressLocation,
