@@ -75,13 +75,23 @@ describe('SchemaDiffProvider', () => {
   });
 
   describe('showTableDiff', () => {
-    it('uses provided diff without re-fetching', async () => {
-      const diff = makeDiff({
+    it('always force-refreshes the diff, ignoring any passed-in diff', async () => {
+      // Contract: showTableDiff ALWAYS calls compareBranchSchemas with
+      // force=true. The 3rd arg used to short-circuit the fetch, but
+      // stale upstream diffs caused empty-row renders (the tree marks a
+      // table modified before the cached diff catches up). Renderer
+      // re-classifies from the live diff anyway, so the parameter is
+      // accepted for signature compat but ignored as a cache.
+      schemaDiffStub.compareBranchSchemas.resolves(makeDiff({
         created: [{ type: 'TABLE', name: 'users', columns: [{ name: 'id', dataType: 'integer' }] }],
-      });
+      }));
+      const stale = makeDiff({ created: [] }); // pretend caller has a stale diff
 
-      await provider.showTableDiff('users', 'created', diff);
-      assert.strictEqual(schemaDiffStub.compareBranchSchemas.called, false);
+      await provider.showTableDiff('users', 'created', stale);
+
+      assert.strictEqual(schemaDiffStub.compareBranchSchemas.called, true);
+      // Verify force=true is the second arg so the cache is bypassed.
+      assert.strictEqual(schemaDiffStub.compareBranchSchemas.firstCall.args[1], true);
     });
 
     it('fetches diff when none provided', async () => {
@@ -91,6 +101,19 @@ describe('SchemaDiffProvider', () => {
 
       await provider.showTableDiff('users', 'created');
       assert.strictEqual(schemaDiffStub.compareBranchSchemas.called, true);
+    });
+
+    it('passes branchName through to compareBranchSchemas as the target branch', async () => {
+      // Without this, expanding a non-active branch in the tree and
+      // clicking a table fetches the diff for whichever branch is
+      // currently in .env, not the row's branch.
+      schemaDiffStub.compareBranchSchemas.resolves(makeDiff({
+        created: [{ type: 'TABLE', name: 'users', columns: [{ name: 'id', dataType: 'integer' }] }],
+      }));
+
+      await provider.showTableDiff('users', 'created', undefined, 'feature/x');
+
+      assert.strictEqual(schemaDiffStub.compareBranchSchemas.firstCall.args[0], 'feature/x');
     });
 
     it('shows error when diff has error', async () => {
