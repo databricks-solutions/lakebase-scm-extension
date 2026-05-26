@@ -363,20 +363,6 @@ Three-tier projects fork feature branches off `staging` (which itself forks off 
 
 When set, the **Branch Diff Summary** and per-table comparison panel diff feature branches against staging, the **Tiers** section in the sidebar groups staging as a long-running branch, and **Cut Long-Running Tier...** treats staging as a managed tier rather than a feature branch. Two-tier projects (feature → production) can leave this unset.
 
-## Testing
-
-```bash
-npm test                                                # hermetic unit + equivalence tests (~1 min)
-npm run test:integration -- --grep "E-Commerce"         # E-Commerce flow integration (~17 min)
-npm run test:integration -- --grep "Self-Hosted Runner" # runner pipeline (~2 min)
-npm run test:integration -- --grep "Python Dev Loop"    # Python flow integration (~13 min)
-./test/integration/run-all.sh                           # all suites
-```
-
-**Tier 1 unit tests** are hermetic – no credentials needed. **Tier 3 integration tests** create real GitHub repos + Lakebase projects under your own accounts; they require `DATABRICKS_TEST_HOST=https://<your-workspace>...`, an authenticated `databricks` CLI against that host, and an authenticated `gh` CLI. Missing env or auth surfaces a copy-paste-ready `IntegrationSetupError` at startup; nothing is silently defaulted to a maintainer's workspace. See `CONTRIBUTING.md` § Testing for the full setup.
-
-**All three tiers (unit, substrate BDD, integration) are mandatory before opening a PR.**
-
 ## Lakebase Sync Across Git Operations
 
 | Git Operation | Lakebase Action |
@@ -398,6 +384,10 @@ npm run test:integration -- --grep "Python Dev Loop"    # Python flow integratio
 - **Multi-project support** – assumes one Lakebase project per workspace
 - **Blue action button** – VS Code's SCM action button uses a proposed API not available to third-party extensions
 - **Local branch after merge** – the `post-merge` hook attempts to delete the local feature branch and prune stale remote tracking refs, but this may not succeed in all cases (e.g., squash merges with non-standard commit messages, local uncommitted changes). If the branch persists after merge, delete it manually with `git branch -d <branch>`. Needs investigation – a more reliable approach may be to have the extension explicitly delete the local branch by name (which it already knows from the PR context) after merge, rather than relying on the hook's heuristic parsing of commit messages.
+
+## Contributing
+
+Maintainer-facing docs (development setup, running locally, building the VSIX, the three test tiers, and the pull-request checklist) live in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Roadmap
 
