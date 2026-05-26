@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, getEnvConfig, getWorkspaceRoot } from '../utils/config';
+import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 import {
   applyMigrations as substrateApplyMigrations,
   listMigrations as substrateListMigrations,
@@ -165,7 +166,7 @@ export class SchemaMigrationService {
     let match;
     while ((match = createRegex.exec(sql)) !== null) {
       const tableName = match[1];
-      if (tableName === 'flyway_schema_history') { continue; }
+      if (isMigrationMetadataTable(tableName)) { continue; }
       const columns: Array<{ name: string; dataType: string }> = [];
       for (const line of match[2].split('\n')) {
         const colMatch = line.trim().match(/^(\w+)\s+(.+?)(?:,?\s*$)/);

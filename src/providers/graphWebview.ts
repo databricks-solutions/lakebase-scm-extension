@@ -6,6 +6,7 @@ import { GitHubService } from '../services/githubService';
 import { GraphService } from '../services/graphService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { buildDiffTuples, sortMigrationsToEnd, DiffTuple } from '../utils/diffBuilder';
+import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
 interface Commit {
   sha: string;
@@ -818,7 +819,7 @@ ctx.querySelectorAll('.ctx-item').forEach(el=>{
             let tm: RegExpExecArray | null;
             while ((tm = tableRegex.exec(sql)) !== null) {
               const table = tm[1];
-              if (table === 'flyway_schema_history' || seen.has(table)) { continue; }
+              if (isMigrationMetadataTable(table) || seen.has(table)) { continue; }
               seen.add(table);
               const label = vscode.Uri.parse(`lakebase-schema-content://branch/${table}`);
               const prodUri = vscode.Uri.parse(`lakebase-schema-content://production/${table}`);
