@@ -146,10 +146,39 @@ export class SchemaDiffProvider {
     for (const obj of diff.modified) {
       schemaHtml += `<div class="change modified">
         <div class="change-header">~ TABLE <strong>${esc(obj.name)}</strong> <span class="tag mod">MODIFIED</span></div>`;
-      if (obj.addedColumns.length > 0) {
-        schemaHtml += '<table class="columns"><tr><th>Added Column</th><th>Type</th></tr>';
-        for (const col of obj.addedColumns) {
-          schemaHtml += `<tr><td class="added">+ ${esc(col.name)}</td><td>${esc(col.dataType)}</td></tr>`;
+
+      // Substrate's added/removed are computed by colKey (name+type), so a
+      // column whose type changed appears in BOTH addedColumns (new type)
+      // and removedColumns (old type). Correlate by name so a type change
+      // renders as one row showing old→new instead of two confusing rows.
+      const removedByName = new Map(obj.removedColumns.map(c => [c.name, c]));
+      const typeChanged: Array<{ name: string; from: string; to: string }> = [];
+      const pureAdded: typeof obj.addedColumns = [];
+      for (const added of obj.addedColumns) {
+        const removed = removedByName.get(added.name);
+        if (removed) {
+          typeChanged.push({ name: added.name, from: removed.dataType, to: added.dataType });
+          removedByName.delete(added.name);
+        } else {
+          pureAdded.push(added);
+        }
+      }
+      const pureRemoved = [...removedByName.values()];
+
+      if (typeChanged.length === 0 && pureAdded.length === 0 && pureRemoved.length === 0) {
+        // Substrate marked this modified but neither side has a column-level
+        // diff to report. Rare (typically substrate is more granular than
+        // we surface). Keep the table title; no body needed.
+      } else {
+        schemaHtml += '<table class="columns"><tr><th>Change</th><th>Column</th><th>Type</th></tr>';
+        for (const c of pureAdded) {
+          schemaHtml += `<tr><td class="added">+ added</td><td>${esc(c.name)}</td><td>${esc(c.dataType)}</td></tr>`;
+        }
+        for (const c of pureRemoved) {
+          schemaHtml += `<tr><td class="removed">− removed</td><td>${esc(c.name)}</td><td>${esc(c.dataType)}</td></tr>`;
+        }
+        for (const c of typeChanged) {
+          schemaHtml += `<tr><td class="changed">~ type</td><td>${esc(c.name)}</td><td>${esc(c.from)} → ${esc(c.to)}</td></tr>`;
         }
         schemaHtml += '</table>';
       }
@@ -250,6 +279,8 @@ export class SchemaDiffProvider {
   .tag.mod { background: rgba(255,152,0,0.15); color: var(--vscode-editorWarning-foreground, #ff9800); }
   .tag.del { background: rgba(244,67,54,0.15); color: var(--vscode-errorForeground, #f44336); }
   .added { color: var(--vscode-testing-iconPassed, #4caf50); font-weight: 600; }
+  .removed { color: var(--vscode-errorForeground, #f44336); font-weight: 600; }
+  .changed { color: var(--vscode-editorWarning-foreground, #ff9800); font-weight: 600; }
   table { border-collapse: collapse; width: 100%; margin: 8px 0; }
   th, td { text-align: left; padding: 4px 10px; border: 1px solid var(--vscode-panel-border); }
   th { background: var(--vscode-editor-inactiveSelectionBackground); font-weight: 600; }
