@@ -88,7 +88,7 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 
 ### Install the Extension
 
-1. Download `lakebase-scm-extension-0.5.5.vsix` from the [latest release](https://github.com/databricks-solutions/lakebase-scm-extension/releases/latest)
+1. Download the `lakebase-scm-extension-*.vsix` asset from the [latest release](https://github.com/databricks-solutions/lakebase-scm-extension/releases/latest)
 2. In VS Code: **Extensions** → `...` → **Install from VSIX** → select the file
 3. Reload the window
 
