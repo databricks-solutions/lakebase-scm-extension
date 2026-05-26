@@ -9,12 +9,12 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 **What it does:**
 - **Create New Project** – 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
 - **Automatic branch pairing** – `git checkout -b feature/x` automatically creates a Lakebase database branch
-- **Live schema visibility** – see actual database tables on each branch with diff indicators (new/modified/removed vs production)
+- **Live schema visibility** – see actual database tables on each branch with diff indicators (new/modified/removed vs the branch's parent)
 - **Two parallel interfaces** – work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
 - **CI Runner management** – deploy, start, stop, and monitor a self-hosted GitHub Actions runner from the sidebar
 - **PR integration** – commit → push → create PR in one flow; CI creates a dedicated Lakebase branch for testing
 - **Merge awareness** – merge PRs from VS Code; CI applies migrations to production and cleans up branches
-- **Branch Review** – multi-diff editor showing all code + schema changes, querying actual database state
+- **Branch Review** – multi-diff editor showing all code + schema changes vs the branch's parent, querying actual database state
 - **Deploy to Databricks Apps** – multi-target deploy wizard with per-file workspace upload, clickable deploy progress, and post-deploy app launch
 - **Full Git SCM parity** – every command from the built-in Git extension is available, plus Lakebase sync
 
@@ -309,14 +309,14 @@ Click the Lakebase icon in the activity bar. The sidebar contains:
 
 ### Branch Table Diff
 
-Expanding a branch's database node queries the actual Lakebase database and shows tables with diff indicators:
+Expanding a branch's database node queries the actual Lakebase database and shows each table with a diff indicator against the branch's parent (e.g. `staging` for a feature forked from staging):
 
-- **Green `+`** – new table created on this branch
-- **Yellow `~`** – table with modified columns vs production
-- **Red `-`** – table removed on this branch
-- **White** – unchanged (shown on production only)
+- `+` – new table created on this branch
+- `~` – table with modified columns vs the parent
+- `-` – table removed on this branch (still present on the parent)
+- no marker – table is identical on both sides
 
-Click any changed table to see a production ↔ branch DDL diff.
+Click any table to open a side-by-side comparison panel: parent columns on the left, branch columns on the right, with per-column markers for added / removed / type-changed.
 
 ## Database Migration Strategy
 
@@ -342,6 +342,8 @@ Search `lakebaseSync` in VS Code Settings:
 | `productionReadOnly` | `true` | Prevent deleting the production branch |
 | `migrationPath` | _(empty – auto-detect)_ | Migration file path. Leave empty to auto-detect from project language. |
 | `trunkBranch` | _(empty)_ | Alternative git branch name to treat as `main` (in addition to `main`/`master`). Also readable from `LAKEBASE_TRUNK_BRANCH` in `.env`. |
+| `stagingBranch` | _(empty)_ | Git branch name that pairs with the project's `staging` Lakebase tier. Set this when you use a 3-tier flow (feature → staging → production) so feature branches diff against staging instead of falling back to production. Also readable from `LAKEBASE_STAGING_BRANCH` in `.env`. |
+| `baseBranch` | _(empty – auto-resolve)_ | Explicit base branch for file diffs. When empty, the extension picks the nearest parent across `trunkBranch` / `main` / `master` / `stagingBranch` / `staging` via `git merge-base` recency. Also readable from `LAKEBASE_BASE_BRANCH` in `.env`. |
 
 ### Trunk Branch Alias
 
@@ -352,19 +354,28 @@ By default the extension and the `post-checkout` hook treat only `main` and `mas
 
 When set, checking out that branch points `.env` at the default Lakebase branch (production) instead of cutting a new feature branch from it. Everything else (main/master) continues to work.
 
+### Staging Branch Alias
+
+Three-tier projects fork feature branches off `staging` (which itself forks off the trunk). To make the extension diff feature branches against staging instead of falling back to production, name the git branch paired with the `staging` Lakebase tier via either:
+
+- `LAKEBASE_STAGING_BRANCH=<git-branch-name>` in `.env`, or
+- `lakebaseSync.stagingBranch` in VS Code settings (overrides `.env`).
+
+When set, the **Branch Diff Summary** and per-table comparison panel diff feature branches against staging, the **Tiers** section in the sidebar groups staging as a long-running branch, and **Cut Long-Running Tier...** treats staging as a managed tier rather than a feature branch. Two-tier projects (feature → production) can leave this unset.
+
 ## Testing
 
 ```bash
-npm test                                                # 343 hermetic unit tests
-npm run test:integration -- --grep "E-Commerce"         # 413 integration tests (8 scenarios, ~17 min)
-npm run test:integration -- --grep "Self-Hosted Runner" # 12 runner pipeline tests (~2 min)
-npm run test:integration -- --grep "Python Dev Loop"    # 426 integration tests (4 scenarios, ~13 min)
+npm test                                                # hermetic unit + equivalence tests (~1 min)
+npm run test:integration -- --grep "E-Commerce"         # E-Commerce flow integration (~17 min)
+npm run test:integration -- --grep "Self-Hosted Runner" # runner pipeline (~2 min)
+npm run test:integration -- --grep "Python Dev Loop"    # Python flow integration (~13 min)
 ./test/integration/run-all.sh                           # all suites
 ```
 
 **Tier 1 unit tests** are hermetic – no credentials needed. **Tier 3 integration tests** create real GitHub repos + Lakebase projects under your own accounts; they require `DATABRICKS_TEST_HOST=https://<your-workspace>...`, an authenticated `databricks` CLI against that host, and an authenticated `gh` CLI. Missing env or auth surfaces a copy-paste-ready `IntegrationSetupError` at startup; nothing is silently defaulted to a maintainer's workspace. See `CONTRIBUTING.md` § Testing for the full setup.
 
-**All three tiers (unit, substrate BDD, integration) are mandatory before opening a PR.** Latest release totals: **1554 tests passing**, zero failing.
+**All three tiers (unit, substrate BDD, integration) are mandatory before opening a PR.**
 
 ## Lakebase Sync Across Git Operations
 
