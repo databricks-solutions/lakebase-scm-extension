@@ -15,6 +15,7 @@ import {
   ensureSchemaAndVolume as substrateEnsureSchemaAndVolume,
   grantUcCatalogPermission,
   catalogExplorerUrl as substrateCatalogExplorerUrl,
+  ensureLakebaseSecretAuth as substrateEnsureLakebaseSecretAuth,
   type DeployTarget as SubstrateDeployTarget,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
@@ -283,51 +284,20 @@ export class DeployService {
     keyName: string,
     progress?: ProgressCallback,
   ): Promise<{ scope: string; key: string }> {
+    progress?.('Configuring Lakebase secret auth...', 'infra');
     const spClientId = await DeployService.getAppSpClientId(profile, appName);
-
-    // 1. Create secret scope (idempotent – ignore "already exists" errors)
-    progress?.(`Creating secret scope: ${scopeName}...`, 'infra');
-    try {
-      await exec(`databricks secrets create-scope "${scopeName}" --profile "${profile}"`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('already exists') && !msg.includes('SCOPE_ALREADY_EXISTS')) {
-        throw err;
-      }
+    const result = await substrateEnsureLakebaseSecretAuth({
+      profile,
+      scopeName,
+      keyName,
+      servicePrincipalClientId: spClientId,
+      tokenComment: `Lakebase auth for ${appName}`,
+    });
+    if (spClientId && !result.aclGranted) {
+      progress?.('Could not grant SP access to secret scope, you may need to grant manually', 'infra');
     }
-
-    // 2. Generate a PAT for the deploying user (90-day lifetime)
-    progress?.('Generating PAT for Lakebase auth...', 'infra');
-    const tokenResult = await exec(
-      `databricks tokens create --comment "Lakebase auth for ${appName}" --lifetime-seconds 7776000 -o json --profile "${profile}"`,
-      { timeout: 30000 }
-    );
-    const tokenParsed = JSON.parse(tokenResult);
-    const pat = tokenParsed.token_value;
-    if (!pat) {
-      throw new Error('PAT generation returned no token_value');
-    }
-
-    // 3. Store the PAT in the secret scope
-    progress?.('Storing PAT in secret scope...', 'infra');
-    await exec(
-      `databricks secrets put-secret "${scopeName}" "${keyName}" --string-value "${pat}" --profile "${profile}"`
-    );
-
-    // 4. Grant the app's SP READ access to the scope
-    if (spClientId) {
-      progress?.('Granting app SP access to secret scope...', 'infra');
-      try {
-        await exec(
-          `databricks secrets put-acl "${scopeName}" "${spClientId}" READ --profile "${profile}"`
-        );
-      } catch {
-        progress?.('⚠ Could not grant SP access to secret scope – you may need to grant manually', 'infra');
-      }
-    }
-
     progress?.('Lakebase secret auth configured', 'infra');
-    return { scope: scopeName, key: keyName };
+    return { scope: result.scope, key: result.key };
   }
 
   /**
