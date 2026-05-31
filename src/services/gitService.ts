@@ -1003,7 +1003,7 @@ export class GitService {
    * @param parentDir - Directory that will contain the cloned repo folder
    */
   async cloneRepo(repoUrl: string, parentDir: string): Promise<void> {
-    return substrateCloneRepo(repoUrl, parentDir);
+    return substrateCloneRepo({ repoUrl, parentDir });
   }
 
   getCachedBranch(): string {
