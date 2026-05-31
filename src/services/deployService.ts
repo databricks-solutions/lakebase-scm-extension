@@ -5,6 +5,11 @@ import {
   getProjectInfo,
   listBranches,
   createBranch,
+  generateAppYaml,
+  validateApp,
+  ensureAppEndpoint,
+  propagateCredentials,
+  type DeployTarget as SubstrateDeployTarget,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
@@ -210,55 +215,44 @@ export class DeployService {
   }
 
   /**
-   * Get the service principal client ID for a Databricks App.
+   * Get the service principal client ID for a Databricks App. Thin
+   * proxy over substrate's getAppServicePrincipal (FEIP-7130 slice 5).
+   * Retained for backward compatibility with `ensureLakebaseSecretAuth`.
    */
   static async getAppSpClientId(profile: string, appName: string): Promise<string | undefined> {
+    const { getAppServicePrincipal } = await import('@databricks-solutions/lakebase-app-dev-kit');
     try {
-      const raw = await exec(`databricks apps get "${appName}" --profile "${profile}" -o json`);
-      const parsed = JSON.parse(raw);
-      return parsed.service_principal_client_id || parsed.id;
+      const sp = await getAppServicePrincipal({ profile, appName });
+      return sp?.clientId;
     } catch {
       return undefined;
     }
   }
 
   /**
-   * Grant the app's service principal access to the Lakebase project and UC catalog.
-   * Uses the permissions API with the SP's application_id (client_id) as service_principal_name.
+   * Grant the app's SP access to the UC catalog (USE_CATALOG +
+   * USE_SCHEMA + READ_VOLUME + WRITE_VOLUME). UC permission grants are
+   * not yet in substrate; the Lakebase project grant moved to
+   * substrate's propagateCredentials in FEIP-7130 slice 5.
    */
-  static async grantAppPermissions(
+  static async grantUcCatalogAccess(
     profile: string,
     appName: string,
-    lbProjectId: string,
-    ucCatalog: string | undefined,
+    ucCatalog: string,
     progress?: ProgressCallback,
   ): Promise<void> {
     const spClientId = await DeployService.getAppSpClientId(profile, appName);
     if (!spClientId) {
-      progress?.('⚠ Could not resolve app service principal – skipping permission grants', 'infra');
+      progress?.('Could not resolve app service principal, skipping UC catalog grant', 'infra');
       return;
     }
-
-    // Grant CAN_MANAGE on Lakebase project
-    progress?.('Granting app access to Lakebase project...', 'infra');
+    progress?.('Granting app access to UC catalog...', 'infra');
     try {
-      await exec(`databricks api patch /api/2.0/permissions/database-projects/${lbProjectId} --profile "${profile}" --json '${JSON.stringify({
-        access_control_list: [{ service_principal_name: spClientId, permission_level: 'CAN_MANAGE' }]
+      await exec(`databricks api patch /api/2.1/unity-catalog/permissions/catalog/${ucCatalog} --profile "${profile}" --json '${JSON.stringify({
+        changes: [{ principal: spClientId, add: ['USE_CATALOG', 'USE_SCHEMA', 'READ_VOLUME', 'WRITE_VOLUME'] }]
       })}'`);
     } catch {
-      progress?.('⚠ Could not grant Lakebase project access – you may need to grant manually', 'infra');
-    }
-
-    // Grant USE CATALOG + volume access on UC catalog
-    if (ucCatalog) {
-      progress?.('Granting app access to UC catalog...', 'infra');
-      try {
-        await exec(`databricks api patch /api/2.1/unity-catalog/permissions/catalog/${ucCatalog} --profile "${profile}" --json '${JSON.stringify({
-          changes: [{ principal: spClientId, add: ['USE_CATALOG', 'USE_SCHEMA', 'READ_VOLUME', 'WRITE_VOLUME'] }]
-        })}'`);
-      } catch {
-        progress?.('⚠ Could not grant UC catalog access – you may need to grant manually', 'infra');
-      }
+      progress?.('Could not grant UC catalog access, you may need to grant manually', 'infra');
     }
   }
 
@@ -396,6 +390,22 @@ export class DeployService {
     progress?.('UC infrastructure ready', 'infra');
   }
 
+  /**
+   * Deploy an app per the named target. Composes substrate's
+   * lakebase-apps-deploy primitives (generateAppYaml, validateApp,
+   * ensureAppEndpoint, propagateCredentials) per FEIP-7130 / ADR-0002.
+   *
+   * Per-step deploy pattern (devhub Option B): Lakebase Postgres
+   * Projects are not a bundle resource type, so the bundle-deploy
+   * single-command path doesn't apply for kit-scaffolded apps.
+   * Substrate's ensureAppEndpoint uploads source + creates/blocks-
+   * on-ACTIVE + deploys via API-direct. propagateCredentials grants
+   * the app's SP access to the Lakebase project so it can connect
+   * at runtime.
+   *
+   * UC catalog handling + secret-based Lakebase auth are NOT yet in
+   * substrate; they stay local. Future slices may lift them too.
+   */
   static async deploy(
     targetName: string,
     workspaceRoot?: string,
@@ -415,63 +425,69 @@ export class DeployService {
     const { workspace_profile: profile, workspace_path: wsPath, app_name: appName,
             lakebase_project: lbProject, lakebase_branch: lbBranch } = target;
 
-    // Resolve workspace host for console URLs
+    // Resolve workspace host for console URLs (non-critical).
     let workspaceHost: string | undefined;
     try {
       workspaceHost = await DeployService.resolveWorkspaceHost(profile);
     } catch {
-      // Non-critical – deploy still works without clickable links
+      // Non-critical, deploy still works without clickable links
     }
 
-    // Save original app.yaml before modification so we can restore after deploy
+    // Save the original app.yaml before substrate's generator overwrites
+    // it; restore in finally so the local copy stays clean.
     const appYamlPath = path.join(root, 'app.yaml');
     const appYamlOriginal = fs.existsSync(appYamlPath) ? fs.readFileSync(appYamlPath, 'utf-8') : null;
 
     try {
-      // Step 1: Build frontend (if client/ exists)
-      const clientDir = path.join(root, 'client');
-      if (fs.existsSync(path.join(clientDir, 'package.json'))) {
-        progress?.('Building frontend...', 'build');
-        await exec('npm run build', { cwd: clientDir, timeout: 120000 });
+      // Step 1: Generate canonical app.yaml via substrate. The generator
+      // preserves the existing command block + emits env block with
+      // valueFrom: postgres for platform-injected vars + hardcoded
+      // values for the kit-internal LAKEBASE_*/UC_*/AI_MODEL fields.
+      progress?.('Generating app.yaml...', 'config');
+      const substrateTarget: SubstrateDeployTarget = {
+        workspace_profile: profile,
+        workspace_path: wsPath,
+        app_name: appName,
+        lakebase_project: lbProject,
+        lakebase_branch: lbBranch,
+        uc_catalog: target.uc_catalog,
+        uc_schema: target.uc_schema,
+        uc_volume: target.uc_volume,
+        lakebase_secret_scope: target.lakebase_secret_scope,
+        lakebase_secret_key: target.lakebase_secret_key,
+        ai_model: target.ai_model,
+      };
+      fs.writeFileSync(
+        appYamlPath,
+        generateAppYaml(substrateTarget, { existing: appYamlOriginal ?? undefined }),
+      );
+
+      // Step 2: Pre-deploy validation (install + typegen + lint +
+      // typecheck + build + tests). validateApp subsumes the legacy
+      // 'npm run build' step.
+      progress?.('Validating project...', 'build');
+      const validateResult = await validateApp({
+        workspaceRoot: root,
+        profile,
+        timeoutMs: 180_000,
+      });
+      if (!validateResult.ok) {
+        const tail = (validateResult.stdout + validateResult.stderr).slice(-1000);
+        return { success: false, workspaceHost, error: `validate failed:\n${tail}` };
       }
 
-      // Step 2: Generate app.yaml with target's env config
-      if (appYamlOriginal) {
-        progress?.('Generating app.yaml...', 'config');
-        // Extract command block (everything before "env:")
-        const envIndex = appYamlOriginal.indexOf('\nenv:');
-        const commandBlock = envIndex >= 0 ? appYamlOriginal.substring(0, envIndex + 1) : appYamlOriginal + '\n';
-
-        // Build env block dynamically from target config
-        const envVars: { name: string; value: string }[] = [
-          { name: 'LAKEBASE_PROJECT_ID', value: lbProject },
-          { name: 'LAKEBASE_BRANCH_ID', value: lbBranch },
-        ];
-        if (target.uc_catalog) { envVars.push({ name: 'UC_CATALOG', value: target.uc_catalog }); }
-        if (target.uc_schema) { envVars.push({ name: 'UC_SCHEMA', value: target.uc_schema }); }
-        if (target.uc_volume) { envVars.push({ name: 'UC_VOLUME', value: target.uc_volume }); }
-        if (target.lakebase_secret_scope) { envVars.push({ name: 'LAKEBASE_SECRET_SCOPE', value: target.lakebase_secret_scope }); }
-        if (target.lakebase_secret_key) { envVars.push({ name: 'LAKEBASE_SECRET_KEY', value: target.lakebase_secret_key }); }
-        if (target.ai_model) { envVars.push({ name: 'AI_MODEL', value: target.ai_model }); }
-
-        const envBlock = 'env:\n' + envVars.map(v => `  - name: ${v.name}\n    value: "${v.value}"`).join('\n');
-        fs.writeFileSync(appYamlPath, commandBlock + envBlock + '\n');
-      }
-
-      // Step 2.5: Ensure Lakebase project + branch exist
+      // Step 3: Ensure Lakebase project + branch exist (kit-local for
+      // now; future slice may lift to substrate).
       await DeployService.ensureLakebaseInfrastructure(profile, lbProject, lbBranch, progress);
 
-      // Step 2.6: Ensure UC infrastructure exists (if configured)
+      // Step 4: UC infrastructure (kit-local; not yet in substrate).
       if (target.uc_catalog && target.uc_schema && target.uc_volume) {
         progress?.(`Checking UC catalog: ${target.uc_catalog}...`, 'infra');
         const catalogOk = await DeployService.catalogExists(profile, target.uc_catalog);
         if (!catalogOk) {
-          // Try to create it programmatically (works on non-Default-Storage workspaces)
-          progress?.(`Catalog not found – attempting to create ${target.uc_catalog}...`, 'infra');
+          progress?.(`Catalog not found, attempting to create ${target.uc_catalog}...`, 'infra');
           const created = await DeployService.tryCreateCatalog(profile, target.uc_catalog);
           if (!created) {
-            // Default Storage workspace – need manual creation
-            // Return a specific error so the caller can handle the interactive flow
             return {
               success: false,
               workspaceHost,
@@ -484,66 +500,64 @@ export class DeployService {
         );
       }
 
-      // Step 3: Upload source files (per-file for reliability)
-      // IMPORTANT: databricks workspace import-dir does NOT reliably update
-      // Python files. Always use per-file workspace import --overwrite.
-      progress?.('Uploading source to workspace...', 'upload');
-      const uploadCount = await DeployService.uploadSource(root, wsPath, profile, progress);
-      progress?.(`Uploaded ${uploadCount} files`, 'upload');
-
-      // Step 4: Ensure app exists (create if missing)
-      progress?.('Checking app...', 'deploy');
-      try {
-        await exec(`databricks apps get "${appName}" --profile "${profile}"`);
-      } catch {
-        progress?.(`App "${appName}" not found – creating...`, 'deploy');
-        await exec(
-          `databricks apps create "${appName}" --description "Deployed by Lakebase SCM" --no-wait --profile "${profile}"`,
-          { timeout: 60000 }
-        );
+      // Step 5: Upload + create + deploy via substrate's ensureAppEndpoint.
+      // Per-step pattern: uploadDirectory walks the local root and
+      // imports each file via workspace import --overwrite; apps create
+      // blocks until ACTIVE; apps deploy --source-code-path runs the
+      // API-direct deploy.
+      progress?.(`Uploading + deploying ${appName}...`, 'deploy');
+      const deployResult = await ensureAppEndpoint({
+        workspaceRoot: root,
+        workspacePath: wsPath,
+        profile,
+        appName,
+        description: 'Deployed by Lakebase SCM',
+      });
+      if (!deployResult.ok) {
+        const tail = (deployResult.deployStdout + deployResult.deployStderr).slice(-1000);
+        return { success: false, workspaceHost, error: `deploy failed:\n${tail}` };
       }
-
-      // Step 4.5: Grant app SP access to Lakebase project + UC catalog
-      await DeployService.grantAppPermissions(
-        profile, appName, lbProject, target.uc_catalog, progress
+      progress?.(
+        `Uploaded ${deployResult.upload.filesUploaded} files; app ${deployResult.created ? 'created' : 'updated'}`,
+        'deploy',
       );
 
-      // Step 4.6: Set up secret-based Lakebase auth (if target specifies it)
+      // Step 6: Grant the app SP access to the Lakebase project.
+      // Substrate's propagateCredentials encapsulates SP resolution +
+      // permission patch. UC catalog grants remain local.
+      progress?.('Granting app access to Lakebase project...', 'infra');
+      try {
+        await propagateCredentials({
+          target: substrateTarget,
+          profile,
+          appName,
+        });
+      } catch (err) {
+        progress?.(
+          `Could not grant Lakebase access: ${(err as Error).message}. You may need to grant manually.`,
+          'infra',
+        );
+      }
+      if (target.uc_catalog) {
+        await DeployService.grantUcCatalogAccess(profile, appName, target.uc_catalog, progress);
+      }
+
+      // Step 7: Secret-based Lakebase auth (kit-local).
       if (target.lakebase_secret_scope && target.lakebase_secret_key) {
         await DeployService.ensureLakebaseSecretAuth(
           profile, appName, target.lakebase_secret_scope, target.lakebase_secret_key, progress
         );
       }
 
-      // Step 5: Deploy the app (apps deploy waits for completion – allow 10 minutes)
-      progress?.(`Deploying ${appName}...`, 'deploy');
-      await exec(
-        `databricks apps deploy "${appName}" --source-code-path "${wsPath}" --profile "${profile}"`,
-        { cwd: root, timeout: 600000 }
-      );
-
-      // Extract app URL
-      let appUrl: string | undefined;
-      try {
-        const getOutput = await exec(
-          `databricks apps get "${appName}" --profile "${profile}"`,
-          { cwd: root }
-        );
-        const appInfo = JSON.parse(getOutput);
-        appUrl = appInfo.url;
-      } catch {
-        // Non-critical
-      }
-
-      // Step 6: Run seed data (if seed files exist)
+      // Step 8: Run seed data if seed files exist.
       await DeployService.runSeedData(root, targetName, progress);
 
-      return { success: true, appUrl, workspaceHost };
+      return { success: true, appUrl: deployResult.url, workspaceHost };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg };
     } finally {
-      // Restore original app.yaml so the local copy stays clean
+      // Restore original app.yaml so the local copy stays clean.
       if (appYamlOriginal !== null) {
         fs.writeFileSync(appYamlPath, appYamlOriginal);
       }
@@ -592,86 +606,7 @@ export class DeployService {
     }
   }
 
-  /**
-   * Upload project source files to workspace, per-file for reliability.
-   */
-  private static async uploadSource(
-    projectRoot: string,
-    workspacePath: string,
-    profile: string,
-    progress?: ProgressCallback,
-  ): Promise<number> {
-    let count = 0;
-    const createdDirs = new Set<string>();
-
-    const ensureRemoteDir = async (remoteDirPath: string) => {
-      if (createdDirs.has(remoteDirPath)) { return; }
-      await exec(
-        `databricks workspace mkdirs "${remoteDirPath}" --profile "${profile}"`
-      );
-      createdDirs.add(remoteDirPath);
-    };
-
-    // Ensure the root workspace path exists (first deploy to a new workspace)
-    await ensureRemoteDir(workspacePath);
-
-    const uploadFile = async (relPath: string) => {
-      const localPath = path.join(projectRoot, relPath);
-      const remotePath = `${workspacePath}/${relPath}`;
-      // Ensure the parent directory exists in the workspace
-      const remoteDir = remotePath.substring(0, remotePath.lastIndexOf('/'));
-      if (remoteDir !== workspacePath) {
-        await ensureRemoteDir(remoteDir);
-      }
-      await exec(
-        `databricks workspace import "${remotePath}" --file "${localPath}" --format AUTO --overwrite --profile "${profile}"`
-      );
-      count++;
-    };
-
-    // Upload root config files
-    for (const f of ['app.yaml', 'pyproject.toml', 'uv.lock', 'alembic.ini', 'package.json']) {
-      if (fs.existsSync(path.join(projectRoot, f))) {
-        await uploadFile(f);
-      }
-    }
-
-    // Upload app/ directory (Python source)
-    progress?.('Uploading app/ ...');
-    await DeployService.uploadDir(projectRoot, 'app', uploadFile, ['.py']);
-
-    // Upload alembic/ directory (migrations)
-    progress?.('Uploading alembic/ ...');
-    await DeployService.uploadDir(projectRoot, 'alembic', uploadFile, ['.py', '.ini', '.mako']);
-
-    // Upload static/ directory (built frontend)
-    if (fs.existsSync(path.join(projectRoot, 'static'))) {
-      progress?.('Uploading static/ ...');
-      await DeployService.uploadDir(projectRoot, 'static', uploadFile);
-    }
-
-    return count;
-  }
-
-  /**
-   * Recursively upload files from a directory, optionally filtered by extension.
-   */
-  private static async uploadDir(
-    projectRoot: string,
-    dirRelPath: string,
-    uploadFn: (relPath: string) => Promise<void>,
-    extensions?: string[],
-  ): Promise<void> {
-    const fullDir = path.join(projectRoot, dirRelPath);
-    if (!fs.existsSync(fullDir)) { return; }
-
-    for (const entry of fs.readdirSync(fullDir, { withFileTypes: true })) {
-      const relPath = path.join(dirRelPath, entry.name);
-      if (entry.isDirectory()) {
-        await DeployService.uploadDir(projectRoot, relPath, uploadFn, extensions);
-      } else if (!extensions || extensions.some(ext => entry.name.endsWith(ext))) {
-        await uploadFn(relPath);
-      }
-    }
-  }
+  // uploadSource + uploadDir were lifted to substrate's
+  // `uploadDirectory` (FEIP-7130 slice 3) and are no longer needed
+  // locally. `ensureAppEndpoint` composes the upload internally.
 }
