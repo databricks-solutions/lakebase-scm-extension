@@ -10,6 +10,11 @@ import {
   ensureAppEndpoint,
   propagateCredentials,
   resolveDatabricksHost,
+  catalogExists as substrateCatalogExists,
+  tryCreateCatalog as substrateTryCreateCatalog,
+  ensureSchemaAndVolume as substrateEnsureSchemaAndVolume,
+  grantUcCatalogPermission,
+  catalogExplorerUrl as substrateCatalogExplorerUrl,
   type DeployTarget as SubstrateDeployTarget,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
@@ -234,10 +239,10 @@ export class DeployService {
   }
 
   /**
-   * Grant the app's SP access to the UC catalog (USE_CATALOG +
-   * USE_SCHEMA + READ_VOLUME + WRITE_VOLUME). UC permission grants are
-   * not yet in substrate; the Lakebase project grant moved to
-   * substrate's propagateCredentials in FEIP-7130 slice 5.
+   * Grant the app's SP access to the UC catalog. Thin proxy over
+   * substrate's grantUcCatalogPermission (P2 follow-up to FEIP-7130).
+   * Default permissions: USE_CATALOG + USE_SCHEMA + READ_VOLUME +
+   * WRITE_VOLUME (the standard deployed-app set).
    */
   static async grantUcCatalogAccess(
     profile: string,
@@ -252,9 +257,11 @@ export class DeployService {
     }
     progress?.('Granting app access to UC catalog...', 'infra');
     try {
-      await exec(`databricks api patch /api/2.1/unity-catalog/permissions/catalog/${ucCatalog} --profile "${profile}" --json '${JSON.stringify({
-        changes: [{ principal: spClientId, add: ['USE_CATALOG', 'USE_SCHEMA', 'READ_VOLUME', 'WRITE_VOLUME'] }]
-      })}'`);
+      await grantUcCatalogPermission({
+        profile,
+        catalog: ucCatalog,
+        servicePrincipalName: spClientId,
+      });
     } catch {
       progress?.('Could not grant UC catalog access, you may need to grant manually', 'infra');
     }
@@ -324,42 +331,43 @@ export class DeployService {
   }
 
   /**
-   * Check whether a UC catalog exists on the target workspace.
+   * Check whether a UC catalog exists. Thin proxy over substrate's
+   * catalogExists (P2 follow-up to FEIP-7130).
    */
   static async catalogExists(profile: string, catalog: string): Promise<boolean> {
     try {
-      await exec(`databricks api get /api/2.1/unity-catalog/catalogs/${catalog} --profile "${profile}"`);
-      return true;
+      return await substrateCatalogExists({ profile, catalog });
     } catch {
       return false;
     }
   }
 
   /**
-   * Try to create a UC catalog programmatically.
-   * Returns true if created, false if blocked (Default Storage workspaces reject this).
+   * Try to create a UC catalog programmatically. Thin proxy over
+   * substrate's tryCreateCatalog. Returns true on success, false
+   * when blocked (Default Storage workspaces reject programmatic
+   * catalog creation).
    */
   static async tryCreateCatalog(profile: string, catalog: string): Promise<boolean> {
-    try {
-      await exec(`databricks api post /api/2.1/unity-catalog/catalogs --profile "${profile}" --json '${JSON.stringify({
-        name: catalog, comment: 'Created by Lakebase SCM deploy'
-      })}'`);
-      return true;
-    } catch {
-      return false;
-    }
+    const result = await substrateTryCreateCatalog({
+      profile,
+      catalog,
+      comment: 'Created by Lakebase SCM deploy',
+    });
+    return result.created;
   }
 
   /**
-   * Resolve the Catalog Explorer URL for a workspace.
+   * Catalog Explorer URL for a workspace. Thin proxy over substrate's
+   * catalogExplorerUrl.
    */
   static catalogExplorerUrl(workspaceHost: string): string {
-    return `${workspaceHost}/explore/data`;
+    return substrateCatalogExplorerUrl(workspaceHost);
   }
 
   /**
    * Ensure UC schema and volume exist (catalog must already exist).
-   * Creates schema and volume if missing.
+   * Thin proxy over substrate's ensureSchemaAndVolume. Idempotent.
    */
   static async ensureSchemaAndVolume(
     profile: string,
@@ -368,29 +376,16 @@ export class DeployService {
     volume: string,
     progress?: ProgressCallback,
   ): Promise<void> {
-    // Check/create schema
-    progress?.(`Checking UC schema: ${catalog}.${schema}...`, 'infra');
-    try {
-      await exec(`databricks api get /api/2.1/unity-catalog/schemas/${catalog}.${schema} --profile "${profile}"`);
-    } catch {
-      progress?.(`Creating UC schema: ${catalog}.${schema}...`, 'infra');
-      await exec(`databricks api post /api/2.1/unity-catalog/schemas --profile "${profile}" --json '${JSON.stringify({
-        name: schema, catalog_name: catalog, comment: 'Created by Lakebase SCM deploy'
-      })}'`);
-    }
-
-    // Check/create volume
-    progress?.(`Checking UC volume: ${catalog}.${schema}.${volume}...`, 'infra');
-    try {
-      await exec(`databricks api get /api/2.1/unity-catalog/volumes/${catalog}.${schema}.${volume} --profile "${profile}"`);
-    } catch {
-      progress?.(`Creating UC volume: ${catalog}.${schema}.${volume}...`, 'infra');
-      await exec(`databricks api post /api/2.1/unity-catalog/volumes --profile "${profile}" --json '${JSON.stringify({
-        catalog_name: catalog, schema_name: schema, name: volume,
-        volume_type: 'MANAGED', comment: 'Created by Lakebase SCM deploy'
-      })}'`);
-    }
-
+    progress?.(`Ensuring UC schema + volume: ${catalog}.${schema}.${volume}...`, 'infra');
+    const result = await substrateEnsureSchemaAndVolume({
+      profile,
+      catalog,
+      schema,
+      volume,
+      comment: 'Created by Lakebase SCM deploy',
+    });
+    if (result.schemaCreated) progress?.(`Created UC schema: ${catalog}.${schema}`, 'infra');
+    if (result.volumeCreated) progress?.(`Created UC volume: ${catalog}.${schema}.${volume}`, 'infra');
     progress?.('UC infrastructure ready', 'infra');
   }
 
