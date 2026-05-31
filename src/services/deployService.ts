@@ -16,6 +16,10 @@ import {
   grantUcCatalogPermission,
   catalogExplorerUrl as substrateCatalogExplorerUrl,
   ensureLakebaseSecretAuth as substrateEnsureLakebaseSecretAuth,
+  readTargets as substrateReadTargets,
+  writeTargets as substrateWriteTargets,
+  parseTargetsYaml as substrateParseTargetsYaml,
+  getTargetNames as substrateGetTargetNames,
   type DeployTarget as SubstrateDeployTarget,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
@@ -60,85 +64,48 @@ type ProgressCallback = (message: string, phase?: DeployPhase) => void;
  */
 export class DeployService {
   /**
-   * Read deploy-targets.yaml from the workspace root.
-   * Uses a lightweight YAML parser for the fixed config structure.
+   * Read deploy-targets.yaml from the workspace root. Thin proxy over
+   * substrate's readTargets (FEIP-7130 slice 1). The extension's
+   * optional workspaceRoot + VS-Code-host fallback stays at this
+   * boundary; substrate requires an explicit root.
    */
   static readTargets(workspaceRoot?: string): DeployTargetsConfig | null {
     const root = workspaceRoot || getWorkspaceRoot();
     if (!root) { return null; }
-    const targetsFile = path.join(root, 'deploy-targets.yaml');
-    if (!fs.existsSync(targetsFile)) { return null; }
-    const content = fs.readFileSync(targetsFile, 'utf-8');
-    return DeployService.parseTargetsYaml(content);
+    return substrateReadTargets(root);
   }
 
   /**
-   * Parse deploy-targets.yaml content.
-   * Handles the fixed structure: targets → target_name → key: value
+   * Parse deploy-targets.yaml content. Thin proxy over substrate's
+   * parseTargetsYaml. The substrate parser is the canonical
+   * implementation (lifted to scripts/lakebase/deploy-targets.ts in
+   * slice 1 with the same regex shape).
    */
   static parseTargetsYaml(content: string): DeployTargetsConfig {
-    const targets: Record<string, DeployTarget> = {};
-    let currentTarget: string | null = null;
-    const lines = content.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trimEnd();
-      if (!trimmed || trimmed.startsWith('#')) { continue; }
-
-      // Top-level "targets:" – skip
-      if (trimmed === 'targets:') { continue; }
-
-      // Target name (2-space indent, ends with colon)
-      const targetMatch = trimmed.match(/^  (\S+):$/);
-      if (targetMatch) {
-        currentTarget = targetMatch[1];
-        targets[currentTarget] = {} as DeployTarget;
-        continue;
-      }
-
-      // Key-value pair (4-space indent)
-      const kvMatch = trimmed.match(/^    (\S+):\s*"?([^"]*)"?\s*$/);
-      if (kvMatch && currentTarget) {
-        const key = kvMatch[1] as keyof DeployTarget;
-        targets[currentTarget][key] = kvMatch[2];
-      }
-    }
-
-    return { targets };
+    return substrateParseTargetsYaml(content);
   }
 
   /**
-   * Write deploy-targets.yaml back to the workspace root.
+   * Write deploy-targets.yaml. Thin proxy over substrate's
+   * writeTargets, with the workspace-root resolution kept at this
+   * boundary.
    */
   static writeTargets(config: DeployTargetsConfig, workspaceRoot?: string): void {
     const root = workspaceRoot || getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root found'); }
-    const targetsFile = path.join(root, 'deploy-targets.yaml');
-    let yaml = 'targets:\n';
-    for (const [name, target] of Object.entries(config.targets)) {
-      yaml += `  ${name}:\n`;
-      yaml += `    workspace_profile: ${target.workspace_profile}\n`;
-      yaml += `    workspace_path: ${target.workspace_path}\n`;
-      yaml += `    app_name: ${target.app_name}\n`;
-      yaml += `    lakebase_project: ${target.lakebase_project}\n`;
-      yaml += `    lakebase_branch: ${target.lakebase_branch}\n`;
-      if (target.uc_catalog) { yaml += `    uc_catalog: ${target.uc_catalog}\n`; }
-      if (target.uc_schema) { yaml += `    uc_schema: ${target.uc_schema}\n`; }
-      if (target.uc_volume) { yaml += `    uc_volume: ${target.uc_volume}\n`; }
-      if (target.lakebase_secret_scope) { yaml += `    lakebase_secret_scope: ${target.lakebase_secret_scope}\n`; }
-      if (target.lakebase_secret_key) { yaml += `    lakebase_secret_key: ${target.lakebase_secret_key}\n`; }
-      if (target.ai_model) { yaml += `    ai_model: ${target.ai_model}\n`; }
-    }
-    fs.writeFileSync(targetsFile, yaml);
+    substrateWriteTargets(config, root);
   }
 
   /**
-   * Get available target names.
+   * Get available target names. Thin proxy over substrate's
+   * getTargetNames, with the workspace-root resolution kept at this
+   * boundary. Returns [] when no workspace root is available, matching
+   * the legacy behavior.
    */
   static getTargetNames(workspaceRoot?: string): string[] {
-    const config = DeployService.readTargets(workspaceRoot);
-    if (!config?.targets) { return []; }
-    return Object.keys(config.targets);
+    const root = workspaceRoot || getWorkspaceRoot();
+    if (!root) { return []; }
+    return substrateGetTargetNames(root);
   }
 
   /**
