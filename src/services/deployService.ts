@@ -9,6 +9,7 @@ import {
   validateApp,
   ensureAppEndpoint,
   propagateCredentials,
+  resolveDatabricksHost,
   type DeployTarget as SubstrateDeployTarget,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { exec } from '../utils/exec';
@@ -136,12 +137,15 @@ export class DeployService {
 
   /**
    * Resolve the workspace host URL from a Databricks CLI profile.
+   * Thin proxy over substrate's resolveDatabricksHost (FEIP-7130
+   * follow-up). The legacy `databricks auth env` shell-out was
+   * deprecated in CLI v1.1.0 and now returns an error instead of
+   * the host JSON; the substrate primitive uses the new
+   * `databricks auth describe` shape.
    */
   static async resolveWorkspaceHost(profile: string): Promise<string | undefined> {
     try {
-      const raw = await exec(`databricks auth env --profile "${profile}"`);
-      const env = JSON.parse(raw);
-      return env.DATABRICKS_HOST?.replace(/\/+$/, '');
+      return await resolveDatabricksHost({ profile });
     } catch {
       return undefined;
     }
