@@ -40,6 +40,46 @@ import {
   createTag as substrateCreateTag,
   deleteTag as substrateDeleteTag,
   deleteRemoteTag as substrateDeleteRemoteTag,
+  // P6 substrate primitives
+  stash as substrateStash,
+  stashStaged as substrateStashStaged,
+  stashIncludeUntracked as substrateStashIncludeUntracked,
+  stashList as substrateStashList,
+  stashApply as substrateStashApply,
+  stashPop as substrateStashPop,
+  stashDrop as substrateStashDrop,
+  stashDropAll as substrateStashDropAll,
+  abortRebase as substrateAbortRebase,
+  isRebasing as substrateIsRebasing,
+  rebaseBranch as substrateRebaseBranch,
+  pullRebase as substratePullRebase,
+  createWorktree as substrateCreateWorktree,
+  listWorktrees as substrateListWorktrees,
+  removeWorktree as substrateRemoveWorktree,
+  addRemote as substrateAddRemote,
+  removeRemote as substrateRemoveRemote,
+  listRemotes as substrateListRemotes,
+  deleteRemoteBranch as substrateDeleteRemoteBranch,
+  fetch as substrateFetch,
+  pullFrom as substratePullFrom,
+  pushTo as substratePushTo,
+  sync as substrateSync,
+  getLogRaw as substrateGetLogRaw,
+  getLogShortstat as substrateGetLogShortstat,
+  getOutgoingCommits as substrateGetOutgoingCommits,
+  getIncomingCommits as substrateGetIncomingCommits,
+  getRecentMerges as substrateGetRecentMerges,
+  getBranchesAtCommit as substrateGetBranchesAtCommit,
+  getCommitFiles as substrateGetCommitFiles,
+  getDiffFiles as substrateGetDiffFiles,
+  getCurrentBranch as substrateGetCurrentBranch,
+  getRepoRoot as substrateGetRepoRoot,
+  getFileAtRef as substrateGetFileAtRef,
+  listTags as substrateListTags,
+  checkoutBranch as substrateCheckoutBranch,
+  checkoutDetached as substrateCheckoutDetached,
+  revert as substrateRevert,
+  cherryPick as substrateCherryPick,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 
 export interface PullRequestCheck {
@@ -136,14 +176,8 @@ export class GitService {
 
   async getCurrentBranch(): Promise<string> {
     const root = getWorkspaceRoot();
-    if (!root) {
-      return '';
-    }
-    try {
-      return await exec('git rev-parse --abbrev-ref HEAD', root);
-    } catch {
-      return '';
-    }
+    if (!root) { return ''; }
+    return substrateGetCurrentBranch({ cwd: root });
   }
 
   /**
@@ -156,20 +190,15 @@ export class GitService {
    * Returns the workspace root as a fallback if the CLI call fails.
    */
   async getRepoRoot(): Promise<string> {
-    if (this.cachedRepoRoot) {
-      return this.cachedRepoRoot;
-    }
+    if (this.cachedRepoRoot) { return this.cachedRepoRoot; }
     const root = getWorkspaceRoot();
-    if (!root) {
-      return '';
-    }
-    try {
-      const out = await exec('git rev-parse --show-toplevel', root);
-      this.cachedRepoRoot = out.trim();
-      return this.cachedRepoRoot;
-    } catch {
-      return root;
-    }
+    if (!root) { return ''; }
+    const repoRoot = await substrateGetRepoRoot({ cwd: root });
+    // Substrate returns "" on non-git cwd; fall back to workspace root
+    // (extension's historical behavior - keeps file URIs working when
+    // the workspace happens to be a non-git folder).
+    this.cachedRepoRoot = repoRoot || root;
+    return this.cachedRepoRoot;
   }
   private cachedRepoRoot = '';
 
@@ -203,11 +232,7 @@ export class GitService {
   async getFileAtRef(ref: string, filePath: string): Promise<string> {
     const root = getWorkspaceRoot();
     if (!root) { return ''; }
-    try {
-      return await exec(`git show "${ref}:${filePath}"`, root);
-    } catch {
-      return ''; // File doesn't exist at that ref (new file)
-    }
+    return substrateGetFileAtRef({ cwd: root, ref, filePath });
   }
 
   /**
@@ -264,12 +289,8 @@ export class GitService {
 
   async checkoutBranch(branchName: string, create: boolean = false, startPoint?: string): Promise<void> {
     const root = getWorkspaceRoot();
-    if (!root) {
-      throw new Error('No workspace root');
-    }
-    const flag = create ? '-b ' : '';
-    const sp = startPoint ? ` "${startPoint}"` : '';
-    await exec(`git checkout ${flag}"${branchName}"${sp}`, root);
+    if (!root) { throw new Error('No workspace root'); }
+    await substrateCheckoutBranch({ cwd: root, branch: branchName, create, startPoint });
   }
 
   /** Get files changed between current branch and main/master */
@@ -673,179 +694,145 @@ export class GitService {
   async stashStaged(message?: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const msg = message ? ` -m "${message.replace(/"/g, '\\"')}"` : '';
-    await exec(`git stash push --staged${msg}`, root);
+    await substrateStashStaged({ cwd: root, message });
   }
 
   async stashIncludeUntracked(message?: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const msg = message ? ` -m "${message.replace(/"/g, '\\"')}"` : '';
-    await exec(`git stash push --include-untracked${msg}`, root);
+    await substrateStashIncludeUntracked({ cwd: root, message });
   }
 
   async stashList(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git stash list', root);
-      return raw ? raw.split('\n').filter(Boolean) : [];
-    } catch {
-      return [];
-    }
+    return substrateStashList({ cwd: root });
   }
 
   async stashApply(index: number = 0): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git stash apply stash@{${index}}`, root);
+    await substrateStashApply({ cwd: root, index });
   }
 
   async stashDrop(index: number = 0): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git stash drop stash@{${index}}`, root);
+    await substrateStashDrop({ cwd: root, index });
   }
 
   async stashDropAll(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git stash clear', root);
+    await substrateStashDropAll({ cwd: root });
   }
 
   async listTags(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git tag -l', root);
-      return raw ? raw.split('\n').filter(Boolean) : [];
-    } catch {
-      return [];
-    }
+    return substrateListTags({ cwd: root });
   }
 
   async abortRebase(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git rebase --abort', root);
+    await substrateAbortRebase({ cwd: root });
   }
 
   async isRebasing(): Promise<boolean> {
     const root = getWorkspaceRoot();
     if (!root) { return false; }
-    const fs = require('fs');
-    const path = require('path');
-    return fs.existsSync(path.join(root, '.git/rebase-merge')) ||
-           fs.existsSync(path.join(root, '.git/rebase-apply'));
+    return substrateIsRebasing({ cwd: root });
   }
 
   async rebaseBranch(branchName: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git rebase "${branchName}"`, root);
+    await substrateRebaseBranch({ cwd: root, branch: branchName });
   }
 
   async deleteRemoteBranch(branchName: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git push origin --delete "${branchName}"`, root);
+    await substrateDeleteRemoteBranch({ cwd: root, branch: branchName });
   }
 
   async addRemote(name: string, url: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git remote add "${name}" "${url}"`, root);
+    await substrateAddRemote({ cwd: root, name, url });
   }
 
   async removeRemote(name: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git remote remove "${name}"`, root);
+    await substrateRemoveRemote({ cwd: root, name });
   }
 
   async createWorktree(path: string, branchName: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git worktree add "${path}" -b "${branchName}"`, root);
+    await substrateCreateWorktree({ cwd: root, path, branch: branchName });
   }
 
   async listWorktrees(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git worktree list', root);
-      return raw ? raw.split('\n').filter(Boolean) : [];
-    } catch {
-      return [];
-    }
+    return substrateListWorktrees({ cwd: root });
   }
 
   async removeWorktree(path: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git worktree remove "${path}"`, root);
+    await substrateRemoveWorktree({ cwd: root, path });
   }
 
   async fetch(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git fetch', root);
+    await substrateFetch({ cwd: root });
   }
 
   async fetchPrune(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git fetch --prune', root);
+    await substrateFetch({ cwd: root, prune: true });
   }
 
   async fetchAll(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git fetch --all', root);
+    await substrateFetch({ cwd: root, all: true });
   }
 
   async revert(sha: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    // Detect merge commits and automatically use -m 1 (revert relative to first parent)
-    const parents = (await exec(`git rev-parse "${sha}^@"`, root)).trim().split('\n').filter(Boolean);
-    const mFlag = parents.length > 1 ? ' -m 1' : '';
-    await exec(`git revert --no-edit${mFlag} "${sha}"`, root);
+    await substrateRevert({ cwd: root, sha });
   }
 
   async cherryPick(sha: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git cherry-pick "${sha}"`, root);
+    await substrateCherryPick({ cwd: root, sha });
   }
 
   async checkoutDetached(sha: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git checkout --detach "${sha}"`, root);
+    await substrateCheckoutDetached({ cwd: root, sha });
   }
 
   async getBranchesAtCommit(sha: string): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec(`git branch -a --points-at "${sha}" --format="%(refname:short)"`, root);
-      return raw.trim().split('\n').filter(Boolean).filter(b => !b.includes('HEAD') && b !== 'origin');
-    } catch { return []; }
+    return substrateGetBranchesAtCommit({ cwd: root, sha });
   }
 
   async getCommitFiles(sha: string): Promise<Array<{ status: string; path: string }>> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    let raw = await exec(`git diff-tree --no-commit-id --name-status -r "${sha}"`, root);
-    // Merge commits: diff-tree returns empty, diff against first parent
-    if (!raw.trim()) {
-      try { raw = await exec(`git diff --name-status "${sha}^1" "${sha}"`, root); } catch { return []; }
-    }
-    return raw.split('\n').filter(Boolean).map(line => {
-      const parts = line.split('\t');
-      return { status: parts[0][0], path: parts[parts.length - 1] };
-    });
+    return substrateGetCommitFiles({ cwd: root, sha });
   }
 
   /**
@@ -856,16 +843,7 @@ export class GitService {
   async getDiffFiles(fromRef: string, toRef: string | null): Promise<Array<{ status: string; path: string }>> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const cmd = toRef
-        ? `git diff --name-status "${fromRef}" "${toRef}"`
-        : `git diff --name-status "${fromRef}"`;
-      const raw = await exec(cmd, root);
-      return raw.split('\n').filter(Boolean).map(line => {
-        const parts = line.split('\t');
-        return { status: parts[0][0], path: parts[parts.length - 1] };
-      });
-    } catch { return []; }
+    return substrateGetDiffFiles({ cwd: root, fromRef, toRef });
   }
 
   /**
@@ -895,9 +873,7 @@ export class GitService {
   async getLogRaw(format: string, limit: number, refArgs: string): Promise<string> {
     const root = getWorkspaceRoot();
     if (!root) { return ''; }
-    try {
-      return await exec(`git log --date-order --format="${format}" -${limit}${refArgs}`, root);
-    } catch { return ''; }
+    return substrateGetLogRaw({ cwd: root, format, limit, refArgs });
   }
 
   /**
@@ -906,9 +882,7 @@ export class GitService {
   async getLogShortstat(format: string, limit: number, refArgs: string): Promise<string> {
     const root = getWorkspaceRoot();
     if (!root) { return ''; }
-    try {
-      return await exec(`git log --date-order --format="${format}" --shortstat -${limit}${refArgs}`, root);
-    } catch { return ''; }
+    return substrateGetLogShortstat({ cwd: root, format, limit, refArgs });
   }
 
   /**
@@ -917,10 +891,7 @@ export class GitService {
   async getOutgoingCommits(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git log --oneline @{u}..HEAD', root);
-      return raw.split('\n').filter(Boolean).map(l => l.split(' ')[0]);
-    } catch { return []; }
+    return substrateGetOutgoingCommits({ cwd: root });
   }
 
   /**
@@ -929,72 +900,56 @@ export class GitService {
   async getIncomingCommits(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git log --oneline HEAD..@{u}', root);
-      return raw.split('\n').filter(Boolean).map(l => l.split(' ')[0]);
-    } catch { return []; }
+    return substrateGetIncomingCommits({ cwd: root });
   }
 
   async getRecentMerges(limit = 5): Promise<Array<{ sha: string; message: string }>> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec(`git log --merges --oneline -${limit}`, root);
-      return raw.split('\n').filter(Boolean).map(line => {
-        const sp = line.indexOf(' ');
-        return { sha: line.substring(0, sp), message: line.substring(sp + 1) };
-      });
-    } catch { return []; }
+    return substrateGetRecentMerges({ cwd: root, limit });
   }
 
   async pullRebase(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git pull --rebase', root);
+    await substratePullRebase({ cwd: root });
   }
 
   async pullFrom(remote: string, branch: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git pull "${remote}" "${branch}"`, root);
+    await substratePullFrom({ cwd: root, remote, branch });
   }
 
   async pushTo(remote: string, branch: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git push "${remote}" "${branch}"`, root);
+    await substratePushTo({ cwd: root, remote, branch });
   }
 
   async listRemotes(): Promise<string[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-    try {
-      const raw = await exec('git remote', root);
-      return raw ? raw.split('\n').filter(Boolean) : [];
-    } catch {
-      return [];
-    }
+    return substrateListRemotes({ cwd: root });
   }
 
   async stash(message?: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const msg = message ? ` -m "${message.replace(/"/g, '\\"')}"` : '';
-    await exec(`git stash push${msg}`, root);
+    await substrateStash({ cwd: root, message });
   }
 
   async stashPop(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git stash pop', root);
+    await substrateStashPop({ cwd: root });
   }
 
   /** Pull then push */
   async sync(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git pull', root);
-    await exec('git push', root);
+    await substrateSync({ cwd: root });
   }
 
   /**

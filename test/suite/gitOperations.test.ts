@@ -127,7 +127,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.rebaseBranch('main');
-      assert.ok(cmd.includes('git rebase "main"'));
+      assert.ok(cmd.includes(`git rebase 'main'`));
     });
   });
 
@@ -153,7 +153,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.deleteRemoteBranch('old-branch');
-      assert.ok(cmd.includes('git push origin --delete "old-branch"'));
+      assert.ok(cmd.includes(`git push origin --delete 'old-branch'`));
     });
   });
 
@@ -185,7 +185,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.addRemote('upstream', 'https://github.com/org/repo.git');
-      assert.ok(cmd.includes('git remote add "upstream" "https://github.com/org/repo.git"'));
+      assert.ok(cmd.includes(`git remote add 'upstream' 'https://github.com/org/repo.git'`));
     });
   });
 
@@ -195,7 +195,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.removeRemote('upstream');
-      assert.ok(cmd.includes('git remote remove "upstream"'));
+      assert.ok(cmd.includes(`git remote remove 'upstream'`));
     });
   });
 
@@ -235,7 +235,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.pullFrom('upstream', 'main');
-      assert.ok(cmd.includes('git pull "upstream" "main"'));
+      assert.ok(cmd.includes(`git pull 'upstream' 'main'`));
     });
   });
 
@@ -245,7 +245,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.pushTo('upstream', 'main');
-      assert.ok(cmd.includes('git push "upstream" "main"'));
+      assert.ok(cmd.includes(`git push 'upstream' 'main'`));
     });
   });
 
@@ -424,7 +424,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.createWorktree('/tmp/wt', 'feature-wt');
-      assert.ok(cmd.includes('git worktree add "/tmp/wt" -b "feature-wt"'));
+      assert.ok(cmd.includes(`git worktree add '/tmp/wt' -b 'feature-wt'`));
     });
   });
 
@@ -451,7 +451,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.removeWorktree('/tmp/wt');
-      assert.ok(cmd.includes('git worktree remove "/tmp/wt"'));
+      assert.ok(cmd.includes(`git worktree remove '/tmp/wt'`));
     });
   });
 
