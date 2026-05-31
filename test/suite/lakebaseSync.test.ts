@@ -301,7 +301,7 @@ describe('GitService – deleteRemoteTag', () => {
     };
     const service = new GitService();
     await service.deleteRemoteTag('v1.0.0');
-    assert.ok(cmd.includes('git push origin --delete "refs/tags/v1.0.0"'));
+    assert.ok(cmd.includes(`git push origin --delete 'refs/tags/v1.0.0'`));
   });
 });
 

@@ -23,6 +23,23 @@ import {
   getAheadBehind as substrateGetAheadBehind,
   isDirty as substrateIsDirty,
   listMigrationsOnBranch as substrateListMigrationsOnBranch,
+  commit as substrateCommit,
+  commitAll as substrateCommitAll,
+  commitAmend as substrateCommitAmend,
+  commitSignedOff as substrateCommitSignedOff,
+  commitAllSignedOff as substrateCommitAllSignedOff,
+  undoLastCommit as substrateUndoLastCommit,
+  discardAllChanges as substrateDiscardAllChanges,
+  push as substratePush,
+  pull as substratePull,
+  publishBranch as substratePublishBranch,
+  pushCurrentBranchForPr as substratePushCurrentBranchForPr,
+  deleteLocalBranch as substrateDeleteLocalBranch,
+  renameBranch as substrateRenameBranch,
+  mergeBranch as substrateMergeBranch,
+  createTag as substrateCreateTag,
+  deleteTag as substrateDeleteTag,
+  deleteRemoteTag as substrateDeleteRemoteTag,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 
 export interface PullRequestCheck {
@@ -498,8 +515,7 @@ export class GitService {
   async commit(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    if (!message.trim()) { throw new Error('Commit message is required'); }
-    await exec(`git commit -m "${message.replace(/"/g, '\\"')}"`, root);
+    await substrateCommit({ cwd: root, message });
   }
 
   /** Check if current branch has a remote upstream */
@@ -519,82 +535,83 @@ export class GitService {
   async push(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git push', root);
+    await substratePush({ cwd: root });
   }
 
   /** Push local branch to remote for the first time */
   async publishBranch(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const branch = await this.getCurrentBranch();
-    if (!branch) { throw new Error('No current branch'); }
-    await exec(`git push -u origin "${branch}"`, root);
+    await substratePublishBranch({ cwd: root });
   }
 
   async pull(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git pull', root);
+    await substratePull({ cwd: root });
   }
 
   /**
    * Ensure the current branch is pushed to origin before PR creation.
    * Publishes with `-u origin` when no upstream exists; otherwise pushes
-   * latest commits. Pair with {@link GitHubService.createPullRequest} – git
-   * handles push, GitHubService handles the REST API (formerly `gh pr create`).
+   * latest commits. Pair with {@link GitHubService.createPullRequest}:
+   * git handles push, GitHubService handles the REST API.
    */
   async pushCurrentBranchForPr(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const branch = await this.getCurrentBranch();
-    if (!branch) { throw new Error('No current branch'); }
-    const hasRemote = await this.hasUpstream();
-    if (!hasRemote) {
-      await exec(`git push -u origin "${branch}"`, root);
-    } else {
-      await exec('git push', root);
-    }
+    await substratePushCurrentBranchForPr({ cwd: root });
   }
 
   async commitAll(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    if (!message.trim()) { throw new Error('Commit message is required'); }
-    await exec('git add -A', root);
-    await exec(`git commit -m "${message.replace(/"/g, '\\"')}"`, root);
+    await substrateCommitAll({ cwd: root, message });
   }
 
   async commitAmend(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git commit --amend --no-edit', root);
+    await substrateCommitAmend({ cwd: root });
   }
 
   async commitAmendMessage(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    if (!message.trim()) { throw new Error('Commit message is required'); }
-    await exec(`git commit --amend -m "${message.replace(/"/g, '\\"')}"`, root);
+    await substrateCommitAmend({ cwd: root, message });
   }
 
   async undoLastCommit(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git reset --soft HEAD~1', root);
+    await substrateUndoLastCommit({ cwd: root });
   }
 
+  /**
+   * Wipe ALL working-tree changes (tracked + untracked). The substrate
+   * requires confirm: true as a typed safety latch; the extension's UI
+   * always prompts the user before invoking this, so we pass it
+   * unconditionally here. CLI / agent consumers of the substrate get
+   * the safety latch they need.
+   */
   async discardAllChanges(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec('git checkout -- .', root);
-    await exec('git clean -fd', root);
+    await substrateDiscardAllChanges({ cwd: root, confirm: true });
   }
 
+  /**
+   * Delete a local branch. As of FEIP-7326 the substrate refuses to
+   * delete production/main/master (throws ProtectedBranchError). This
+   * is an intentional behavior tightening; the previous unbounded
+   * delete was a footgun. Callers wanting the legacy behavior must
+   * make it explicit by reaching the substrate directly with
+   * allowProtected: true.
+   */
   async deleteBranch(branchName: string, force = false): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const flag = force ? '-D' : '-d';
-    await exec(`git branch ${flag} "${branchName}"`, root);
+    await substrateDeleteLocalBranch({ cwd: root, branch: branchName, force });
   }
 
   /** Check if a branch exists on origin. Returns false when no origin remote or branch is absent. */
@@ -614,48 +631,43 @@ export class GitService {
   async renameBranch(newName: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git branch -m "${newName}"`, root);
+    await substrateRenameBranch({ cwd: root, newName });
   }
 
   async mergeBranch(branchName: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git merge "${branchName}"`, root);
+    await substrateMergeBranch({ cwd: root, branch: branchName });
   }
 
   async createTag(name: string, message?: string, sha?: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    const msg = message ? ` -m "${message.replace(/"/g, '\\"')}"` : '';
-    const target = sha ? ` "${sha}"` : '';
-    await exec(`git tag${msg ? ' -a' : ''} "${name}"${msg}${target}`, root);
+    await substrateCreateTag({ cwd: root, name, message, sha });
   }
 
   async deleteTag(name: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git tag -d "${name}"`, root);
+    await substrateDeleteTag({ cwd: root, name });
   }
 
   async deleteRemoteTag(name: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await exec(`git push origin --delete "refs/tags/${name}"`, root);
+    await substrateDeleteRemoteTag({ cwd: root, name });
   }
 
   async commitSignedOff(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    if (!message.trim()) { throw new Error('Commit message is required'); }
-    await exec(`git commit -s -m "${message.replace(/"/g, '\\"')}"`, root);
+    await substrateCommitSignedOff({ cwd: root, message });
   }
 
   async commitAllSignedOff(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    if (!message.trim()) { throw new Error('Commit message is required'); }
-    await exec('git add -A', root);
-    await exec(`git commit -s -m "${message.replace(/"/g, '\\"')}"`, root);
+    await substrateCommitAllSignedOff({ cwd: root, message });
   }
 
   async stashStaged(message?: string): Promise<void> {

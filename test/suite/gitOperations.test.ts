@@ -133,13 +133,17 @@ describe('GitService – extended operations', () => {
 
   // --- Branch management ---
 
+  // Note: FEIP-7324-7326 moved these to substrate proxies that use POSIX
+  // single-quote escaping (shq) instead of the legacy double-quote
+  // escape. Assertions updated accordingly.
+
   describe('deleteBranch (git)', () => {
     it('runs git branch -d', async () => {
       let cmd = '';
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.deleteBranch('old-branch');
-      assert.ok(cmd.includes('git branch -d "old-branch"'));
+      assert.ok(cmd.includes(`git branch -d 'old-branch'`));
     });
   });
 
@@ -159,7 +163,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.renameBranch('new-name');
-      assert.ok(cmd.includes('git branch -m "new-name"'));
+      assert.ok(cmd.includes(`git branch -m 'new-name'`));
     });
   });
 
@@ -169,7 +173,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.mergeBranch('feature-x');
-      assert.ok(cmd.includes('git merge "feature-x"'));
+      assert.ok(cmd.includes(`git merge 'feature-x'`));
     });
   });
 
@@ -383,7 +387,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.deleteTag('v1.0.0');
-      assert.ok(cmd.includes('git tag -d "v1.0.0"'));
+      assert.ok(cmd.includes(`git tag -d 'v1.0.0'`));
     });
   });
 
@@ -393,7 +397,7 @@ describe('GitService – extended operations', () => {
       mockExecCmd(c => { cmd = c; return {}; });
       const service = new GitService();
       await service.deleteRemoteTag('v1.0.0');
-      assert.ok(cmd.includes('git push origin --delete "refs/tags/v1.0.0"'));
+      assert.ok(cmd.includes(`git push origin --delete 'refs/tags/v1.0.0'`));
     });
   });
 
