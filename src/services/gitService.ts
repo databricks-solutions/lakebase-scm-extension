@@ -1,15 +1,28 @@
 import * as vscode from 'vscode';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 import { exec } from '../utils/exec';
-// Substrate covers a small, pairing-essential subset of git ops (clone +
-// origin-remote parsing). The remaining ~60 methods on this service are
-// VS Code SCM-flavored / generic git wrappers and stay inline. FEIP-7065.
+// Substrate covers clone + origin-remote parsing (FEIP-7065) AND, as of
+// FEIP-7323 P5a, the workflow-coordination inspection ops (list local /
+// remote branches, parent / merge-base resolution, status, migrations
+// listing). The remaining ~50 methods on this service are VS Code
+// SCM-flavored or generic git wrappers and stay inline pending later
+// P5 sub-tasks.
 import {
   formatOwnerRepo,
   parseOwnerRepo,
   cloneRepo as substrateCloneRepo,
   getGitHubUrl as substrateGetGitHubUrl,
   getOwnerRepo as substrateGetOwnerRepo,
+  listLocalBranches as substrateListLocalBranches,
+  listRemoteBranches as substrateListRemoteBranches,
+  hasRemoteBranch as substrateHasRemoteBranch,
+  resolveNearestParent as substrateResolveNearestParent,
+  getNearestParentName as substrateGetNearestParentName,
+  getMergeBase as substrateGetMergeBase,
+  hasUpstream as substrateHasUpstream,
+  getAheadBehind as substrateGetAheadBehind,
+  isDirty as substrateIsDirty,
+  listMigrationsOnBranch as substrateListMigrationsOnBranch,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 
 export interface PullRequestCheck {
@@ -143,71 +156,30 @@ export class GitService {
   }
   private cachedRepoRoot = '';
 
+  /**
+   * Build the candidate parent list passed to substrate ancestry ops.
+   * Order matters only for ties: substrate picks the candidate with the
+   * most recent merge-base timestamp, but if two candidates tie at
+   * 1-second precision the earlier one in the array wins.
+   */
+  private parentCandidates(): string[] {
+    const cfg = getConfig();
+    return Array.from(new Set(
+      [cfg.trunkBranch, 'main', 'master', cfg.stagingBranch, 'staging'].filter(Boolean) as string[],
+    ));
+  }
+
   async listLocalBranches(): Promise<GitBranchInfo[]> {
     const root = getWorkspaceRoot();
-    if (!root) {
-      return [];
-    }
-
-    const current = await this.getCurrentBranch();
-    const raw = await exec('git branch --format="%(refname:short)|%(upstream:short)|%(upstream:track)"', root);
-
-    if (!raw) {
-      return [];
-    }
-
-    return raw.split('\n').filter(Boolean).map(line => {
-      const [name, tracking, trackInfo] = line.split('|');
-      let ahead = 0;
-      let behind = 0;
-
-      if (trackInfo) {
-        const aheadMatch = trackInfo.match(/ahead (\d+)/);
-        const behindMatch = trackInfo.match(/behind (\d+)/);
-        if (aheadMatch) {ahead = parseInt(aheadMatch[1], 10);}
-        if (behindMatch) {behind = parseInt(behindMatch[1], 10);}
-      }
-
-      return {
-        name,
-        isCurrent: name === current,
-        isRemote: false,
-        tracking: tracking || undefined,
-        ahead,
-        behind,
-      };
-    });
+    if (!root) { return []; }
+    return substrateListLocalBranches({ cwd: root });
   }
 
   /** List remote branches (excluding those already checked out locally) */
   async listRemoteBranches(): Promise<GitBranchInfo[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
-
-    try {
-      const localBranches = await this.listLocalBranches();
-      const localNames = new Set(localBranches.map(b => b.name));
-
-      const raw = await exec('git branch -r --format="%(refname:short)"', root);
-      if (!raw) { return []; }
-
-      return raw.split('\n').filter(Boolean)
-        .filter(name => !name.includes('HEAD'))
-        .map(name => {
-          // Remote branch names are like "origin/feature-x"
-          const shortName = name.replace(/^origin\//, '');
-          return { name, shortName };
-        })
-        .filter(({ shortName }) => !localNames.has(shortName))
-        .map(({ name, shortName }) => ({
-          name: shortName,
-          isCurrent: false,
-          isRemote: true,
-          tracking: name,
-        }));
-    } catch {
-      return [];
-    }
+    return substrateListRemoteBranches({ cwd: root });
   }
 
   /** Get file contents at a given git ref (e.g. 'main', a commit sha) */
@@ -236,26 +208,11 @@ export class GitService {
   ): Promise<{ name: string; baseSha: string } | undefined> {
     const root = getWorkspaceRoot();
     if (!root) { return undefined; }
-    const cfg = getConfig();
-    const tipRef = tip && tip.length > 0 ? tip : 'HEAD';
-    let tipBranchName = '';
-    try { tipBranchName = (await exec('git rev-parse --abbrev-ref HEAD', root)).trim(); } catch { /* ignore */ }
-    if (tip && tip.length > 0) { tipBranchName = tip; }
-
-    const candidates = Array.from(new Set(
-      [cfg.trunkBranch, 'main', 'master', cfg.stagingBranch, 'staging'].filter(Boolean) as string[],
-    ));
-    let best: { name: string; baseSha: string; ts: number } | undefined;
-    for (const c of candidates) {
-      if (c === tipBranchName) { continue; }
-      try {
-        const baseSha = (await exec(`git merge-base "${tipRef}" "${c}"`, root)).trim();
-        if (!baseSha) { continue; }
-        const ts = parseInt((await exec(`git log -1 --format=%at "${baseSha}"`, root)).trim(), 10) || 0;
-        if (!best || ts > best.ts) { best = { name: c, baseSha, ts }; }
-      } catch { /* candidate not present – skip */ }
-    }
-    return best ? { name: best.name, baseSha: best.baseSha } : undefined;
+    return substrateResolveNearestParent({
+      cwd: root,
+      tip,
+      candidates: this.parentCandidates(),
+    });
   }
 
   /**
@@ -263,33 +220,29 @@ export class GitService {
    * empty string when no candidate is found.
    */
   async getNearestParentName(tip?: string): Promise<string> {
-    const parent = await this.resolveNearestParent(tip);
-    return parent?.name ?? '';
+    const root = getWorkspaceRoot();
+    if (!root) { return ''; }
+    return substrateGetNearestParentName({
+      cwd: root,
+      tip,
+      candidates: this.parentCandidates(),
+    });
   }
 
   /**
    * Get the merge-base commit between `tip` (default HEAD) and the nearest
    * parent across configured candidates (trunk, main, master, staging).
-   *
-   * Historical note: this used to hardcode `main`. After the 3-tier release
-   * methodology, features fork from staging and the diff base must follow –
-   * otherwise file-diffs against the base content show the wrong "before"
-   * version.
+   * Falls back to direct merge-base against main/master so legacy
+   * two-branch projects still get a useful diff base.
    */
   async getMergeBase(tip?: string): Promise<string> {
-    const parent = await this.resolveNearestParent(tip);
-    if (parent?.baseSha) { return parent.baseSha; }
-    // Last-ditch fallback: try main/master directly so legacy two-branch
-    // projects still get a useful diff base.
     const root = getWorkspaceRoot();
     if (!root) { return ''; }
-    for (const candidate of ['main', 'master']) {
-      try {
-        await exec(`git rev-parse --verify ${candidate}`, root);
-        return await exec(`git merge-base ${candidate} ${tip ?? 'HEAD'}`, root);
-      } catch { /* try next */ }
-    }
-    return '';
+    return substrateGetMergeBase({
+      cwd: root,
+      tip,
+      candidates: this.parentCandidates(),
+    });
   }
 
   async checkoutBranch(branchName: string, create: boolean = false, startPoint?: string): Promise<void> {
@@ -431,25 +384,13 @@ export class GitService {
   /** List migration filenames on a given branch (without checking it out) */
   async listMigrationsOnBranch(branchName: string, migrationPath: string, pattern?: RegExp): Promise<string[]> {
     const root = getWorkspaceRoot();
-    if (!root) {
-      return [];
-    }
-    const filePattern = pattern || /^V\d+.*\.sql$/i;
-    try {
-      const raw = await exec(
-        `git ls-tree --name-only "${branchName}" -- "${migrationPath}/"`,
-        root
-      );
-      if (!raw) {
-        return [];
-      }
-      return raw.split('\n')
-        .map(f => f.split('/').pop() || f)
-        .filter(f => filePattern.test(f))
-        .sort();
-    } catch {
-      return [];
-    }
+    if (!root) { return []; }
+    return substrateListMigrationsOnBranch({
+      cwd: root,
+      branch: branchName,
+      migrationPath,
+      pattern,
+    });
   }
 
   /** Get currently staged files */
@@ -565,30 +506,14 @@ export class GitService {
   async hasUpstream(): Promise<boolean> {
     const root = getWorkspaceRoot();
     if (!root) { return false; }
-    try {
-      await exec('git rev-parse --abbrev-ref @{u}', root);
-      return true;
-    } catch {
-      return false;
-    }
+    return substrateHasUpstream({ cwd: root });
   }
 
   /** Get ahead/behind counts relative to upstream */
   async getAheadBehind(): Promise<{ ahead: number; behind: number; upstream: string }> {
     const root = getWorkspaceRoot();
     if (!root) { return { ahead: 0, behind: 0, upstream: '' }; }
-    try {
-      const upstream = (await exec('git rev-parse --abbrev-ref @{u}', root)).trim();
-      const raw = await exec(`git rev-list --left-right --count HEAD...@{u}`, root);
-      const parts = raw.trim().split(/\s+/);
-      return {
-        ahead: parseInt(parts[0], 10) || 0,
-        behind: parseInt(parts[1], 10) || 0,
-        upstream,
-      };
-    } catch {
-      return { ahead: 0, behind: 0, upstream: '' };
-    }
+    return substrateGetAheadBehind({ cwd: root });
   }
 
   async push(): Promise<void> {
@@ -676,24 +601,14 @@ export class GitService {
   async hasRemoteBranch(branchName: string): Promise<boolean> {
     const root = getWorkspaceRoot();
     if (!root) { return false; }
-    try {
-      const out = await exec(`git ls-remote --heads origin "${branchName}"`, root);
-      return out.trim().length > 0;
-    } catch {
-      return false;
-    }
+    return substrateHasRemoteBranch({ cwd: root, branch: branchName });
   }
 
   /** True when the working tree has staged or unstaged changes. */
   async isDirty(): Promise<boolean> {
     const root = getWorkspaceRoot();
     if (!root) { return false; }
-    try {
-      const out = await exec('git status --porcelain', root);
-      return out.trim().length > 0;
-    } catch {
-      return false;
-    }
+    return substrateIsDirty({ cwd: root });
   }
 
   async renameBranch(newName: string): Promise<void> {

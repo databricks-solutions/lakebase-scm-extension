@@ -44,12 +44,14 @@ describe('GitService', () => {
 
   describe('listLocalBranches', () => {
     it('parses branch output with tracking info', async () => {
-      // listLocalBranches calls getCurrentBranch first, then git branch --format
-      let callCount = 0;
+      // Order-agnostic mock: rev-parse returns the current branch,
+      // anything else returns the formatted branch list. The previous
+      // version was brittle to call ORDER (extension changed in
+      // FEIP-7323 P5a from rev-parse-first to branch-format-first when
+      // the inspection ops moved to substrate).
       cpModule.exec = (cmd: string, _opts: any, cb: Function) => {
         if (typeof _opts === 'function') { cb = _opts; }
-        callCount++;
-        if (cmd.includes('rev-parse') || callCount === 1) {
+        if (cmd.includes('rev-parse')) {
           cb(null, 'main', '');
         } else {
           // --format="%(refname:short)|%(upstream:short)|%(upstream:track)"
