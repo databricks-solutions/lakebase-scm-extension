@@ -620,7 +620,9 @@ describe('GitService – fetch, stash, sync', () => {
       };
       const service = new GitService();
       await service.commit('fix: handle "edge case"');
-      assert.ok(executedCmd.includes('\\"edge case\\"'));
+      // Substrate (FEIP-7324) uses POSIX single-quote escaping, so inner
+      // double quotes are preserved literally inside single-quoted args.
+      assert.ok(executedCmd.includes(`'fix: handle "edge case"'`));
     });
   });
 
