@@ -5,7 +5,7 @@ Status: DRAFT - foundation shipped; test surgery + integration runs remain.
 
 ## Why this PR exists
 
-Before this PR, every integration scenario merged its feature PR directly into `main`. `merge.yml` therefore only ever fired on the `main` push, and the substrate-routed `lakebase-cut-backup` + `lakebase-migrate apply` against the prod Lakebase branch was technically exercised on every scenario - but with no intermediate `staging` tier, the *interesting* path (`staging → main` promotion under realistic accumulated drift) was never tested.
+Before this PR, every integration scenario merged its feature PR directly into `main`. `merge.yml` therefore only ever fired on the `main` push, and the substrate-routed `lakebase-cut-backup` + `lakebase-schema-migrate apply` against the prod Lakebase branch was technically exercised on every scenario - but with no intermediate `staging` tier, the *interesting* path (`staging → main` promotion under realistic accumulated drift) was never tested.
 
 This PR introduces the two-tier flow (feature → staging → main) as the integration suite's default. In the process it also commits to the design described in the substrate's [`lakebase-release-workflows`](../../lakebase-app-dev-kit/skills/lakebase-release-workflows/SKILL.md) skill: **a release is a from→to promotion between two adjacent long-running branches**. Two-tier is the default; N-tier (e.g. `dev → staging → prod`) is an explicit per-project option and the same primitive serves every adjacent pair.
 

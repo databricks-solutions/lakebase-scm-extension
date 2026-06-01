@@ -34,8 +34,8 @@ import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
 import { SchemaMigrationService } from '../../../src/services/schemaMigrationService';
 import {
-  applyMigrations as substrateApplyMigrations,
-  migrationStatus as substrateMigrationStatus,
+  applySchemaMigrations as substrateApplyMigrations,
+  schemaMigrationStatus as substrateMigrationStatus,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 
 // ── Context shared across all scenarios ──────────────────────────────
@@ -203,7 +203,7 @@ export function shell(ctx: ScenarioContext, cmd: string, timeout = 30000): strin
  *
  * After the hook lands, we layer the one test-only piece of config
  * the hook can't know about: suppress Spring Boot's auto-Flyway via
- * application-local.properties (the substrate's applyMigrations step
+ * application-local.properties (the substrate's applySchemaMigrations step
  * runs Flyway before `mvnw test`; Spring Boot's would race with it
  * and double-apply). Only applied when pom.xml exists (Java/Spring). */
 export async function createFeatureBranch(ctx: ScenarioContext, branchName: string): Promise<void> {
@@ -348,7 +348,7 @@ export function writeMigration(ctx: ScenarioContext, filename: string, sql: stri
 
 /** Pull LAKEBASE_BRANCH_ID out of the project's .env (written by the
  *  post-checkout hook). Throws with a clear message when missing - the
- *  substrate's applyMigrations needs an explicit branch. */
+ *  substrate's applySchemaMigrations needs an explicit branch. */
 function readBranchFromEnv(projectDir: string): string {
   const envPath = path.join(projectDir, '.env');
   if (!fs.existsSync(envPath)) {
@@ -366,11 +366,11 @@ function readBranchFromEnv(projectDir: string): string {
  * branch database.
  *
  * Flow (FEIP-7091 / FEIP-7098, Option C):
- *  1. Substrate `applyMigrations` runs Flyway against the branch.
+ *  1. Substrate `applySchemaMigrations` runs Flyway against the branch.
  *  2. Spring Boot's auto-flyway is disabled in application-local.properties,
  *     so mvnw test does NOT re-migrate. Hibernate validates against the
  *     already-migrated schema; the given/when/then tests run.
- *  3. Substrate `migrationStatus` verifies the head matches what was
+ *  3. Substrate `schemaMigrationStatus` verifies the head matches what was
  *     applied (single source of truth for what shipped to the branch).
  *
  * Returns the Maven output. Throws with last 80 lines if any phase fails.
@@ -422,10 +422,10 @@ export async function runMavenTests(ctx: ScenarioContext, timeoutMs = 300000): P
     });
     if (!status.current) {
       throw new Error(
-        `substrate.migrationStatus reports no current head after apply; pending=${status.pending.length}`
+        `substrate.schemaMigrationStatus reports no current head after apply; pending=${status.pending.length}`
       );
     }
-    console.log(`    [substrate] migrationStatus: current=${status.current}, pending=${status.pending.length}.`);
+    console.log(`    [substrate] schemaMigrationStatus: current=${status.current}, pending=${status.pending.length}.`);
   } finally {
     if (priorHost === undefined) delete process.env.DATABRICKS_HOST;
     else process.env.DATABRICKS_HOST = priorHost;

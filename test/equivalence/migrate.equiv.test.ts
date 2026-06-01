@@ -1,6 +1,6 @@
 // Equivalence tests: SchemaMigrationService substrate proxies vs
-// substrate.applyMigrations / rollbackMigration / migrationStatus /
-// listMigrations.
+// substrate.applySchemaMigrations / rollbackSchemaMigration / schemaMigrationStatus /
+// listSchemaMigrations.
 //
 // Each test stubs the corresponding substrate function, calls the
 // matching extension proxy, and asserts:
@@ -60,7 +60,7 @@ describe("equivalence: migrate substrate proxies", () => {
       alreadyAtLatest: false,
       tool: "alembic" as const,
     };
-    const tracker = stubSubstrate("applyMigrations", fixture);
+    const tracker = stubSubstrate("applySchemaMigrations", fixture);
 
     const result = await migration.applyMigrationsViaSubstrate();
 
@@ -78,7 +78,7 @@ describe("equivalence: migrate substrate proxies", () => {
       rolledBack: [{ version: "a1b2c3d4", description: "init users" }],
       tool: "alembic" as const,
     };
-    const tracker = stubSubstrate("rollbackMigration", fixture);
+    const tracker = stubSubstrate("rollbackSchemaMigration", fixture);
 
     const result = await migration.rollbackMigrationViaSubstrate("-1");
 
@@ -98,7 +98,7 @@ describe("equivalence: migrate substrate proxies", () => {
       pending: [],
       tool: "alembic" as const,
     };
-    const tracker = stubSubstrate("migrationStatus", fixture);
+    const tracker = stubSubstrate("schemaMigrationStatus", fixture);
 
     const result = await migration.migrationStatusViaSubstrate();
 
@@ -121,9 +121,9 @@ describe("equivalence: migrate substrate proxies", () => {
         tool: "alembic" as const,
       },
     ];
-    const tracker = stubSubstrate("listMigrations", fixture);
+    const tracker = stubSubstrate("listSchemaMigrations", fixture);
 
-    // Harness stubs are always async; substrate.listMigrations is sync.
+    // Harness stubs are always async; substrate.listSchemaMigrations is sync.
     // The proxy returns whatever the substrate returns, so the stubbed
     // path yields a Promise. Await covers both cases.
     const result = await (migration.listMigrationsViaSubstrate() as unknown as Promise<typeof fixture>);

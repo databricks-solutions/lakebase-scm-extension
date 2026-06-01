@@ -4,18 +4,18 @@ import * as path from 'path';
 import { getConfig, getEnvConfig, getWorkspaceRoot } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 import {
-  applyMigrations as substrateApplyMigrations,
-  listMigrations as substrateListMigrations,
-  migrationStatus as substrateMigrationStatus,
-  rollbackMigration as substrateRollbackMigration,
-  type ApplyMigrationsResult,
-  type MigrationFile as SubstrateMigrationFile,
-  type MigrationStatusResult,
-  type RollbackMigrationResult,
+  applySchemaMigrations as substrateApplyMigrations,
+  listSchemaMigrations as substrateListMigrations,
+  schemaMigrationStatus as substrateMigrationStatus,
+  rollbackSchemaMigration as substrateRollbackMigration,
+  type ApplySchemaMigrationsResult,
+  type SchemaMigrationFile as SubstrateMigrationFile,
+  type SchemaMigrationStatusResult,
+  type RollbackSchemaMigrationResult,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { LakebaseService } from './lakebaseService';
 
-export interface MigrationFile {
+export interface SchemaMigrationFile {
   version: string;
   description: string;
   filename: string;
@@ -26,7 +26,7 @@ export interface MigrationSchemaChange {
   type: 'created' | 'modified' | 'removed';
   tableName: string;
   columns: Array<{ name: string; dataType: string }>;
-  migration?: MigrationFile;
+  migration?: SchemaMigrationFile;
 }
 
 export class SchemaMigrationService {
@@ -77,7 +77,7 @@ export class SchemaMigrationService {
 
   /** Substrate proxy: enumerate pending + applied migrations against the
    *  current branch. No DB connection required; pure file scan. Returns
-   *  the substrate's MigrationFile shape (includes `tool` + `type`,
+   *  the substrate's SchemaMigrationFile shape (includes `tool` + `type`,
    *  omits `fullPath`). The legacy listMigrations() above stays for
    *  call sites that need fullPath. */
   listMigrationsViaSubstrate(): SubstrateMigrationFile[] {
@@ -92,7 +92,7 @@ export class SchemaMigrationService {
    *  branch. Auto-detects language (Java/Kotlin → Flyway, Python →
    *  Alembic, Node.js → Knex stub). Async so that synchronous context
    *  resolution errors surface as Promise rejections, not sync throws. */
-  async applyMigrationsViaSubstrate(): Promise<ApplyMigrationsResult> {
+  async applyMigrationsViaSubstrate(): Promise<ApplySchemaMigrationsResult> {
     const ctx = this.resolveSubstrateContext();
     return this.withEffectiveHost(() => substrateApplyMigrations(ctx));
   }
@@ -100,18 +100,18 @@ export class SchemaMigrationService {
   /** Substrate proxy: roll back to `target`. Target syntax is
    *  tool-specific (Alembic: revision id or "-1"; Flyway Community:
    *  throws — no undo support). */
-  async rollbackMigrationViaSubstrate(target: string): Promise<RollbackMigrationResult> {
+  async rollbackMigrationViaSubstrate(target: string): Promise<RollbackSchemaMigrationResult> {
     const ctx = this.resolveSubstrateContext();
     return this.withEffectiveHost(() => substrateRollbackMigration({ ...ctx, target }));
   }
 
   /** Substrate proxy: report current head + pending list. Read-only. */
-  async migrationStatusViaSubstrate(): Promise<MigrationStatusResult> {
+  async migrationStatusViaSubstrate(): Promise<SchemaMigrationStatusResult> {
     const ctx = this.resolveSubstrateContext();
     return this.withEffectiveHost(() => substrateMigrationStatus(ctx));
   }
 
-  listMigrations(): MigrationFile[] {
+  listMigrations(): SchemaMigrationFile[] {
     const root = getWorkspaceRoot();
     if (!root) {
       return [];
@@ -197,7 +197,7 @@ export class SchemaMigrationService {
    * Parse migration files to extract schema changes.
    * Supports SQL (Flyway/Knex), Python (Alembic op.create_table/drop_table/add_column).
    */
-  parseMigrationSchemaChanges(migrations: MigrationFile[]): MigrationSchemaChange[] {
+  parseMigrationSchemaChanges(migrations: SchemaMigrationFile[]): MigrationSchemaChange[] {
     const changes: MigrationSchemaChange[] = [];
     for (const mig of migrations) {
       if (!fs.existsSync(mig.fullPath)) { continue; }
