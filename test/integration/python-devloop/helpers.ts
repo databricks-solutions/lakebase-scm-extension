@@ -21,7 +21,7 @@ import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
-import { applyMigrations as substrateApplyMigrations } from '@databricks-solutions/lakebase-app-dev-kit';
+import { applySchemaMigrations as substrateApplyMigrations } from '@databricks-solutions/lakebase-app-dev-kit';
 
 // ── Context shared across all scenarios ──────────────────────────────
 
@@ -235,7 +235,7 @@ def downgrade() -> None:
 
 /** Parse LAKEBASE_BRANCH_ID out of the project's .env (written by the
  *  post-checkout hook). Throws with a clear message when missing - the
- *  substrate's applyMigrations needs an explicit branch. */
+ *  substrate's applySchemaMigrations needs an explicit branch. */
 function readBranchFromEnv(projectDir: string): string {
   const envPath = path.join(projectDir, '.env');
   if (!fs.existsSync(envPath)) {
@@ -252,7 +252,7 @@ function readBranchFromEnv(projectDir: string): string {
  * Apply Alembic migrations via the substrate (FEIP-7091), then run
  * pytest against the live Lakebase branch database. Replaces the prior
  * `uv run alembic upgrade head` shell-out so the e2e test exercises
- * the substrate's `applyMigrations` end-to-end.
+ * the substrate's `applySchemaMigrations` end-to-end.
  *
  * pytest stays as a separate shell because it isn't a migration concern
  * and needs the .env-derived DATABASE_URL the existing `source .env`
