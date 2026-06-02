@@ -1,8 +1,12 @@
+// Preload MUST be the first import: it sets substrate kit timeout env
+// vars before any service module pulls in the substrate (which freezes
+// timeout values at module-load time).
+import './preload-env';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from './services/gitService';
-import { LakebaseService, isAuthStorageCacheError } from './services/lakebaseService';
+import { LakebaseService, isAuthStorageCacheError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
@@ -74,6 +78,43 @@ async function handleAuthError(lakebaseService: LakebaseService, err: any): Prom
             'Run `export DATABRICKS_AUTH_STORAGE=plaintext` in the shell that launches VS Code, then restart.',
         );
       }
+    }
+    return true;
+  }
+
+  // Special-case: the OAuth refresh token in the keyring / config cache
+  // is expired or invalid (CLI emits "refresh token is invalid" or
+  // "access token could not be retrieved"). Generic "Login" works but
+  // requires the user to pick the right profile by hand. Surface a
+  // one-click recovery that pre-fills the right --profile by matching
+  // the project's expected host against ~/.databrickscfg entries, runs
+  // the login in a real terminal, and on success invalidates the cache
+  // and signals the caller to retry.
+  if (isRefreshTokenInvalidError(err)) {
+    const authStatus = await lakebaseService.checkAuth().catch(() => null);
+    const expectedHost = authStatus?.expectedHost ?? '';
+    const profileName = expectedHost
+      ? await lakebaseService.resolveProfileForHost(expectedHost).catch(() => null)
+      : null;
+    const detail = profileName
+      ? `Profile "${profileName}" for ${expectedHost}.`
+      : expectedHost
+        ? `Project expects ${expectedHost}.`
+        : '';
+    const choice = await vscode.window.showErrorMessage(
+      `Databricks CLI refresh token is invalid. Re-authenticate to continue. ${detail}`.trim(),
+      'Re-authenticate',
+    );
+    if (choice === 'Re-authenticate') {
+      const term = vscode.window.createTerminal({ name: 'Databricks Re-auth' });
+      term.show(true);
+      const cmd = profileName
+        ? `databricks auth login --profile ${profileName}`
+        : expectedHost
+          ? `databricks auth login --host ${expectedHost}`
+          : 'databricks auth login';
+      term.sendText(cmd, false);
+      lakebaseService.invalidateProfileCache();
     }
     return true;
   }
@@ -270,44 +311,71 @@ async function restartHostApp(): Promise<void> {
 
 /**
  * One-shot post-install handler that runs on every activation but
- * fires the user-visible prompt only when this is a new install or an
- * upgrade vs. the persisted globalState. Two responsibilities,
- * matching the user's contract:
+ * fires the user-visible prompt only when the extension on disk has
+ * actually changed since the last activation we recorded.
  *
- *   1. Uninstall prior version directories on disk (silent, no prompt).
+ * Signal: mtime + size of `<extensionPath>/package.json`. mtime alone
+ * would be enough on its own, but pairing it with size gives a cheap
+ * second-level sanity check against filesystems with low-resolution
+ * mtime (some Docker bind-mounts, FAT, etc.) where a same-second
+ * rewrite could land on an identical mtime. Either field differing
+ * means the install dir was rewritten, which is what we care about.
+ *
+ * Why not version string: a rebuilt same-version vsix is a real
+ * install event the user needs to know about (their bits changed)
+ * but version comparison would silently swallow it. mtime catches it.
+ *
+ * Two responsibilities:
+ *   1. Uninstall prior-version dirs on disk (silent, no prompt).
  *   2. Tell the user the host editor needs a restart, with a single
  *      "Restart Cursor" action that quits + relaunches automatically.
- *
- * VS Code's marketplace-managed update flow does both of these for
- * free; manual `--install-extension` (vsix sideloading) does neither,
- * which is what has been leaving users on stale code despite a
- * "successfully installed" message.
  */
 async function handlePostInstall(context: vscode.ExtensionContext): Promise<void> {
   try {
     const currentVersion =
       (context.extension.packageJSON as { version?: string }).version || 'unknown';
-    const lastKey = 'lakebaseSync.lastActivatedVersion';
-    const lastVersion = context.globalState.get<string>(lastKey);
-    if (lastVersion === currentVersion) { return; }
+
+    // Install-event fingerprint: mtime + size of package.json inside the
+    // current extension dir. Either field changing means the dir was
+    // rewritten since our last activation.
+    let stamp = '';
+    try {
+      const st = fs.statSync(path.join(context.extensionPath, 'package.json'));
+      stamp = `${st.mtimeMs}:${st.size}`;
+    } catch {
+      // package.json missing is recoverable; fall back to extensionPath
+      // mtime so we still get a stamp from somewhere.
+      try {
+        const st = fs.statSync(context.extensionPath);
+        stamp = `${st.mtimeMs}:0`;
+      } catch {
+        stamp = '';
+      }
+    }
+    if (!stamp) { return; } // nothing to compare; bail rather than spam
+
+    const stampKey = 'lakebaseSync.lastInstallStamp';
+    const versionKey = 'lakebaseSync.lastActivatedVersion';
+    const lastStamp = context.globalState.get<string>(stampKey);
+    const lastVersion = context.globalState.get<string>(versionKey);
+    if (lastStamp === stamp) { return; }
 
     // 1. Auto-cleanup.
     const removed = await autoRemoveOlderInstalls(context);
 
     // Persist BEFORE prompting so dismissing the prompt doesn't
     // re-trigger on the next reload before the user can decide.
-    await context.globalState.update(lastKey, currentVersion);
+    await context.globalState.update(stampKey, stamp);
+    await context.globalState.update(versionKey, currentVersion);
 
-    // 2. Restart prompt. Only show when there's an actual update event
-    // (a prior version persisted) OR we removed stale dirs (proves an
-    // in-place reinstall happened); first install on a fresh Cursor
-    // doesn't need the user to immediately restart.
-    const isUpdate = !!lastVersion;
-    if (!isUpdate && removed.length === 0) { return; }
-
-    const verb = isUpdate
+    // 2. Restart prompt. Fires whenever the install fingerprint
+    // changed, including the rebuilt-same-version case.
+    const isVersionChange = !!lastVersion && lastVersion !== currentVersion;
+    const verb = isVersionChange
       ? `updated from ${lastVersion} to ${currentVersion}`
-      : `installed (${currentVersion})`;
+      : lastVersion
+        ? `reinstalled (${currentVersion}, new build)`
+        : `installed (${currentVersion})`;
     const cleanupNote = removed.length > 0
       ? ` Removed ${removed.length} stale install ${removed.length === 1 ? 'directory' : 'directories'}: ${removed.join(', ')}.`
       : '';
@@ -325,12 +393,63 @@ async function handlePostInstall(context: vscode.ExtensionContext): Promise<void
   }
 }
 
+/**
+ * Watch for a newer copy of THIS extension being installed while the
+ * current (older) version is still the running activation. Without
+ * this, the only signal the user gets that they need to reload is
+ * Cursor's CLI output, which most users miss. `vscode.extensions.onDidChange`
+ * fires on install / uninstall / enable / disable; we filter to "a
+ * version of ME with a higher semver showed up on disk" and surface a
+ * one-click "Reload Window" prompt so the new code activates.
+ *
+ * Note: this can only ever help on the install AFTER this code ships
+ * (e.g. 0.5.8 → 0.5.9). The 0.5.7 → 0.5.8 transition has no choice
+ * but to rely on the user knowing to reload, because 0.5.7 does not
+ * carry this listener.
+ */
+function watchForOwnInstall(context: vscode.ExtensionContext): void {
+  const myId = context.extension.id;
+  const myVersion = (context.extension.packageJSON as { version?: string }).version || '0.0.0';
+  const cmp = (a: string, b: string): number => {
+    const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) { return (pa[i] || 0) - (pb[i] || 0); }
+    }
+    return 0;
+  };
+  let prompted = false;
+  const sub = vscode.extensions.onDidChange(() => {
+    if (prompted) { return; }
+    const seen = vscode.extensions.getExtension(myId);
+    const seenVersion = (seen?.packageJSON as { version?: string } | undefined)?.version;
+    if (!seenVersion) { return; }
+    if (cmp(seenVersion, myVersion) <= 0) { return; }
+    prompted = true;
+    void vscode.window.showInformationMessage(
+      `Lakebase SCM ${seenVersion} was just installed. The running session is still on ${myVersion}; reload the window so the new code activates.`,
+      { modal: false },
+      'Reload Window',
+    ).then((choice) => {
+      if (choice === 'Reload Window') {
+        void vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    });
+  });
+  context.subscriptions.push(sub);
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   // Fire-and-forget post-install: auto-clean stale older install dirs
   // on disk (silent), then prompt the user to restart the host editor
   // (Cursor / VS Code) when this is an upgrade or a stale-clean event.
   // Failures inside the handler are swallowed and logged.
   void handlePostInstall(context);
+
+  // Detect future in-place upgrades while this session is still active,
+  // so the user gets a "reload window" prompt without needing to know
+  // to do it themselves.
+  watchForOwnInstall(context);
 
   const config = getConfig();
 
@@ -344,6 +463,24 @@ export async function activate(context: vscode.ExtensionContext) {
   gitService = new GitService();
   githubService = new GitHubService();
   lakebaseService = new LakebaseService();
+
+  // Persist DATABRICKS_AUTH_STORAGE to .env the first time auto-retry
+  // discovers that plaintext works. Without this, the fallback is
+  // runtime-only and the next extension reload pays the same retry cost
+  // (and surfaces the same scary error to the user on first call).
+  onAuthStorageRuntimeChange((value) => {
+    try {
+      const root = getWorkspaceRoot();
+      if (!root) { return; }
+      const envPath = path.join(root, '.env');
+      const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+      if (new RegExp('^DATABRICKS_AUTH_STORAGE=', 'm').test(existing)) { return; }
+      fs.writeFileSync(envPath, upsertEnvKeys(existing, { DATABRICKS_AUTH_STORAGE: value }));
+      vscode.window.showInformationMessage(
+        `Lakebase SCM: persisted DATABRICKS_AUTH_STORAGE=${value} to .env so the auth fallback survives reload.`,
+      );
+    } catch { /* best-effort persistence; runtime override still in place */ }
+  });
   migrationService = new SchemaMigrationService(lakebaseService);
   schemaDiffService = new SchemaDiffService(lakebaseService);
   schemaDiffProvider = new SchemaDiffProvider(schemaDiffService, gitService, migrationService);
