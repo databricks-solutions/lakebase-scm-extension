@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SchemaScmProvider } from './schemaScmProvider';
 import { GitService, PullRequestInfo, PullRequestCheck, PullRequestReview, PullRequestFile } from '../services/gitService';
 import { GitHubService } from '../services/githubService';
+import { STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
 
 type PrItemType = 'status' | 'checks' | 'check' | 'files' | 'file' | 'reviews' | 'review' | 'ciBranch';
 
@@ -235,12 +236,9 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
         const dir = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
         const item = new PrTreeItem(fileName, vscode.TreeItemCollapsibleState.None, 'file');
 
-        const statusIcons: Record<string, string> = { added: 'diff-added', modified: 'diff-modified', deleted: 'diff-removed', renamed: 'diff-renamed' };
-        const statusColors: Record<string, string> = { added: 'charts.green', modified: 'charts.yellow', deleted: 'charts.red', renamed: 'charts.blue' };
-
         item.iconPath = new vscode.ThemeIcon(
-          statusIcons[file.status] || 'file',
-          new vscode.ThemeColor(statusColors[file.status] || 'foreground')
+          STATUS_ICONS[file.status] || 'file',
+          new vscode.ThemeColor(STATUS_COLORS[file.status] || 'foreground')
         );
         item.description = dir;
         item.tooltip = `${file.status}: ${file.path}\n+${file.additions} −${file.deletions}`;

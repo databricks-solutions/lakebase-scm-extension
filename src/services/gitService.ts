@@ -287,6 +287,22 @@ export class GitService {
     });
   }
 
+  /**
+   * Merge-base against a SPECIFIC candidate (not the auto-discovered
+   * nearest). Used when the caller has its own candidate list to rank,
+   * e.g. PR base-branch picker enumerating trunk + master + staging +
+   * baseBranch with per-candidate merge-base timestamps.
+   */
+  async getMergeBaseFor(candidate: string, tip?: string): Promise<string> {
+    const root = getWorkspaceRoot();
+    if (!root) { return ''; }
+    return substrateGetMergeBase({
+      cwd: root,
+      tip,
+      candidates: [candidate],
+    });
+  }
+
   async checkoutBranch(branchName: string, create: boolean = false, startPoint?: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }

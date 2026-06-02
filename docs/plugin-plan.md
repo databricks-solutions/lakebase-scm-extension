@@ -303,7 +303,7 @@ Available from Command Palette and Project view title bar.
 50. **Branch comparison** – Any-to-any Lakebase branch diff
 51. **Cursor AI context** – Schema-aware code generation
 52. **Graph webview** – Visual commit graph with branch lines, Lakebase pairing annotations, and clickable commits ✅ (v0.3.7)
-53. **Adopt STATUS_ICONS/STATUS_COLORS from theme.ts** – Replace all inline icon/color object literals in schemaScmProvider.ts (3 maps), branchTreeProvider.ts (3 maps + inline assignments), and pullRequestTree.ts (1 map) with imports from `src/utils/theme.ts`. The constants exist but are not yet consumed by callers.
+53. **Adopt STATUS_ICONS/STATUS_COLORS from theme.ts** ✅ (v0.5.8, partial) – Replaced the 3 named maps (2 in schemaScmProvider, 1 in pullRequestTree) with imports from `src/utils/theme.ts`. Remaining: branchTreeProvider.ts has scattered inline `new vscode.ThemeIcon('diff-added', new vscode.ThemeColor('charts.green'))` assignments in conditional blocks; refactoring those requires restructuring the conditionals to drive off a `status` variable. Tracked as a smaller follow-up.
 54. **Evaluate pg_dump vs migration SQL parsing consolidation** – ✅ Partially resolved: `compareBranchSchemas` now uses `queryBranchSchema()` (information_schema query) as primary path, with pg_dump as fallback. The two parsers (`parsePgDumpTables` and `FlywayService.parseSql`) still exist separately but pg_dump is no longer the primary code path. Remaining: remove `parsePgDumpTables` if pg_dump fallback is never triggered, or keep as defensive fallback.
 
 ---
@@ -389,14 +389,7 @@ lakebase-scm-extension/
 
 ### Deliverables
 55. **Wire DiffService into callers** – extension.ts `reviewBranch` and graphWebview.ts `reviewCommit`/`buildComparisonTuples` currently build tuples inline. Rewire to call `DiffService.reviewBranch()`, `DiffService.reviewCommitTwoPane()`, and `DiffService.compareRefs()`.
-56. **Add menu placements for orphaned commands** – 6 commands are registered but only accessible via Command Palette:
-    - `lakebaseSync.refreshCredentials` – Refresh Database Credentials
-    - `lakebaseSync.runMigrate` – Run Flyway Migrate
-    - `lakebaseSync.showMigrationHistory` – Show Migration History
-    - `lakebaseSync.showBranchStatus` – Show Branch Status
-    - `lakebaseSync.createBranch` – Create Lakebase Branch (db-only)
-    - `lakebaseSync.showCachedBranchDiff` – Branch Diff (Cached)
-    Add these to appropriate menus (Lakebase submenu, Project view context, or view title bars).
+56. **Add menu placements for orphaned commands** ✅ (v0.5.8) – All 6 commands added to the `lakebaseSync.lakebaseMenu` submenu under appropriate groups (`1_lakebase`, `3_migrations`). They surface via the Lakebase submenu in the Project view + SCM context. In the same PR, all 98 commands got `category: "Lakebase SCM"` so the Command Palette (Cmd+Shift+P) consistently surfaces them under that prefix.
 57. **Eliminate remaining execSync in GraphService** – ✅ Complete: `fetchAvatars()` uses `gitService.getCurrentBranch()` + `gitService.ghApi()`. `getCommits()` uses `gitService.getLogRaw()` + `gitService.getLogShortstat()`. No `execSync` remains.
 
 ---
