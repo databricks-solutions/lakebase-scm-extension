@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.5.8 (2026-06-01)
+
+The headline theme is **substrate v0.3.0-alpha.34 + tidy-up**. Picks up the FEIP-7210 schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate.
+
+### Added
+
+- **Consistent Command Palette prefix.** All 98 registered commands now carry `category: "Lakebase SCM"` in `package.json#contributes.commands`. Cmd+Shift+P typing "Lakebase" surfaces every extension command under that single prefix (vs. 96 of 98 previously rendering with no category at all).
+- **Menu placements for 6 palette-only commands.** `refreshCredentials`, `runMigrate`, `showMigrationHistory`, `showBranchStatus`, `createBranch` (db-only), `showCachedBranchDiff` now appear in the `lakebaseSync.lakebaseMenu` submenu, grouped as `1_lakebase` (status / db-branch / creds / diff) + `3_migrations` (migrate + history). Closes plugin-plan Phase 6 #56.
+- **`gitService.getMergeBaseFor(candidate, tip?)`.** Per-candidate merge-base routed through the substrate (`@databricks-solutions/lakebase-app-dev-kit#getMergeBase` with explicit `candidates: [candidate]`). Used by the PR base-branch picker to rank parent candidates by merge-base recency.
+
+### Changed
+
+- **PR base-branch picker uses substrate-routed merge-base.** `lakebaseSync.createPullRequest` previously shelled out to `git merge-base HEAD "<candidate>"` inline via `execUtil`. Now calls `gitService.getMergeBaseFor(c)` which delegates to the substrate. Removes one of the few remaining inline `exec()` calls in `src/extension.ts`. The picker UX (ranked alternatives + nearest-parent default) is unchanged.
+- **`STATUS_ICONS` / `STATUS_COLORS` from `theme.ts` adopted by 2 providers.** `schemaScmProvider.ts` (2 maps) and `pullRequestTree.ts` (1 map) now import from `src/utils/theme.ts` instead of redefining inline `Record<string, string>` literals. Closes plugin-plan Phase 5 #53 in two of three identified providers. `branchTreeProvider.ts` has scattered inline `new vscode.ThemeIcon(...)` assignments in conditional blocks; refactoring those needs more than a literal swap, so they're tracked as a smaller follow-up.
+
+### Substrate
+
+- **Kit pin: `v0.3.0-alpha.33` → `v0.3.0-alpha.34`.** Brings in (kit #91, #95, #96): the schema-migration adapter pattern (Alembic / Knex adapters, Knex runner promotion from stub to full implementation), the `lakebase-migrate` → `lakebase-schema-migrate` bin rename, and the `Schema`-prefix audit across every public kit identifier (`MigrationAdapter` → `SchemaMigrationAdapter`, `applyMigrations` → `applySchemaMigrations`, `MigrationFile` → `SchemaMigrationFile`, etc.).
+- **Extension absorbed the renames** in `src/services/schemaMigrationService.ts` (imports + return-type aliases), `test/integration/{ecommerce,python-devloop}/helpers.ts`, `test/equivalence/migrate.equiv.test.ts` (`stubSubstrate` keys), and `docs/two-tier-e2e-promotion-plan.md`. Extension-internal class methods (e.g. `SchemaMigrationService.listMigrations()`) stay unprefixed: the class name carries `Schema` and the methods read fine in context.
+- **Also picks up kit #92 / #93 / #94 / #97** from the alpha.34 release: `run-all-live-tests.sh` config collapse (no more redundant `--database` / `--feature-ttl-days` / `--github-owner` flags; everything in `.env.local.test.config`), renamed test config files + a new `.env.kit.example` for kit users, and the `waitForBranchAuthReady()` primitive that handles the transient "External authorization failed" window on freshly-provisioned Lakebase projects for non-retrying Postgres drivers (Knex).
+
+### Known follow-ups (not in this release)
+
+- **Scaffolded-project README about `core.hooksPath` pinning** (parity-followup #7). Identified during this PR's audit. Doing it requires adding `templates/project/common/README.md` to the kit (doesn't exist today) + a kit alpha.35 + another extension pin bump. Tracked.
+- **`branchTreeProvider` inline-icon refactor.** Inline `new vscode.ThemeIcon('diff-added', new vscode.ThemeColor('charts.green'))` in conditional blocks. Needs restructuring to drive off a `status` variable. Tracked.
+- **`lakebaseSync` → `lakebaseScm` prefix rename** (457 occurrences across 11 files). Own release cycle; breaking.
+
+## 0.5.7 (2026-05-31)
+
+The headline theme is **VS Code command for the long-running-tier methodology + parent-branch / branch-identifier hardening**. The kit ships the "fork from staging" PSA convention but a real VS Code user had no way to cut a `staging` (or `uat` / `perf`) tier without dropping to a terminal. Closes that UX gap. Plus a long tail of bugfixes around parent-branch resolution, branch identifier flows, and the table-diff webview.
+
+### Added
+
+- **`lakebaseSync.cutLongRunningTier` command** (FEIP-7097). Closes the biggest documented UX gap in the supported branching methodology. Quick-picks tier name (`staging` / `uat` / `perf` / custom) and fork-from branch (defaults to current HEAD or `main` for the first tier). One confirmation dialog explains "this creates a Lakebase branch + matching git branch that release PRs target; it's not auto-created". Calls substrate `createLongRunningBranch` with the inputs. Surfaces in the Project view title bar.
+- **`isMigrationMetadataTable` helper** (PR #23). Consolidates `flyway_schema_history` / `alembic_version` / `knex_migrations` exclusion behind a single predicate consumed by every table-diff path. Previously each call site had its own filter list.
+- **Auth helper hardening** (FEIP-7112, PR #19). Silent-fallback removal across `lakebaseService` auth paths. Typecheck cleanup pass. CI gate ensures typecheck stays green on every PR.
+
+### Fixed
+
+- **`adm-zip` activation crash** (PR #25). The `adm-zip` package was bundled into the extension's webpack output but its native runtime resources weren't included; activation crashed with a `Cannot find module` error in the published vsix. Externalize `adm-zip` from the webpack bundle and ship it under `node_modules/` so the runtime resolution succeeds.
+- **README install instructions** (PR #24). Made the install commands version-agnostic so they don't drift every release.
+- **Parent-branch resolution + branch identifier flows + table diff webview** (PR #26). Catch-all fix bundle for issues surfaced during the v0.5.6 release validation. See PR description for the per-bug breakdown.
+
+### Substrate
+
+- **`deployService` + `runnerService` routed through substrate** (FEIP-7128, FEIP-7129, PR #20). Both services now delegate to substrate primitives for their non-VS Code-specific paths. Same pattern as the earlier migrations of `gitService` and `lakebaseService`. Part of the broader substrate-extraction story.
+- **Kit pin: alpha.17 → alpha.18** (PR #18). Picked up substrate fixes for the staging-tier discovery flow.
+
+### Tooling
+
+- **Drop broken `npm run lint`** (FEIP-7132, PR #21). The script was registered but no eslint config existed; running it produced confusing errors. Removed until eslint is genuinely set up.
+- **Correct section 4 of `vs-code-parity-followups.md`** (FEIP-7104, PR #17). The self-hosted-vs-github-hosted runner write-up was out of date relative to the substrate's actual capabilities.
+
 ## 0.5.6 (2026-05-24)
 
 The headline theme is **substrate `v0.1.0-alpha.0`** – the workflow-scripts dep is now version-tagged rather than pinned to a bare SHA, and the extension's branch-create + integration-test surfaces tighten around the lock. Two real substrate bugs found via live BDD against a freshly-created workspace and fixed: `schema-diff` was passing branch UIDs to `databricks postgres list-endpoints` (which only accepts names), and `branch-create` returned existing branches even when the requested parent differed. The integration suites stop silently defaulting the Databricks host to one maintainer's workspace – contributors must opt in to their own. End-to-end coverage at this version: **1554 tests, zero failing**.

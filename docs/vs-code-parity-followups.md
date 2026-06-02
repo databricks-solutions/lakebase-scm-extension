@@ -318,15 +318,14 @@ primitive, with instrumentation (logs to `/tmp/<name>.log`) and
 ---
 
 **Priority order suggested:**
-1. (#1) Remove `createLakebaseBranchAndConnect` from test helpers — fixes a
-   race that becomes visible now that the hook actually fires.
+1. ✅ (#1) DONE per FEIP-7099 + kit alpha.10. `createLakebaseBranchAndConnect` removed from helpers; the hook is the sole branch-create path on feature checkout.
 2. (#6) Audit `post-merge.sh` cleanup vs Phase D assertions; the now-firing
    hook may delete branches the test still inspects.
-3. (#2) VS Code command for `createLongRunningBranch` — closes the biggest
+3. (#2) VS Code command for `createLongRunningBranch`, closes the biggest
    UX gap in the supported methodology.
 4. (#8) Migrate `paired-branch.ts` + extension UI helpers to auto-discover
    tiers like the hook does.
 5. (#10) Small repros for `release()`, `cut-backup`, `pre-push`, `post-merge`.
-6. (#7) Scaffolded-project README note about `core.hooksPath`.
+6. (#7) Scaffolded-project README note about `core.hooksPath`. Identified during the v0.5.8 cleanup audit. Requires a new `templates/project/common/README.md` in the kit (doesn't exist today) plus a kit alpha.35 bump.
 7. (#3, #4) Spring Initializr + github-hosted runner coverage.
 8. (#9) Drop `LAKEBASE_TRUNK_BRANCH` if we can derive it from git config.

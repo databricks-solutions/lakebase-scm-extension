@@ -4,7 +4,7 @@ import { GitHubService } from '../services/githubService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService, SchemaDiffResult } from '../services/schemaDiffService';
 import { LakebaseService } from '../services/lakebaseService';
-import { isMainBranch } from '../utils/theme';
+import { isMainBranch, STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 
 /**
@@ -642,13 +642,11 @@ export class SchemaScmProvider {
   }
 
   private getStatusIcon(status: string): string {
-    const icons: Record<string, string> = { added: 'diff-added', modified: 'diff-modified', deleted: 'diff-removed', renamed: 'diff-renamed' };
-    return icons[status] || 'file';
+    return STATUS_ICONS[status] || 'file';
   }
 
   private getStatusColor(status: string): string {
-    const colors: Record<string, string> = { added: 'charts.green', modified: 'charts.yellow', deleted: 'charts.red', renamed: 'charts.blue' };
-    return colors[status] || 'foreground';
+    return STATUS_COLORS[status] || 'foreground';
   }
 
   /**
@@ -679,13 +677,11 @@ export class SchemaScmProvider {
 
   private makeSchemaResource(tableName: string, diffType: 'created' | 'modified' | 'removed'): vscode.SourceControlResourceState {
     const resourceUri = vscode.Uri.parse(`lakebase-schema://table/${tableName}#${diffType}`);
-    const icons: Record<string, string> = { created: 'diff-added', modified: 'diff-modified', removed: 'diff-removed' };
-    const colors: Record<string, string> = { created: 'charts.green', modified: 'charts.yellow', removed: 'charts.red' };
     return {
       resourceUri,
       decorations: {
         tooltip: `${diffType}: ${tableName}`,
-        iconPath: new vscode.ThemeIcon(icons[diffType], new vscode.ThemeColor(colors[diffType])),
+        iconPath: new vscode.ThemeIcon(STATUS_ICONS[diffType], new vscode.ThemeColor(STATUS_COLORS[diffType])),
       },
       command: { command: 'lakebaseSync.showTableDiff', title: 'Schema Diff', arguments: [tableName, diffType] },
     };

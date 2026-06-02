@@ -2937,7 +2937,8 @@ export async function activate(context: vscode.ExtensionContext) {
           if (root) {
             for (const c of existing) {
               try {
-                const base = (await execUtil(`git merge-base HEAD "${c}"`, root)).trim();
+                // Substrate-routed merge-base (replaces inline `git merge-base` exec).
+                const base = await gitService.getMergeBaseFor(c);
                 if (base) {
                   const ts = parseInt((await execUtil(`git log -1 --format=%at "${base}"`, root)).trim(), 10) || 0;
                   ranked.push({ branch: c, ts });
