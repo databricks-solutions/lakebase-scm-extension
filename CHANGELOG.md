@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.9 (2026-06-02)
+
+The headline theme is **kit alpha.36 + tier auto-discovery in the extension + auth-storage cleanup**. Three PRs:
+
+### Added
+
+- **`isTierBranch(name)` + module-level tier cache** in `src/utils/theme.ts`. Sync helper backed by a cache that `LakebaseService.listBranches()` refreshes on every call via the substrate's `tierBranchNames()`. Replaces `isStagingBranch(name, alias)` across the extension (statusBarProvider, branchTreeProvider, ~10 extension.ts call sites). Status bar, tree grouping, validators, and the auto-create gate all now drive off the same auto-discovered tier set: any non-default, no-expireTime Lakebase branch counts as a tier (FEIP-7098). PR #53 + PR #54.
+
+### Fixed: substrate bugs surfaced by live smoke
+
+- **Tier classification swept in feature branches.** Kit alpha.35's `isTier` / `tierBranchNames` filtered only on `!isDefault`, so `demo-feature`, `smoke-test`, and other feature branches showed as long-running tiers in the extension UI (purple icon, tier section, refused-to-delete). Real predicate is `!b.isDefault && !b.expireTime`: tiers are created via `createLongRunningBranch` (sets `noExpiry: true`, so `expireTime` absent on the API response); features carry a TTL. Fixed in kit alpha.36; picked up via PR #54.
+
+### Fixed: extension surface
+
+- **Auth-storage override no longer poisons workspace `.env`.** The 0.5.8 respin's `onAuthStorageRuntimeChange` listener persisted `DATABRICKS_AUTH_STORAGE=plaintext` into the workspace `.env` so the runtime fallback survived reload. Side effect: every shell script that sourced `.env` (post-checkout hook, `refresh-token.sh`, etc.) inherited the override. If the user's actual credentials lived in the keyring (re-authed without that env set), those scripts forced plaintext storage, looked at an empty store, and surfaced "Databricks CLI auth failed" messages – even though the interactive CLI was fine. Fix: persist to `context.globalState` instead; extension reads it at activation and calls `setAuthStorageRuntime` before any `LakebaseService` call. Shell scripts stay on the user's default storage (typically keyring). PR #55.
+- **`updateEnvConnection` breadcrumb accumulation.** Every `syncConnection` call wrote a `# Connection pending at <ts>` comment to `.env`, but the same function's "keys to replace before rewriting" filter did NOT include the comment pattern. Result: hundreds of stale "Connection pending" lines piled up over weeks (one user accumulated 600+ going back ~6 weeks). Fix: filter `^#\s*Connection pending at ` in the same rewrite pass. PR #55.
+
+### Substrate
+
+- **Kit pin: `v0.3.0-alpha.34` → `v0.3.0-alpha.36`.** alpha.35 shipped FEIP-7098 (`isTier` / `tierBranchNames` + `paired-branch.ts` auto-discover seam) + FEIP-7139 (`updateWorkflows()` in-place YAML refresh primitive). alpha.36 hotfixed the `expireTime` filter so feature branches stop being misclassified as tiers.
+
+372/372 hermetic tests pass.
+
 ## 0.5.8 (2026-06-01)
 
 The headline theme is **substrate v0.3.0-alpha.34 + tidy-up + CLI auth-storage compat fix**. Picks up the FEIP-7210 schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate. Late addition: surfaced + fixed an auth-storage compat issue caused by recent Databricks CLI upgrades.
