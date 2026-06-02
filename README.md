@@ -104,27 +104,14 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 
 ### 2. Adopt an Existing Project
 
-When the git repo already exists, two flavors depending on whether it already has a Lakebase database project.
-
-#### Project already has Lakebase
-
-The `.env` (or `.env.example`) declares `LAKEBASE_PROJECT_ID`:
-
-1. Open the project folder in VS Code. The extension activates when it sees the `.env`.
-2. Click **Connect to Workspace** in the Lakebase sidebar title bar.
-3. Complete OAuth login in the terminal.
-4. Run **Health Check** (`⋯` → Lakebase → Health Check) to verify everything is wired up.
-
-#### Project has no Lakebase database project yet
-
-Existing git repo, fresh Lakebase slate:
+For an existing git repo that has no Lakebase database project yet:
 
 1. Open the project folder in VS Code.
 2. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** and run **`Lakebase: Set Up Existing Project`**.
 3. The command prompts for project name, Databricks host, and language (auto-detected from `pom.xml` / `pyproject.toml` / `package.json`), then composes the kit's brownfield onboarding: creates the Lakebase database project, drops `.env`, the git hooks under `.githooks/`, the GitHub Actions workflows under `.github/workflows/`, and (when applicable) the `.tdd/` and `.claude/commands/` scaffolds. Existing files are detected as drift and preserved by default; pass an explicit overwrite when the kit's templates should win.
 4. Run **Health Check** to verify the wiring.
 
-If you skip step 2 and just open a non-Lakebase project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
+If you skip step 2 and just open the project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
 
 ## Developer Workflow
 
