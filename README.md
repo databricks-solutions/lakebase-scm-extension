@@ -97,6 +97,8 @@ For an existing git repo that has no Lakebase database project yet:
 3. The command prompts for project name, Databricks host, and language (auto-detected from `pom.xml` / `pyproject.toml` / `package.json`), then composes the kit's brownfield onboarding: creates the Lakebase database project, drops `.env`, the git hooks under `.githooks/`, the GitHub Actions workflows under `.github/workflows/`, and (when applicable) the `.tdd/` and `.claude/commands/` scaffolds. Existing files are detected as drift and preserved by default; pass an explicit overwrite when the kit's templates should win.
 4. Run **Health Check** to verify the wiring.
 
+If you skip step 2 and just open the project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
+
 ## Developer Workflow
 
 ### 1. Create a Feature Branch
