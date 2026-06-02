@@ -34,9 +34,11 @@ import {
   sanitizeBranchName as substrateSanitizeBranchName,
   createLongRunningBranch as substrateCreateLongRunningBranch,
   createFeatureBranch as substrateCreateFeatureBranch,
+  tierBranchNames as substrateTierBranchNames,
   type LakebaseBranchInfo,
   type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
+import { setKnownTierNames } from "../utils/theme";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -438,6 +440,12 @@ export class LakebaseService {
     const branches = await this.withHost(() =>
       substrateListBranches({ instance: this.projectInstance() })
     );
+    // FEIP-7098: refresh the theme.ts tier cache from substrate's
+    // auto-discovery. Sync helpers like isTierBranch() (used by VS Code
+    // input validators + status bar refresh) read this cache. Every
+    // listBranches call is the natural refresh point: it's frequent
+    // enough to stay current and cheap enough not to need its own RPC.
+    setKnownTierNames(substrateTierBranchNames(branches));
     return branches.map(adaptBranchInfo);
   }
 

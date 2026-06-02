@@ -42,10 +42,44 @@ export function isMainBranch(name: string, trunkAlias?: string): boolean {
 }
 
 /**
- * Check if a branch name should be treated as the staging branch.
- * Returns true only if stagingAlias is set and matches. There is no
- * default (e.g. "staging"-named) fallback – staging requires opt-in.
+ * Module-level cache of long-running tier names (the non-default Lakebase
+ * branches the architect has cut: staging / uat / perf / dev / ...).
+ * LakebaseService refreshes it on every listBranches() call. The cache
+ * powers {@link isTierBranch} so call sites can ask "is this a tier?"
+ * synchronously, without threading a branch list through every helper.
+ *
+ * Empty until the first successful listBranches() of the session. Call
+ * sites that need to behave correctly before any list call has happened
+ * (e.g. activation-time gates) should treat an empty cache as "tier
+ * status unknown" rather than "no tiers exist".
  */
-export function isStagingBranch(name: string, stagingAlias?: string): boolean {
-  return !!stagingAlias && stagingAlias.length > 0 && name === stagingAlias;
+const tierNamesCache: Set<string> = new Set();
+
+/** LakebaseService entry point. Replaces the cached set in-place. */
+export function setKnownTierNames(names: readonly string[]): void {
+  tierNamesCache.clear();
+  for (const n of names) {
+    if (n) { tierNamesCache.add(n); }
+  }
+}
+
+/** Sync snapshot of the current cache. Stable across the call. */
+export function getKnownTierNames(): string[] {
+  return Array.from(tierNamesCache);
+}
+
+/**
+ * Returns true iff `name` exactly matches a long-running tier the
+ * Lakebase project currently has cut. Driven by the substrate-side
+ * auto-discovery model (FEIP-7098): a tier is any non-default Lakebase
+ * branch. The cache is refreshed on every LakebaseService.listBranches.
+ *
+ * Sync because some call sites (VS Code input validators, status-bar
+ * refresh) run inside synchronous contexts. Returns false when the
+ * cache is empty, which matches the conservative "feature mode unless
+ * we know otherwise" default the post-checkout hook also takes.
+ */
+export function isTierBranch(name: string): boolean {
+  if (!name) { return false; }
+  return tierNamesCache.has(name);
 }
