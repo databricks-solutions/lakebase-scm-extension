@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from './services/gitService';
-import { LakebaseService } from './services/lakebaseService';
+import { LakebaseService, isAuthStorageCacheError } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
@@ -38,6 +38,46 @@ let schemaScmProvider: SchemaScmProvider;
 
 /** Prompt user to login when auth errors are detected */
 async function handleAuthError(lakebaseService: LakebaseService, err: any): Promise<boolean> {
+  // Special-case: CLI upgraded past a credential-storage break. The new
+  // `databricks` binary refuses to read the old file-cached credentials
+  // ("stored credentials from older CLI versions are no longer used").
+  // Generic "Login" doesn't help here because the user may have already
+  // re-logged in: the real remediation is either a clean re-auth that
+  // overwrites the cache or an explicit DATABRICKS_AUTH_STORAGE=plaintext
+  // opt-in. Surface BOTH as one-click actions.
+  if (isAuthStorageCacheError(err)) {
+    const choice = await vscode.window.showErrorMessage(
+      'Databricks CLI rejected its stored credentials (credential-storage format changed in a newer CLI version). ' +
+        'Either re-authenticate to refresh the cache, or fall back to plaintext storage.',
+      'Re-authenticate',
+      'Use plaintext storage',
+    );
+    if (choice === 'Re-authenticate') {
+      vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+    } else if (choice === 'Use plaintext storage') {
+      const root = getWorkspaceRoot();
+      if (root) {
+        const envPath = path.join(root, '.env');
+        const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+        fs.writeFileSync(envPath, upsertEnvKeys(existing, { DATABRICKS_AUTH_STORAGE: 'plaintext' }));
+        vscode.window.showInformationMessage(
+          'Wrote DATABRICKS_AUTH_STORAGE=plaintext to .env. Reload the window for it to take effect.',
+          'Reload Window',
+        ).then((a) => {
+          if (a === 'Reload Window') {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+          }
+        });
+      } else {
+        vscode.window.showWarningMessage(
+          'No workspace open: can\'t write .env. ' +
+            'Run `export DATABRICKS_AUTH_STORAGE=plaintext` in the shell that launches VS Code, then restart.',
+        );
+      }
+    }
+    return true;
+  }
+
   const isAuth = (err as any).isAuthError === true ||
     err.message?.includes('project id not found') ||
     err.message?.includes('not authenticated') ||
@@ -187,12 +227,20 @@ export async function activate(context: vscode.ExtensionContext) {
   if (cliAvailable && config.lakebaseProjectId) {
     const authStatus = await lakebaseService.checkAuth();
     if (!authStatus.authenticated) {
-      const action = await vscode.window.showWarningMessage(
-        `Lakebase Sync: Not connected to ${authStatus.expectedHost}.`,
-        'Connect'
-      );
-      if (action === 'Connect') {
-        vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+      // Special-case: CLI upgraded past a credential-storage break.
+      // Re-route through handleAuthError so the user gets the same
+      // two-action notification (Re-authenticate / Use plaintext) they
+      // would see from any other CLI call that hits this error class.
+      if (authStatus.error && isAuthStorageCacheError(new Error(authStatus.error))) {
+        await handleAuthError(lakebaseService, new Error(authStatus.error));
+      } else {
+        const action = await vscode.window.showWarningMessage(
+          `Lakebase Sync: Not connected to ${authStatus.expectedHost}.`,
+          'Connect'
+        );
+        if (action === 'Connect') {
+          vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+        }
       }
     }
   }
