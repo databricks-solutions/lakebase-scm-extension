@@ -1417,6 +1417,21 @@ export async function activate(context: vscode.ExtensionContext) {
             statusBarProvider.refresh();
             branchTreeProvider.refresh();
             schemaScmProvider.refresh();
+            // Safety net: the JS createBranch path may have errored, OR
+            // it may have succeeded just before the Lakebase API indexed
+            // the new branch. Meanwhile post-checkout.sh runs synchronously
+            // during the git checkout and may create the branch with
+            // no_expiry: true (the path that survives workspace TTL caps).
+            // Stagger a few delayed refreshes so the status bar / sidebar
+            // catch the branch once it's queryable, without forcing the
+            // user to invoke "Lakebase: Refresh" manually.
+            const lateRefresh = () => {
+              void statusBarProvider.refresh();
+              branchTreeProvider.refresh();
+            };
+            setTimeout(lateRefresh, 5_000);
+            setTimeout(lateRefresh, 15_000);
+            setTimeout(lateRefresh, 45_000);
           }
         }
       );
@@ -3980,7 +3995,25 @@ export async function activate(context: vscode.ExtensionContext) {
             await gitService.checkoutBranch(branchName, true);
           }
         );
-      } catch (err: any) { vscode.window.showErrorMessage(`Create branch failed: ${err.message}`); }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Create branch failed: ${err.message}`);
+      } finally {
+        // Whether the JS pre-create succeeded, failed, or the post-checkout
+        // hook took over: refresh immediately + stagger a few delayed
+        // refreshes so the status bar and tree pick up the branch once
+        // it's queryable (covers eventual-consistency + hook-side success
+        // after a JS error).
+        statusBarProvider.refresh();
+        branchTreeProvider.refresh();
+        schemaScmProvider.refresh();
+        const lateRefresh = () => {
+          void statusBarProvider.refresh();
+          branchTreeProvider.refresh();
+        };
+        setTimeout(lateRefresh, 5_000);
+        setTimeout(lateRefresh, 15_000);
+        setTimeout(lateRefresh, 45_000);
+      }
     }),
 
     vscode.commands.registerCommand('lakebaseSync.deleteRemoteBranch', async () => {
