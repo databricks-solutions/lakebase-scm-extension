@@ -197,7 +197,141 @@ async function offerCiSecretsSetup(
   }
 }
 
+/**
+ * Auto-remove older install directories of THIS extension sitting in
+ * the same extensions root. VS Code / Cursor normally activate the
+ * highest version, but a `--force` install of a new vsix can leave the
+ * older version's directory + manifest behind. The older dir is dead
+ * weight and can mask "is the new code actually loaded?" diagnostics.
+ *
+ * No user prompt: leaving stale install dirs is never desired. Errors
+ * are logged + non-fatal (activation completes regardless). Returns
+ * the list of removed dirs so the post-install notification can name
+ * them.
+ */
+async function autoRemoveOlderInstalls(context: vscode.ExtensionContext): Promise<string[]> {
+  try {
+    const myPath = context.extensionPath;
+    const myDir = path.basename(myPath);
+    const parent = path.dirname(myPath);
+    const id = context.extension.id; // e.g. kevin-hartman.lakebase-scm-extension
+
+    if (!fs.existsSync(parent)) { return []; }
+    const entries = fs.readdirSync(parent);
+    const stale = entries.filter((e) => {
+      if (e === myDir) { return false; }
+      if (!e.startsWith(`${id}-`)) { return false; }
+      try {
+        return fs.statSync(path.join(parent, e)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+    if (stale.length === 0) { return []; }
+
+    const removed: string[] = [];
+    for (const s of stale) {
+      try {
+        fs.rmSync(path.join(parent, s), { recursive: true, force: true });
+        removed.push(s);
+      } catch (err) {
+        console.warn(`Could not remove stale extension dir ${s}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return removed;
+  } catch (err) {
+    console.warn('autoRemoveOlderInstalls skipped:', err);
+    return [];
+  }
+}
+
+/**
+ * macOS-aware "quit + relaunch" of the host editor. VS Code's
+ * `workbench.action.quit` quits without auto-restart; on Mac we
+ * schedule a detached child process that re-opens the app after a
+ * brief delay, then issue the quit. On non-Mac platforms we fall back
+ * to `reloadWindow` (closest we can do without spawning shell
+ * commands the user didn't authorize).
+ */
+async function restartHostApp(): Promise<void> {
+  if (process.platform === 'darwin') {
+    const appName = vscode.env.appName || 'Cursor';
+    const { spawn } = await import('child_process');
+    spawn('sh', ['-c', `sleep 2 && open -a "${appName.replace(/"/g, '\\"')}"`], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+    await vscode.commands.executeCommand('workbench.action.quit');
+  } else {
+    // Best-effort on Linux / Windows: reload the current window.
+    await vscode.commands.executeCommand('workbench.action.reloadWindow');
+  }
+}
+
+/**
+ * One-shot post-install handler that runs on every activation but
+ * fires the user-visible prompt only when this is a new install or an
+ * upgrade vs. the persisted globalState. Two responsibilities,
+ * matching the user's contract:
+ *
+ *   1. Uninstall prior version directories on disk (silent, no prompt).
+ *   2. Tell the user the host editor needs a restart, with a single
+ *      "Restart Cursor" action that quits + relaunches automatically.
+ *
+ * VS Code's marketplace-managed update flow does both of these for
+ * free; manual `--install-extension` (vsix sideloading) does neither,
+ * which is what has been leaving users on stale code despite a
+ * "successfully installed" message.
+ */
+async function handlePostInstall(context: vscode.ExtensionContext): Promise<void> {
+  try {
+    const currentVersion =
+      (context.extension.packageJSON as { version?: string }).version || 'unknown';
+    const lastKey = 'lakebaseSync.lastActivatedVersion';
+    const lastVersion = context.globalState.get<string>(lastKey);
+    if (lastVersion === currentVersion) { return; }
+
+    // 1. Auto-cleanup.
+    const removed = await autoRemoveOlderInstalls(context);
+
+    // Persist BEFORE prompting so dismissing the prompt doesn't
+    // re-trigger on the next reload before the user can decide.
+    await context.globalState.update(lastKey, currentVersion);
+
+    // 2. Restart prompt. Only show when there's an actual update event
+    // (a prior version persisted) OR we removed stale dirs (proves an
+    // in-place reinstall happened); first install on a fresh Cursor
+    // doesn't need the user to immediately restart.
+    const isUpdate = !!lastVersion;
+    if (!isUpdate && removed.length === 0) { return; }
+
+    const verb = isUpdate
+      ? `updated from ${lastVersion} to ${currentVersion}`
+      : `installed (${currentVersion})`;
+    const cleanupNote = removed.length > 0
+      ? ` Removed ${removed.length} stale install ${removed.length === 1 ? 'directory' : 'directories'}: ${removed.join(', ')}.`
+      : '';
+    const hostName = vscode.env.appName || 'the host editor';
+    const action = await vscode.window.showInformationMessage(
+      `Lakebase SCM ${verb}.${cleanupNote} ${hostName} needs to restart so the new extension code activates.`,
+      { modal: false },
+      `Restart ${hostName}`,
+    );
+    if (action && action.startsWith('Restart')) {
+      await restartHostApp();
+    }
+  } catch (err) {
+    console.warn('handlePostInstall skipped:', err);
+  }
+}
+
 export async function activate(context: vscode.ExtensionContext) {
+  // Fire-and-forget post-install: auto-clean stale older install dirs
+  // on disk (silent), then prompt the user to restart the host editor
+  // (Cursor / VS Code) when this is an upgrade or a stale-clean event.
+  // Failures inside the handler are swallowed and logged.
+  void handlePostInstall(context);
+
   const config = getConfig();
 
   if (!config.lakebaseProjectId) {
