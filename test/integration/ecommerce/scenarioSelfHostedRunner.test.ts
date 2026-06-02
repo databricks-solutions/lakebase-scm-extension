@@ -54,7 +54,7 @@ let githubService: GitHubService;
     lakebaseService.setHostOverride(dbHost);
     lakebaseService.setProjectIdOverride(PROJECT_NAME);
 
-    const scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../../'));
+    const scaffoldService = new ScaffoldService();
     creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     projectDir = path.join(require('os').homedir(), PROJECT_NAME);

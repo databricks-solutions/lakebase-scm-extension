@@ -45,7 +45,7 @@ describe('ScaffoldService – Spring Initializr', () => {
         } as Response;
       });
 
-      const svc = new ScaffoldService(extensionPath, mockClient);
+      const svc = new ScaffoldService(mockClient);
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), `scaffold-${language}-`));
 
       await svc.deployLanguageProject(dir, language, 'demo-project');
@@ -65,7 +65,7 @@ describe('ScaffoldService – Spring Initializr', () => {
 
   it('uses bundled fallback when LAKEBASE_SCAFFOLD_FALLBACK=1', async () => {
     process.env.LAKEBASE_SCAFFOLD_FALLBACK = '1';
-    const svc = new ScaffoldService(extensionPath);
+    const svc = new ScaffoldService();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scaffold-fallback-'));
 
     await svc.deployLanguageProject(dir, 'java', 'demo-project');

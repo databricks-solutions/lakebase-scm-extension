@@ -50,7 +50,7 @@ describe('ProjectCreationService – Full End-to-End', function () {
     dbHost = assertIntegrationCredentials().databricksHost;
     process.env.DATABRICKS_HOST = dbHost;
     lakebaseService.setHostOverride(dbHost);
-    scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../'));
+    scaffoldService = new ScaffoldService();
     creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     projectDir = path.join(require('os').tmpdir(), PROJECT_NAME);
