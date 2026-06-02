@@ -20,7 +20,7 @@ import { PullRequestTreeProvider } from './providers/pullRequestTree';
 import { MergesTreeProvider } from './providers/mergesTree';
 import { GraphWebviewProvider } from './providers/graphWebview';
 import { getConfig, getWorkspaceRoot, detectLanguage } from './utils/config';
-import { isMainBranch, isStagingBranch } from './utils/theme';
+import { isMainBranch, isTierBranch } from './utils/theme';
 import { buildDiffTuples, DiffTuple } from './utils/diffBuilder';
 import { ProjectCreationService, PROJECT_CREATION_PROMPTS } from './services/projectCreationService';
 import { ScaffoldService } from './services/scaffoldService';
@@ -610,24 +610,22 @@ export async function activate(context: vscode.ExtensionContext) {
   // Set initial branch context
   const initialBranch = await gitService.getCurrentBranch();
   const initialTrunk = getConfig().trunkBranch;
-  const initialStaging = getConfig().stagingBranch;
   const isFeature = !!initialBranch
     && !isMainBranch(initialBranch, initialTrunk)
-    && !isStagingBranch(initialBranch, initialStaging);
+    && !isTierBranch(initialBranch);
   vscode.commands.executeCommand('setContext', 'lakebaseSync.onFeatureBranch', isFeature);
   vscode.commands.executeCommand('setContext', 'lakebaseSync.isRebasing', await gitService.isRebasing());
 
   // Sync .env connection on git branch change, optionally auto-create Lakebase branch
   const autoBranchDisposable = gitService.onBranchChanged(async (newBranch: string) => {
     const trunkAlias = getConfig().trunkBranch;
-    const stagingAlias = getConfig().stagingBranch;
     const onFeature = !!newBranch
       && !isMainBranch(newBranch, trunkAlias)
-      && !isStagingBranch(newBranch, stagingAlias);
+      && !isTierBranch(newBranch);
     vscode.commands.executeCommand('setContext', 'lakebaseSync.onFeatureBranch', onFeature);
     vscode.commands.executeCommand('setContext', 'lakebaseSync.isRebasing', await gitService.isRebasing());
 
-    if (!newBranch || isMainBranch(newBranch, trunkAlias) || isStagingBranch(newBranch, stagingAlias)) { return; }
+    if (!newBranch || isMainBranch(newBranch, trunkAlias) || isTierBranch(newBranch)) { return; }
 
     // Clear schema cache – new branch may have different schema
     schemaDiffService.clearCache();
@@ -838,8 +836,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage('Cannot create a Lakebase branch for main/master.');
         return;
       }
-      if (isStagingBranch(gitBranch, cfgCb.stagingBranch)) {
-        vscode.window.showWarningMessage('Cannot create a Lakebase branch for staging – staging is a persistent branch.');
+      if (isTierBranch(gitBranch)) {
+        vscode.window.showWarningMessage(`Cannot create a Lakebase branch for "${gitBranch}" – it's a long-running tier and the Lakebase counterpart already exists.`);
         return;
       }
 
@@ -1249,7 +1247,7 @@ export async function activate(context: vscode.ExtensionContext) {
           if (!val.trim()) { return 'Branch name is required'; }
           const cfgV = getConfig();
           if (isMainBranch(val, cfgV.trunkBranch)) { return 'Cannot branch from main/master with this name'; }
-          if (isStagingBranch(val, cfgV.stagingBranch)) { return 'Cannot branch from staging with this name'; }
+          if (isTierBranch(val)) { return `Cannot branch with the name of a long-running tier ("${val}")`; }
           return undefined;
         },
       });
@@ -1466,8 +1464,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(`Refusing to delete trunk branch "${branchName}".`);
         return;
       }
-      if (isStagingBranch(branchName, cfg.stagingBranch)) {
-        vscode.window.showWarningMessage(`Refusing to delete staging branch "${branchName}".`);
+      if (isTierBranch(branchName)) {
+        vscode.window.showWarningMessage(`Refusing to delete long-running tier "${branchName}".`);
         return;
       }
 
@@ -1569,7 +1567,6 @@ export async function activate(context: vscode.ExtensionContext) {
       const gitBranch = await gitService.getCurrentBranch();
       const cfgRc = getConfig();
       const isMain = isMainBranch(gitBranch, cfgRc.trunkBranch);
-      const isStaging = !isMain && isStagingBranch(gitBranch, cfgRc.stagingBranch);
 
       let branchId: string;
       if (isMain) {
@@ -1579,14 +1576,10 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
         branchId = defaultBranch.branchId;
-      } else if (isStaging) {
-        const stagingLb = await lakebaseService.getBranchByName('staging');
-        if (!stagingLb) {
-          vscode.window.showErrorMessage('No Lakebase `staging` branch found.');
-          return;
-        }
-        branchId = stagingLb.branchId;
       } else {
+        // Non-trunk: tier or feature. Both pair with a Lakebase branch
+        // of the same sanitized name (auto-discovered for tiers, created
+        // for features). getBranchByName sanitizes at entry.
         const lb = await lakebaseService.getBranchByName(gitBranch);
         if (!lb) {
           vscode.window.showErrorMessage(`No Lakebase branch for "${gitBranch}".`);
@@ -2020,12 +2013,10 @@ export async function activate(context: vscode.ExtensionContext) {
           const gitBranch = await gitService.getCurrentBranch();
           const cfgOc = getConfig();
           const isMain = isMainBranch(gitBranch, cfgOc.trunkBranch);
-          const isStaging = !isMain && isStagingBranch(gitBranch, cfgOc.stagingBranch);
+          // Trunk → default; everything else (tier OR feature) → name-match.
           const lb = isMain
             ? await lakebaseService.getDefaultBranch()
-            : isStaging
-              ? await lakebaseService.getBranchByName('staging')
-              : await lakebaseService.getBranchByName(gitBranch);
+            : await lakebaseService.getBranchByName(gitBranch);
           branchUid = lb?.uid;
           if (!branchUid) {
             const defaultBranch = await lakebaseService.getDefaultBranch();
@@ -2051,7 +2042,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const targetGitBranch = item.gitBranch.name;
       const cfgSb = getConfig();
       const isMain = isMainBranch(targetGitBranch, cfgSb.trunkBranch);
-      const isStaging = !isMain && isStagingBranch(targetGitBranch, cfgSb.stagingBranch);
+      const isTier = !isMain && isTierBranch(targetGitBranch);
 
       // Proactive dirty-tree check: git silently carries non-conflicting uncommitted
       // edits across a checkout, which produces the confusing "same code on the new
@@ -2107,13 +2098,13 @@ export async function activate(context: vscode.ExtensionContext) {
             let lb;
             if (isMain) {
               lb = await lakebaseService.getDefaultBranch();
-            } else if (isStaging) {
-              lb = await lakebaseService.getBranchByName('staging');
             } else {
+              // Tier OR feature: pair by exact branchId. Substrate
+              // sanitizes at entry, so a git slash still resolves.
               lb = await lakebaseService.getBranchByName(targetGitBranch);
             }
 
-            if (!lb && !isMain && !isStaging) {
+            if (!lb && !isMain && !isTier) {
               progress.report({ message: 'Creating database branch...' });
               try {
                 lb = await lakebaseService.createBranch(targetGitBranch, undefined, parentGitBranch);
@@ -2605,18 +2596,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const cfgPicker = getConfig();
         const trunkAliasForLookup = cfgPicker.trunkBranch;
-        const stagingAliasForLookup = cfgPicker.stagingBranch;
-        const stagingLb = lakebaseBranches.find((b: any) => b.branchId === 'staging');
         function getLakebaseInfo(branchName: string): string {
           const isMain = isMainBranch(branchName, trunkAliasForLookup);
-          const isStaging = !isMain && isStagingBranch(branchName, stagingAliasForLookup);
-          const sanitized = lakebaseService.sanitizeBranchName(branchName);
           if (isMain) {
             return defaultLb ? `→ ${defaultLb.branchId} (default)` : '→ no Lakebase';
           }
-          if (isStaging) {
-            return stagingLb ? `→ ${stagingLb.branchId} (${stagingLb.state})` : '→ no Lakebase `staging` branch';
-          }
+          // Tier OR feature: pair by sanitized branchId. lbMap is keyed
+          // on branchId; the lookup hits tiers (staging, uat, ...) and
+          // features uniformly.
+          const sanitized = lakebaseService.sanitizeBranchName(branchName);
           return lbMap.has(sanitized) ? `→ ${lbMap.get(sanitized)}` : '→ no Lakebase branch';
         }
 
@@ -2639,10 +2627,15 @@ export async function activate(context: vscode.ExtensionContext) {
         // (color + text) so colorblind / screen-reader users get the
         // signal too.
         const tierIcon = new vscode.ThemeIcon('versions', new vscode.ThemeColor('charts.purple'));
-        const knownTiers = new Set(['staging', 'uat', 'perf']);
-        const cfgTier = getConfig().stagingBranch;
+        // FEIP-7098 tier-aware: the auto-discovered cache wins; static
+        // methodology names + configured trunkBranch are a fallback for
+        // sessions where listBranches hasn't run yet.
+        const fallbackTiers = new Set(['staging', 'uat', 'perf']);
+        const cfgFallbackTier = getConfig().stagingBranch;
         const isLongRunningTier = (name: string): boolean =>
-          knownTiers.has(name) || (!!cfgTier && name === cfgTier);
+          isTierBranch(name) ||
+          fallbackTiers.has(name) ||
+          (!!cfgFallbackTier && name === cfgFallbackTier);
 
         items.push({
           label: 'Cut Long-Running Tier...',
@@ -4404,12 +4397,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const cfgTimer = getConfig();
         const isMain = isMainBranch(currentBranch, cfgTimer.trunkBranch);
-        const isStaging = !isMain && isStagingBranch(currentBranch, cfgTimer.stagingBranch);
+        // Trunk → default; everything else (tier OR feature) → name-match.
         const lb = isMain
           ? await lakebaseService.getDefaultBranch()
-          : isStaging
-            ? await lakebaseService.getBranchByName('staging')
-            : await lakebaseService.getBranchByName(currentBranch);
+          : await lakebaseService.getBranchByName(currentBranch);
 
         if (!lb) { return; }
 

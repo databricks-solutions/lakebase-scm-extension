@@ -3,22 +3,23 @@ import { GitService, GitBranchInfo } from '../services/gitService';
 import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService } from '../services/schemaDiffService';
-import { isMainBranch, isStagingBranch } from '../utils/theme';
+import { isMainBranch, isTierBranch } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
 /**
- * Long-running tier detection (name-based today; FEIP follow-up will switch
- * this to Lakebase `no_expiry` once substrate exposes the field on
- * LakebaseBranchInfo). A branch counts as a tier when its git name is one
- * of:
- *   - the trunk (`main`/`master` or configured `trunkBranch`) — production tier
- *   - the configured `stagingBranch` alias — staging tier
- *   - `staging`/`uat`/`perf` — standard methodology tiers
+ * Long-running tier detection. After FEIP-7098 the authoritative source
+ * is the Lakebase project's own non-default branch list (auto-discovered
+ * via LakebaseService.listBranches into the theme.ts cache). The static
+ * methodology names + configured trunkBranch are kept as a fallback so
+ * status checks before the first listBranches call still classify the
+ * obvious tiers correctly.
  */
-const KNOWN_TIERS = new Set(['main', 'master', 'staging', 'uat', 'perf']);
+const KNOWN_TIER_FALLBACK = new Set(['main', 'master', 'staging', 'uat', 'perf']);
 export function isLongRunningTier(branchName: string): boolean {
-  if (KNOWN_TIERS.has(branchName)) return true;
+  if (!branchName) return false;
+  if (isTierBranch(branchName)) return true;
+  if (KNOWN_TIER_FALLBACK.has(branchName)) return true;
   const cfg = getConfig();
   if (cfg.trunkBranch && branchName === cfg.trunkBranch) return true;
   if (cfg.stagingBranch && branchName === cfg.stagingBranch) return true;
@@ -272,18 +273,16 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           items.push(item);
         }
 
-        // Lakebase-only branches (ci-pr-*, orphaned)
+        // Lakebase-only branches (ci-pr-*, orphaned).
+        // FEIP-7098: every non-trunk git branch pairs with a Lakebase
+        // branch of the same sanitized name (tier OR feature). Tier
+        // discovery is via theme.ts cache (kept fresh by listBranches);
+        // the matching logic below works uniformly for either kind.
         const trunkAlias = getConfig().trunkBranch;
-        const stagingAlias = getConfig().stagingBranch;
         const matchedNames = new Set(
           gitBranches.map(gb => {
-            const isMain = isMainBranch(gb.name, trunkAlias);
-            const isStaging = isStagingBranch(gb.name, stagingAlias);
-            if (isMain) {
+            if (isMainBranch(gb.name, trunkAlias)) {
               return lakebaseBranches.find(b => b.isDefault)?.name;
-            }
-            if (isStaging) {
-              return lakebaseBranches.find(b => b.branchId === 'staging')?.name;
             }
             return lakebaseBranches.find(b =>
               b.branchId === this.lakebaseService.sanitizeBranchName(gb.name)
@@ -322,14 +321,11 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   ): BranchItem {
     const cfg = getConfig();
     const isMain = isMainBranch(gb.name, cfg.trunkBranch);
-    const isStaging = !isMain && isStagingBranch(gb.name, cfg.stagingBranch);
     const sanitized = this.lakebaseService.sanitizeBranchName(gb.name);
 
     let lb: LakebaseBranch | undefined;
     if (isMain) {
       lb = lakebaseBranches.find(b => b.isDefault);
-    } else if (isStaging) {
-      lb = lakebaseBranches.find(b => b.branchId === 'staging');
     } else {
       lb = lakebaseBranches.find(b =>
         b.branchId === sanitized ||
@@ -365,7 +361,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       const lbState = lb?.state || 'no db branch';
       const lbName = lb ? (lb.isDefault ? 'default' : lb.branchId) : '';
       item.description = lbName ? `→ ${lbName} (${lbState})` : lbState;
-      if (!lb && !isMain && !isStaging) { item.contextValue = 'currentBranchNoDb'; }
+      if (!lb && !isMain && !isTier) { item.contextValue = 'currentBranchNoDb'; }
     } else {
       item.description = lb?.state || '';
       if (!lb) { item.contextValue = 'branchNoDb'; }
