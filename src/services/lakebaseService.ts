@@ -78,8 +78,37 @@ export interface DatabricksProfile {
   lakebaseProjects?: Array<{ uid: string; displayName: string }>;
 }
 
+/**
+ * Substring match for the new-CLI-rejects-old-cache error class. Emitted
+ * when a user upgrades the `databricks` CLI and the new binary refuses
+ * to read credentials saved by an older version. Tagged separately from
+ * generic auth errors so the extension can surface a different remediation
+ * (re-login OR DATABRICKS_AUTH_STORAGE=plaintext) than for a plain
+ * not-logged-in case.
+ */
+export function isAuthStorageCacheError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /stored credentials from older CLI versions/i.test(msg);
+}
+
 function lakebaseExec(command: string, cwd?: string, env?: Record<string, string>): Promise<string> {
-  return exec(command, { cwd, env, timeout: 30000, tagAuthErrors: true });
+  // Honor DATABRICKS_AUTH_STORAGE from workspace .env when set. The CLI
+  // defaults to keyring-backed storage in newer versions; plaintext is
+  // the legacy file-cache mode that older saved credentials still live
+  // in. Users on a workspace where re-login isn't possible can opt in via
+  // .env and every CLI invocation will respect it.
+  const cfg = getConfig();
+  const storage = cfg.databricksAuthStorage;
+  const propagated: Record<string, string> = { ...(env ?? {}) };
+  if (storage && propagated.DATABRICKS_AUTH_STORAGE === undefined) {
+    propagated.DATABRICKS_AUTH_STORAGE = storage;
+  }
+  return exec(command, {
+    cwd,
+    env: Object.keys(propagated).length > 0 ? propagated : undefined,
+    timeout: 30000,
+    tagAuthErrors: true,
+  });
 }
 
 function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {

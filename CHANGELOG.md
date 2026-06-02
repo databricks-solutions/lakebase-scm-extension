@@ -2,13 +2,18 @@
 
 ## 0.5.8 (2026-06-01)
 
-The headline theme is **substrate v0.3.0-alpha.34 + tidy-up**. Picks up the FEIP-7210 schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate.
+The headline theme is **substrate v0.3.0-alpha.34 + tidy-up + CLI auth-storage compat fix**. Picks up the FEIP-7210 schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate. Late addition: surfaced + fixed an auth-storage compat issue caused by recent Databricks CLI upgrades.
 
 ### Added
 
 - **Consistent Command Palette prefix.** All 98 registered commands now carry `category: "Lakebase SCM"` in `package.json#contributes.commands`. Cmd+Shift+P typing "Lakebase" surfaces every extension command under that single prefix (vs. 96 of 98 previously rendering with no category at all).
 - **Menu placements for 6 palette-only commands.** `refreshCredentials`, `runMigrate`, `showMigrationHistory`, `showBranchStatus`, `createBranch` (db-only), `showCachedBranchDiff` now appear in the `lakebaseSync.lakebaseMenu` submenu, grouped as `1_lakebase` (status / db-branch / creds / diff) + `3_migrations` (migrate + history). Closes plugin-plan Phase 6 #56.
 - **`gitService.getMergeBaseFor(candidate, tip?)`.** Per-candidate merge-base routed through the substrate (`@databricks-solutions/lakebase-app-dev-kit#getMergeBase` with explicit `candidates: [candidate]`). Used by the PR base-branch picker to rank parent candidates by merge-base recency.
+- **`DATABRICKS_AUTH_STORAGE` honored end-to-end.** Newly added to `LakebaseConfig` + `EnvConfig` (read from `.env`, workspace settings, or process env), and propagated by `lakebaseExec` to every spawned `databricks` CLI invocation. Lets users opt into plaintext file-cache storage on workspaces where the CLI was upgraded past the keyring-credentials break.
+
+### Fixed: extension surface
+
+- **CLI auth-storage compat (the loop bug).** Symptom: on Cursor / VS Code with a newly-upgraded `databricks` CLI, the extension reports "Not connected", `Connect to Workspace` re-authenticates, the in-memory hostOverride lets things work for a moment, and the next window reload puts the user back to "Not connected". Root cause: the new CLI rejects credentials saved by older versions ("stored credentials from older CLI versions are no longer used") and the extension's `handleAuthError` didn't recognize this error class, so it just reported the generic "Not connected" without the remediation hint. Fix: `lakebaseService.isAuthStorageCacheError()` matches the error substring; `handleAuthError` and the activation-time check both surface a two-action notification ("Re-authenticate" / "Use plaintext storage"). The "Use plaintext storage" action writes `DATABRICKS_AUTH_STORAGE=plaintext` into the workspace `.env` via the existing `upsertEnvKeys` helper, then offers a one-click reload. After reload, `lakebaseExec` reads the value via `getConfig()` and propagates it to every CLI call. Recovery is one click instead of a CLI archaeology session.
 
 ### Changed
 

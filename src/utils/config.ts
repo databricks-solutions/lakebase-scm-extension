@@ -49,11 +49,23 @@ export interface LakebaseConfig {
    * projects/users. Empty = show all branches (original behavior).
    */
   gitBranchPrefix: string;
+  /**
+   * Optional `DATABRICKS_AUTH_STORAGE` override. Honored by
+   * `lakebaseExec` (lakebaseService.ts) and propagated as an env var to
+   * every spawned `databricks` CLI invocation. When unset, the CLI
+   * picks its default backend (keyring on newer versions, file on
+   * older). Set to `plaintext` when the CLI rejects keyring credentials
+   * from older saved sessions ("stored credentials from older CLI
+   * versions are no longer used"): the new CLI then reads + writes
+   * the file cache directly, preserving compat with existing logins.
+   */
+  databricksAuthStorage: string;
 }
 
 export interface EnvConfig {
   DATABRICKS_HOST?: string;
   DATABRICKS_TOKEN?: string;
+  DATABRICKS_AUTH_STORAGE?: string;
   LAKEBASE_PROJECT_ID?: string;
   LAKEBASE_HOST?: string;
   LAKEBASE_BRANCH_ID?: string;
@@ -64,7 +76,7 @@ export interface EnvConfig {
   LAKEBASE_STAGING_BRANCH?: string;
   LAKEBASE_BASE_BRANCH?: string;
   LAKEBASE_GIT_BRANCH_PREFIX?: string;
-  // Legacy – kept for backward compat with existing Java projects
+  // Legacy: kept for backward compat with existing Java projects
   SPRING_DATASOURCE_URL?: string;
   SPRING_DATASOURCE_USERNAME?: string;
   SPRING_DATASOURCE_PASSWORD?: string;
@@ -160,6 +172,11 @@ export function getConfig(): LakebaseConfig {
     stagingBranch: wsConfig.get('stagingBranch', '') || envConfig.LAKEBASE_STAGING_BRANCH || '',
     baseBranch: wsConfig.get('baseBranch', '') || envConfig.LAKEBASE_BASE_BRANCH || '',
     gitBranchPrefix: wsConfig.get('gitBranchPrefix', '') || envConfig.LAKEBASE_GIT_BRANCH_PREFIX || '',
+    databricksAuthStorage:
+      wsConfig.get('databricksAuthStorage', '') ||
+      envConfig.DATABRICKS_AUTH_STORAGE ||
+      process.env.DATABRICKS_AUTH_STORAGE ||
+      '',
   };
 }
 
