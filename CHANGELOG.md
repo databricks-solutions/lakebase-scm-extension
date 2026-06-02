@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.10 (2026-06-02)
+
+The headline theme is **First-Time Setup for existing projects actually works**, plus README discoverability. Two PRs:
+
+### Fixed: brownfield onboarding loop
+
+- **`Lakebase: Set Up Existing Project`** (renamed from "Create Database Project for This Workspace") now wires the whole flow through the kit's new `adoptLakebaseProject` brownfield primitive (kit v0.3.0-alpha.37). Creates the Lakebase database project, resolves the default branch, writes `.env` / `.env.example`. Pre-flights for "is this a git repo?" and ".env compatibility with the requested project name" BEFORE the auth prompt so the user lands on a precise error instead of a partial setup. On success the command persists `workspaceState.lakebaseSync.onboarding.completedAt` + `defaultBranch`, refreshes the `hasProjectId` setContext, and refreshes the tree views so the sidebar lights up without a window reload.
+- **Activation prompt now has action buttons.** The bare warning on missing `LAKEBASE_PROJECT_ID` is replaced with a modal offering `Set Up Lakebase` / `Connect to Existing` / `Dismiss`. Dismissal persists in `globalState` so existing users do not re-see it every activation.
+- **`viewsWelcome` contributions** for `lakebaseBranches` and `lakebaseChanges` views paint the onboarding CTA inside the sidebar when no project id is configured, instead of silently rendering an empty list. Driven by the new `lakebaseSync.hasProjectId` setContext.
+- **Tree-provider defense in depth.** When `lakebaseProjectId` is empty the placeholder row offers "Set Up Lakebase for This Workspace" with a click-to-run command, instead of silently dropping the row.
+- **`createUnifiedBranch` pre-check.** Refuses to `git checkout -b` when no project id is configured, so users with broken onboarding no longer land on a dangling git branch when the Lakebase side fails with a cryptic "instance not found" error. The onboarding command is one button away.
+- **Typed `MissingProjectError`** in `lakebaseService.ts`. Every substrate-bound public method now calls `requireProjectInstance()` at entry so command catches route to onboarding via the new `handleMissingProjectError` helper, instead of surfacing a raw substrate error.
+
+### Fixed: README discoverability
+
+- **Getting Started: 2-step `Cmd-Shift-P`** keystroke instruction so the Create New Project wizard is one keystroke away. The wizard table + Language Templates + Runner Types subsections are untouched.
+- **First-Time Setup (Existing Project)** rewritten with two paths split on whether `LAKEBASE_PROJECT_ID` is already configured. The non-Lakebase path points at the same `lakebaseSync.createLakebaseProject` command the activation prompt and viewsWelcome surface.
+
+### Substrate
+
+- **Kit pin: `v0.3.0-alpha.36` → `v0.3.0-alpha.37`.** alpha.37 ships the `adoptLakebaseProject` brownfield primitive (kit PR #116) plus FEIP-7211 (spike → design-spec carry-forward), FEIP-7218 (per-experiment cap), FEIP-7424 (command-drift detector), FEIP-7425 (`lakebase-update-commands` bin), and `MarkdownAdapter.pull` reader.
+
+372/372 mocha tests pass; tsc clean.
+
 ## 0.5.9 (2026-06-02)
 
 The headline theme is **kit alpha.36 + tier auto-discovery in the extension + auth-storage cleanup**. Three PRs:
