@@ -1207,8 +1207,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
-      const fs = require('fs');
       const path = require('path');
+      const { adoptLakebaseProject, assertAdoptionPreflight } = require('@databricks-solutions/lakebase-app-dev-kit');
 
       const root = getWorkspaceRoot();
       if (!root) {
@@ -1222,9 +1222,21 @@ export async function activate(context: vscode.ExtensionContext) {
         prompt: 'Lakebase project ID',
         value: existing || defaultName,
         validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
-        title: 'Lakebase: Create Database Project for This Workspace',
+        title: 'Lakebase: Set Up Existing Project',
       });
       if (!projectId) { return; }
+
+      // Brownfield pre-flight: refuse fast if the workspace is not a
+      // git repo or .env already declares a different LAKEBASE_PROJECT_ID.
+      // The kit primitive enforces the same gates but surfacing them
+      // before the auth prompt is friendlier (no point asking the user
+      // to log in if we are going to refuse anyway).
+      try {
+        assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(err.message);
+        return;
+      }
 
       const authStatus = await lakebaseService.checkAuth();
       if (!authStatus.authenticated) {
@@ -1244,25 +1256,42 @@ export async function activate(context: vscode.ExtensionContext) {
       const host = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
 
       try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Creating Lakebase project: ${projectId}`, cancellable: false },
+        const result = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Setting up Lakebase: ${projectId}`, cancellable: false },
           async (progress) => {
-            progress.report({ message: 'Creating database...' });
-            await lakebaseService.createProject(projectId);
-
-            progress.report({ message: 'Updating .env...' });
-            const envPath = path.join(root, '.env');
-            const existingContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
-            const updated = upsertEnvKeys(existingContent, {
-              DATABRICKS_HOST: host,
-              LAKEBASE_PROJECT_ID: projectId,
+            progress.report({ message: 'Creating database and writing .env...' });
+            // Delegates to the kit's brownfield primitive
+            // (adoptLakebaseProject) which creates the Lakebase project
+            // server-side, resolves the default branch, and writes
+            // .env / .env.example to the workspace. It deliberately
+            // skips the GitHub-side steps (repo creation, clone, push)
+            // since this is a brownfield onboarding; the user already
+            // has a git repo.
+            return await adoptLakebaseProject({
+              projectDir: root,
+              projectName: projectId,
+              databricksHost: host,
             });
-            fs.writeFileSync(envPath, updated);
           }
         );
+
+        // Persist a completion stamp in workspaceState so the activation
+        // prompt does not re-fire on the next window reload, and refresh
+        // the hasProjectId context so viewsWelcome flips immediately.
+        await context.workspaceState.update('lakebaseSync.onboarding.completedAt', new Date().toISOString());
+        await context.workspaceState.update('lakebaseSync.onboarding.defaultBranch', result.defaultBranch);
+        await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
+        branchTreeProvider.refresh();
+        statusBarProvider.refresh();
+
+        if (result.warnings.length > 0) {
+          for (const w of result.warnings) {
+            void vscode.window.showWarningMessage(w);
+          }
+        }
       } catch (err: any) {
         if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Failed to create Lakebase project: ${err.message}`);
+          vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${err.message}`);
         }
         return;
       }
