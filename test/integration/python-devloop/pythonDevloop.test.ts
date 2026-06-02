@@ -188,7 +188,7 @@ describe('Python Dev Loop – 4 Iterative Scenarios', function () {
     lakebaseService.setHostOverride(dbHost);
     lakebaseService.setProjectIdOverride(PROJECT_NAME);
 
-    const scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../../'));
+    const scaffoldService = new ScaffoldService();
     const creationService = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldService);
     const parentDir = require('os').homedir();
     const projectDir = path.join(parentDir, PROJECT_NAME);

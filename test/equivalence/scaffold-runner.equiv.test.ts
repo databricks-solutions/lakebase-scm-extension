@@ -27,7 +27,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
 
     const lakebase = new LakebaseService();
     const github = new GitHubService();
-    const scaffold = new ScaffoldService("/fake/extension");
+    const scaffold = new ScaffoldService();
     const runner = new RunnerService(github);
     void runner; // exercise constructor; createProject doesn't use it directly
     const service = new ProjectCreationService(
@@ -68,7 +68,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
       workflows: ["pr.yml"],
       hooksInstalled: "all-installed",
     });
-    const scaffold = new ScaffoldService("/fake/extension");
+    const scaffold = new ScaffoldService();
 
     const result = await scaffold.scaffoldAll("/tmp/proj", {
       databricksHost: "https://example.cloud.databricks.com",
@@ -96,7 +96,7 @@ describe("equivalence: scaffold + runner + project creation + credential", () =>
       workflows: [],
       hooksInstalled: "",
     });
-    const scaffold = new ScaffoldService("/fake/extension");
+    const scaffold = new ScaffoldService();
 
     await scaffold.scaffoldAll("/tmp/proj");
 

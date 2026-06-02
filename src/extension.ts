@@ -1136,8 +1136,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!lakebaseProjectName) { return; }
 
       // ── Step 4: Execute ──────────────────────────────────────────
-      const extensionPath = context.extensionPath;
-      const scaffoldSvc = new ScaffoldService(extensionPath);
+      const scaffoldSvc = new ScaffoldService();
       const creationSvc = new ProjectCreationService(gitService, githubService, lakebaseService, scaffoldSvc);
       lakebaseService.setHostOverride(dbHost!);
       lakebaseService.setProjectIdOverride(lakebaseProjectName);
@@ -1777,9 +1776,20 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         return;
       }
-      const src = path.join(context.extensionPath, 'templates', 'project', 'common', 'client-reference', 'playwright.config.ts');
+      // FEIP-7435: read the reference Playwright config from the kit's
+      // bundled templates dir (shipped via the kit's npm package), not
+      // from a duplicate inside the extension. Resolves the kit package
+      // root via require.resolve, then walks down to the template file.
+      let src: string;
+      try {
+        const kitPkgPath = require.resolve('@databricks-solutions/lakebase-app-dev-kit/package.json');
+        src = path.join(path.dirname(kitPkgPath), 'templates', 'project', 'common', 'client-reference', 'playwright.config.ts');
+      } catch {
+        vscode.window.showErrorMessage('Could not resolve the lakebase-app-dev-kit package (templates source).');
+        return;
+      }
       if (!fs.existsSync(src)) {
-        vscode.window.showErrorMessage('Reference Playwright config missing from extension (client-reference/playwright.config.ts).');
+        vscode.window.showErrorMessage('Reference Playwright config missing from the kit package (client-reference/playwright.config.ts).');
         return;
       }
       const dest = path.join(clientDir, 'playwright.config.ts');

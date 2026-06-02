@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.11 (2026-06-02)
+
+The headline theme is **`git checkout -b feature/x` now works on workspaces with short branch-expiration policies**, plus a structural cleanup that eliminates the extension's substrate-template duplication.
+
+### Fixed
+
+- **Workspace TTL auto-recovery (kit FEIP-7436).** Workspaces enforce a maximum branch-expiration policy that the Lakebase API does not directly expose. The kit's `createFeatureBranch` defaults to a 30-day TTL; some workspaces cap below this and rejected the create with `expiration time exceeds the maximum expiration time`, leaving the user with a half-finished checkout. The kit now self-heals: on a TTL-too-long rejection it probes `databricks postgres get-project` for `history_retention_duration` (a conservative upper bound for the cap) and retries with `min(originalTtl, retention)`. Retention is cached per-instance for the rest of the session. Surfaced by the partner-asset-tracker workflow on 2026-06-02.
+
+### Changed
+
+- **Extension no longer ships its own `templates/project/` copy (FEIP-7435).** The substrate already bundles the templates via the kit npm package; the extension was overriding the substrate's resolver with a stale duplicate that had drifted 131+ lines from the kit's canonical copy (including the recent `SCRIPT_DIR` bug fix). The extension now lets the substrate auto-resolve via `findTemplatesDir` from the kit's `node_modules` location. The Playwright "Install Reference Config" command also reads from the kit's bundled location via `require.resolve`. VSIX shrinks from 246 files / 1.40MB to 179 files / 1.25MB.
+
+### Substrate
+
+- **Kit pin: `v0.3.0-alpha.38` -> `v0.3.0-alpha.39`.** alpha.39 ships FEIP-7436 (TTL auto-recovery + parse/min/cache helpers) and the prerequisite for FEIP-7435 (templates now ship in the kit's npm package `files` array, so consumers can resolve them via `findTemplatesDir` without overriding).
+
+372/372 mocha tests pass; tsc clean.
+
 ## 0.5.10 (2026-06-02)
 
 The headline theme is **First-Time Setup for existing projects actually works**, plus README discoverability. Two PRs:

@@ -51,7 +51,7 @@ describe('ScaffoldService – Live Integration', function () {
     gitService = new GitService();
     githubService = new GitHubService();
     // extensionPath is the lakebase-scm-extension root (where templates/ lives)
-    scaffoldService = new ScaffoldService(path.resolve(__dirname, '../../'));
+    scaffoldService = new ScaffoldService();
     ghUser = cp.execSync('gh api user --jq ".login"', { timeout: 10000 }).toString().trim();
     fullRepoName = `${ghUser}/${TEST_REPO}`;
     repoDir = path.join(require('os').tmpdir(), TEST_REPO);
