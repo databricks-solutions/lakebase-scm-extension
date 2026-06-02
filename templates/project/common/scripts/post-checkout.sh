@@ -15,6 +15,11 @@ fi
 WORK_TREE="$(git rev-parse --show-toplevel)"
 cd "$WORK_TREE"
 
+# Helper scripts live in the repo's scripts/ dir. The hook itself is copied
+# into .git/hooks/ by install-hook.sh, so $0's directory is NOT where the
+# helpers live: resolve them relative to the work tree instead.
+SCRIPT_DIR="$WORK_TREE/scripts"
+
 # Detached HEAD: skip
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
@@ -272,8 +277,15 @@ if [ -n "$STAGING_ALIAS" ] && [ "$BRANCH" = "$STAGING_ALIAS" ]; then
 fi
 
 # --- Feature branch: create Lakebase branch from the configured base ---
-# Sanitize git branch name for Lakebase branch ID
-LAKEBASE_BRANCH="$("$SCRIPT_DIR/sanitize-branch-name.sh" "$BRANCH")"
+# Sanitize git branch name for Lakebase branch ID. Prefer the helper script;
+# fall back to inline sanitization if it is missing (keeps the hook working
+# even when only post-checkout was installed without the helper).
+if [ -x "$SCRIPT_DIR/sanitize-branch-name.sh" ]; then
+  LAKEBASE_BRANCH="$("$SCRIPT_DIR/sanitize-branch-name.sh" "$BRANCH")"
+else
+  LAKEBASE_BRANCH="$(echo "$BRANCH" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | cut -c1-63)"
+  while [ ${#LAKEBASE_BRANCH} -lt 3 ]; do LAKEBASE_BRANCH="${LAKEBASE_BRANCH}-x"; done
+fi
 BRANCH_PATH="${PROJ_PATH}/branches/${LAKEBASE_BRANCH}"
 
 # Resolve the parent (source) Lakebase branch. Precedence:
