@@ -6,21 +6,38 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 
 **The problem it solves:** When applications use Lakebase (Databricks' Postgres-compatible database with copy-on-write branching), developers need to keep code branches and database branches in sync. Without this extension, you manually create database branches, refresh credentials, track schema diffs, and clean up branches – across the CLI, the Databricks console, and GitHub.
 
-**What it does:**
-- **Create New Project** – 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
-- **Automatic branch pairing** – `git checkout -b feature/x` automatically creates a Lakebase database branch
-- **Live schema visibility** – see actual database tables on each branch with diff indicators (new/modified/removed vs the branch's parent)
-- **Two parallel interfaces** – work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
-- **CI Runner management** – deploy, start, stop, and monitor a self-hosted GitHub Actions runner from the sidebar
-- **PR integration** – commit → push → create PR in one flow; CI creates a dedicated Lakebase branch for testing
-- **Merge awareness** – merge PRs from VS Code; CI applies migrations to production and cleans up branches
-- **Branch Review** – multi-diff editor showing all code + schema changes vs the branch's parent, querying actual database state
-- **Deploy to Databricks Apps** – multi-target deploy wizard with per-file workspace upload, clickable deploy progress, and post-deploy app launch
-- **Full Git SCM parity** – every command from the built-in Git extension is available, plus Lakebase sync
+## Step 1 – Install the Extension
 
-## Getting Started: Create a New Project
+### Prerequisites
 
-The fastest way to start is the **Create New Project** wizard. Two keystrokes get you there:
+| Requirement | Install |
+|-------------|---------|
+| VS Code 1.85+ or Cursor | – |
+| Databricks CLI v0.285+ | `brew install databricks` |
+| GitHub sign-in (VS Code) or PAT | Sign in when prompted, or set `lakebaseSync.githubToken` |
+| PostgreSQL client (psql) | `brew install libpq` |
+| Databricks workspace | With Lakebase enabled |
+
+**For Java/Kotlin projects:** JVM 21+ and Maven (the scaffold includes `mvnw`)
+**For Python projects:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (`brew install uv` or `pip install uv`)
+**For Node.js projects:** Node.js 18+
+
+### Install the VSIX
+
+1. Download the `lakebase-scm-extension-*.vsix` asset from the [latest release](https://github.com/databricks-solutions/lakebase-scm-extension/releases/latest)
+2. In VS Code: **Extensions** → `...` → **Install from VSIX** → select the file
+3. Reload the window
+
+## Step 2 – Set Up Your Project
+
+With the extension installed, pick one of two paths:
+
+1. **[Create a New Project](#create-a-new-project)** when there is no git repo or Lakebase database yet. The wizard scaffolds everything end-to-end.
+2. **[Adopt an Existing Project](#adopt-an-existing-project)** when the git repo already exists. The command onboards it to Lakebase without touching the rest of the codebase.
+
+### Create a New Project
+
+The fastest way to start a brand-new project is the **Create New Project** wizard. Two keystrokes get you there:
 
 1. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** (Windows/Linux) to open the VS Code Command Palette.
 2. Type **`Lakebase: Create New Project`** and hit return.
@@ -51,7 +68,7 @@ The wizard walks through 10 steps:
 
 After creation, the extension offers to open the new project folder.
 
-### Language Templates
+#### Language Templates
 
 | Language | Framework | Migration Tool | Package Manager | Test Framework |
 |----------|-----------|---------------|-----------------|----------------|
@@ -64,54 +81,23 @@ Java and Kotlin projects are generated live from Spring Initializr at scaffold t
 
 Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language from `pom.xml`, `pyproject.toml`, or `package.json`. CI workflows are language-aware – they detect the project type and run the correct setup, migration, and test tools automatically.
 
-### Runner Types
+#### Runner Types
 
 | Type | How CI runs | When to use |
 |------|------------|-------------|
 | **Self-hosted** (default) | On your local machine via a GitHub Actions runner | No internet needed for builds; uses local JDK + Maven cache |
 | **GitHub-hosted** | On GitHub's infrastructure | Standard GitHub Actions; requires internet for dependency downloads |
 
-## How to Install
+### Adopt an Existing Project
 
-### Prerequisites
+For an existing git repo that has no Lakebase database project yet:
 
-| Requirement | Install |
-|-------------|---------|
-| VS Code 1.85+ or Cursor | – |
-| Databricks CLI v0.285+ | `brew install databricks` |
-| GitHub sign-in (VS Code) or PAT | Sign in when prompted, or set `lakebaseSync.githubToken` |
-| PostgreSQL client (psql) | `brew install libpq` |
-| Databricks workspace | With Lakebase enabled |
-
-**For Java/Kotlin projects:** JVM 21+ and Maven (the scaffold includes `mvnw`)
-**For Python projects:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (`brew install uv` or `pip install uv`)
-**For Node.js projects:** Node.js 18+
-
-### Install the Extension
-
-1. Download the `lakebase-scm-extension-*.vsix` asset from the [latest release](https://github.com/databricks-solutions/lakebase-scm-extension/releases/latest)
-2. In VS Code: **Extensions** → `...` → **Install from VSIX** → select the file
-3. Reload the window
-
-### First-Time Setup (Existing Project)
-
-Two paths, depending on whether the project already has a Lakebase database project:
-
-**Project already has Lakebase (`.env` or `.env.example` declares `LAKEBASE_PROJECT_ID`)**:
-
-1. Open your project folder in VS Code. The extension activates when it sees the `.env`.
-2. Click **Connect to Workspace** in the Lakebase sidebar title bar.
-3. Complete OAuth login in the terminal.
-4. Run **Health Check** (`⋯` → Lakebase → Health Check) to verify everything is wired up.
-
-**Project has no Lakebase database project yet (existing git repo, fresh slate)**:
-
-1. Open your project folder in VS Code.
+1. Open the project folder in VS Code.
 2. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** and run **`Lakebase: Set Up Existing Project`**.
 3. The command prompts for project name, Databricks host, and language (auto-detected from `pom.xml` / `pyproject.toml` / `package.json`), then composes the kit's brownfield onboarding: creates the Lakebase database project, drops `.env`, the git hooks under `.githooks/`, the GitHub Actions workflows under `.github/workflows/`, and (when applicable) the `.tdd/` and `.claude/commands/` scaffolds. Existing files are detected as drift and preserved by default; pass an explicit overwrite when the kit's templates should win.
 4. Run **Health Check** to verify the wiring.
 
-If you skip step 2 and open a non-Lakebase project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
+If you skip step 2 and just open the project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
 
 ## Developer Workflow
 
