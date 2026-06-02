@@ -6,21 +6,7 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 
 **The problem it solves:** When applications use Lakebase (Databricks' Postgres-compatible database with copy-on-write branching), developers need to keep code branches and database branches in sync. Without this extension, you manually create database branches, refresh credentials, track schema diffs, and clean up branches – across the CLI, the Databricks console, and GitHub.
 
-**What it does:**
-- **Create New Project** – 10-step wizard scaffolds a complete project: GitHub repo + Lakebase database + language template (Java/Kotlin/Python/Node.js) + CI/CD workflows + self-hosted runner
-- **Automatic branch pairing** – `git checkout -b feature/x` automatically creates a Lakebase database branch
-- **Live schema visibility** – see actual database tables on each branch with diff indicators (new/modified/removed vs the branch's parent)
-- **Two parallel interfaces** – work from the **Lakebase sidebar** or the **SCM view**, both with full functionality
-- **CI Runner management** – deploy, start, stop, and monitor a self-hosted GitHub Actions runner from the sidebar
-- **PR integration** – commit → push → create PR in one flow; CI creates a dedicated Lakebase branch for testing
-- **Merge awareness** – merge PRs from VS Code; CI applies migrations to production and cleans up branches
-- **Branch Review** – multi-diff editor showing all code + schema changes vs the branch's parent, querying actual database state
-- **Deploy to Databricks Apps** – multi-target deploy wizard with per-file workspace upload, clickable deploy progress, and post-deploy app launch
-- **Full Git SCM parity** – every command from the built-in Git extension is available, plus Lakebase sync
-
-## Install the Extension
-
-The first step is always installing the VSIX. Both Getting Started paths below assume the extension is installed.
+## Step 1 – Install the Extension
 
 ### Prerequisites
 
@@ -42,14 +28,14 @@ The first step is always installing the VSIX. Both Getting Started paths below a
 2. In VS Code: **Extensions** → `...` → **Install from VSIX** → select the file
 3. Reload the window
 
-## Getting Started
+## Step 2 – Set Up Your Project
 
-Two paths, pick one:
+With the extension installed, pick one of two paths:
 
-1. **[Create a New Project](#1-create-a-new-project)** when there is no git repo or Lakebase database yet. The wizard scaffolds everything end-to-end.
-2. **[Adopt an Existing Project](#2-adopt-an-existing-project)** when the git repo already exists. The command onboards it to Lakebase without touching the rest of the codebase.
+1. **[Create a New Project](#create-a-new-project)** when there is no git repo or Lakebase database yet. The wizard scaffolds everything end-to-end.
+2. **[Adopt an Existing Project](#adopt-an-existing-project)** when the git repo already exists. The command onboards it to Lakebase without touching the rest of the codebase.
 
-### 1. Create a New Project
+### Create a New Project
 
 The fastest way to start a brand-new project is the **Create New Project** wizard. Two keystrokes get you there:
 
@@ -102,7 +88,7 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 | **Self-hosted** (default) | On your local machine via a GitHub Actions runner | No internet needed for builds; uses local JDK + Maven cache |
 | **GitHub-hosted** | On GitHub's infrastructure | Standard GitHub Actions; requires internet for dependency downloads |
 
-### 2. Adopt an Existing Project
+### Adopt an Existing Project
 
 For an existing git repo that has no Lakebase database project yet:
 
