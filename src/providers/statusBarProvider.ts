@@ -62,6 +62,8 @@ export class StatusBarProvider {
       } else if (isStaging) {
         lbBranch = await this.lakebaseService.getBranchByName('staging');
       } else {
+        // LakebaseService.getBranchByName sanitizes at entry now, so
+        // passing the raw git branch (which may contain `/`) is safe.
         lbBranch = await this.lakebaseService.getBranchByName(gitBranch);
       }
 

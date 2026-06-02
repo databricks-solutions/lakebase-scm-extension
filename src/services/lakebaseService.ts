@@ -91,24 +91,94 @@ export function isAuthStorageCacheError(err: unknown): boolean {
   return /stored credentials from older CLI versions/i.test(msg);
 }
 
-function lakebaseExec(command: string, cwd?: string, env?: Record<string, string>): Promise<string> {
-  // Honor DATABRICKS_AUTH_STORAGE from workspace .env when set. The CLI
+/**
+ * Substring match for the OAuth refresh-token-invalid error class.
+ * Surfaces when a previously-saved OAuth refresh token has expired or
+ * been revoked. ONLY remedy is a fresh `databricks auth login` against
+ * the workspace, which mints a new refresh token via the browser flow.
+ * No automatic retry is possible (OAuth requires interactive sign-in);
+ * the extension catches this class to surface a one-click "Re-
+ * authenticate" notification that opens the right terminal command.
+ */
+export function isRefreshTokenInvalidError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /refresh token is invalid/i.test(msg) ||
+    /access token could not be retrieved/i.test(msg);
+}
+
+/**
+ * Module-level cache of the auth-storage mode the extension switched
+ * to after a successful retry. Once we discover that `plaintext` works
+ * for this host, every subsequent CLI call from this extension instance
+ * passes it (in addition to .env-persisted value, which lakebaseExec
+ * already honors). Cleared on `setAuthStorageRuntime("")`.
+ */
+let runtimeAuthStorageOverride = "";
+
+export function setAuthStorageRuntime(value: string): void {
+  runtimeAuthStorageOverride = value;
+}
+
+export function getAuthStorageRuntime(): string {
+  return runtimeAuthStorageOverride;
+}
+
+/**
+ * Observer fired the first time the runtime override is set by the
+ * auto-retry path. The extension layer subscribes to this so it can
+ * persist `DATABRICKS_AUTH_STORAGE=plaintext` to the workspace .env,
+ * making the fallback stick across reloads without the user touching
+ * a config file. Fires at most once per process; clear via reset.
+ */
+let runtimeAuthStorageObserver: ((value: string) => void) | undefined;
+
+export function onAuthStorageRuntimeChange(cb: (value: string) => void): void {
+  runtimeAuthStorageObserver = cb;
+}
+
+async function lakebaseExec(command: string, cwd?: string, env?: Record<string, string>): Promise<string> {
+  // Honor DATABRICKS_AUTH_STORAGE from workspace .env when set, and
+  // from the runtime override discovered by auto-retry. The CLI
   // defaults to keyring-backed storage in newer versions; plaintext is
   // the legacy file-cache mode that older saved credentials still live
-  // in. Users on a workspace where re-login isn't possible can opt in via
-  // .env and every CLI invocation will respect it.
+  // in. Users on a workspace where re-login isn't possible can opt in
+  // via .env or let the auto-retry path discover the fallback.
   const cfg = getConfig();
-  const storage = cfg.databricksAuthStorage;
+  const storage = cfg.databricksAuthStorage || runtimeAuthStorageOverride;
   const propagated: Record<string, string> = { ...(env ?? {}) };
   if (storage && propagated.DATABRICKS_AUTH_STORAGE === undefined) {
     propagated.DATABRICKS_AUTH_STORAGE = storage;
   }
-  return exec(command, {
-    cwd,
-    env: Object.keys(propagated).length > 0 ? propagated : undefined,
-    timeout: 30000,
-    tagAuthErrors: true,
-  });
+  try {
+    return await exec(command, {
+      cwd,
+      env: Object.keys(propagated).length > 0 ? propagated : undefined,
+      timeout: 30000,
+      tagAuthErrors: true,
+    });
+  } catch (err) {
+    // Auto-retry storage-cache rejection with plaintext. If the retry
+    // succeeds, persist the override at runtime so subsequent calls do
+    // not pay the same retry cost. The .env-persist happens at a
+    // higher layer (LakebaseService method) where we have access to
+    // the workspace root.
+    if (isAuthStorageCacheError(err) && propagated.DATABRICKS_AUTH_STORAGE !== "plaintext") {
+      const retryEnv = { ...propagated, DATABRICKS_AUTH_STORAGE: "plaintext" };
+      const result = await exec(command, {
+        cwd,
+        env: retryEnv,
+        timeout: 30000,
+        tagAuthErrors: true,
+      });
+      const wasUnset = runtimeAuthStorageOverride !== "plaintext";
+      runtimeAuthStorageOverride = "plaintext";
+      if (wasUnset && runtimeAuthStorageObserver) {
+        try { runtimeAuthStorageObserver("plaintext"); } catch { /* observer must not break CLI flow */ }
+      }
+      return result;
+    }
+    throw err;
+  }
 }
 
 function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {
@@ -161,22 +231,77 @@ export class LakebaseService {
    * Run a substrate call with DATABRICKS_HOST mutated to the effective host.
    * Substrate's CLI invocations read process.env.DATABRICKS_HOST directly, so
    * mutating it around each call gives them the same host the extension is
-   * using. Restores the prior value after – even on throw.
+   * using. Restores the prior value after, even on throw.
+   *
+   * Also resolves the matching `DATABRICKS_CONFIG_PROFILE` by host-match
+   * against `~/.databrickscfg` and sets it in env, so CLI auth always
+   * uses the right profile instead of falling back to a broken DEFAULT.
    */
   private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
     if (!host) { return fn(); }
-    const prior = process.env.DATABRICKS_HOST;
+    const priorHost = process.env.DATABRICKS_HOST;
+    const priorProfile = process.env.DATABRICKS_CONFIG_PROFILE;
     process.env.DATABRICKS_HOST = host;
+    const profile = await this.resolveProfileForHost(host);
+    if (profile) {
+      process.env.DATABRICKS_CONFIG_PROFILE = profile;
+    }
     try {
       return await fn();
     } finally {
-      if (prior === undefined) {
+      if (priorHost === undefined) {
         delete process.env.DATABRICKS_HOST;
       } else {
-        process.env.DATABRICKS_HOST = prior;
+        process.env.DATABRICKS_HOST = priorHost;
+      }
+      if (priorProfile === undefined) {
+        delete process.env.DATABRICKS_CONFIG_PROFILE;
+      } else {
+        process.env.DATABRICKS_CONFIG_PROFILE = priorProfile;
       }
     }
+  }
+
+  /**
+   * Cached host -> profile name map. `databricks auth profiles` reads
+   * ~/.databrickscfg without authenticating, so this is safe even when
+   * the underlying tokens are expired.
+   */
+  private profileByHost: Record<string, string> | undefined;
+
+  /**
+   * Look up the profile in ~/.databrickscfg whose host matches the
+   * given workspace host. Returns the profile name on match, or null
+   * if no profile matches (caller must decide whether to surface an
+   * error or fall back to the CLI's auto-resolution).
+   */
+  async resolveProfileForHost(host: string): Promise<string | null> {
+    if (!host) { return null; }
+    const normalize = (h: string) => h.replace(/\/+$/, "").toLowerCase();
+    const want = normalize(host);
+    if (this.profileByHost === undefined) {
+      this.profileByHost = {};
+      try {
+        const profiles = await this.listProfiles();
+        for (const p of profiles) {
+          if (p.host) { this.profileByHost[normalize(p.host)] = p.name; }
+        }
+      } catch {
+        // listProfiles failure is non-fatal here; we just return null
+        // and let the CLI fall back to its own resolution.
+      }
+    }
+    return this.profileByHost[want] ?? null;
+  }
+
+  /**
+   * Force a refresh of the profile cache. Called after a re-auth flow
+   * completes (the user may have added a new profile that didn't exist
+   * the first time we cached).
+   */
+  invalidateProfileCache(): void {
+    this.profileByHost = undefined;
   }
 
   // ── Inline: auth / profile (no substrate equivalent yet) ────────
@@ -324,8 +449,15 @@ export class LakebaseService {
   }
 
   async getBranchByName(name: string): Promise<LakebaseBranch | undefined> {
+    // Sanitize at entry: substrate's lookup is strict exact-string match
+    // against the friendly branch_id, but callers regularly pass a raw
+    // git branch (`feature/parallel-ab-test`) where the Lakebase branch
+    // is the slash-stripped form. Sanitization is idempotent on already-
+    // sanitized names, hardcoded values like 'staging', and UIDs (which
+    // are already in [a-z0-9-]+), so this is safe across all call sites.
+    const lookup = substrateSanitizeBranchName(name);
     const b = await this.withHost(() =>
-      substrateGetBranchByName(name, { instance: this.projectInstance() })
+      substrateGetBranchByName(lookup, { instance: this.projectInstance() })
     );
     return b ? adaptBranchInfo(b) : undefined;
   }
@@ -395,7 +527,7 @@ export class LakebaseService {
       const b = await this.withHost(() =>
         substrateWaitForBranchReady({
           instance: this.projectInstance(),
-          branch: branchName,
+          branch: substrateSanitizeBranchName(branchName),
           timeoutMs: maxAttempts * 5_000,
         })
       );
@@ -409,7 +541,7 @@ export class LakebaseService {
     await this.withHost(() =>
       substrateDeleteBranch({
         instance: this.projectInstance(),
-        branch: branchNameOrUid,
+        branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
   }
@@ -420,7 +552,7 @@ export class LakebaseService {
     return this.withHost(() =>
       substrateGetEndpoint({
         instance: this.projectInstance(),
-        branch: branchNameOrUid,
+        branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
   }
@@ -429,7 +561,7 @@ export class LakebaseService {
     return this.withHost(() =>
       substrateGetCredential({
         instance: this.projectInstance(),
-        branch: branchNameOrUid,
+        branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
   }
@@ -457,6 +589,11 @@ export class LakebaseService {
    * notifications for retry UX.
    */
   async syncConnection(branchId: string): Promise<{ host: string; branchId: string; username: string; password: string } | undefined> {
+    // Sanitize at entry. Callers should already be passing a Lakebase
+    // branchId (sanitization is idempotent in that case), but if a git
+    // branch with a slash leaks through, this keeps both the substrate
+    // calls and the .env we write below in the correct form.
+    branchId = substrateSanitizeBranchName(branchId);
     const vscode = require("vscode");
     const { updateEnvConnection } = require("../utils/config");
     const failTimestamp = new Date().toISOString();
@@ -488,7 +625,7 @@ export class LakebaseService {
       return await this.withHost(() =>
         substrateQueryBranchTables({
           instance: this.projectInstance(),
-          branch: branchNameOrUid,
+          branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
       );
@@ -512,7 +649,7 @@ export class LakebaseService {
       const tables = await this.withHost(() =>
         substrateQueryBranchSchema({
           instance: this.projectInstance(),
-          branch: branchNameOrUid,
+          branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
       );
@@ -529,7 +666,7 @@ export class LakebaseService {
       return await this.withHost(() =>
         substrateQueryBranchSchema({
           instance: this.projectInstance(),
-          branch: branchNameOrUid,
+          branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
       );
