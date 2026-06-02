@@ -37,6 +37,18 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "lakebaseBranches",
+        "contents": "This workspace has no Lakebase database project yet. Run the first-time setup to create one, or open an existing Lakebase-paired project.\n\n[Set Up Lakebase for This Workspace](command:lakebaseSync.createLakebaseProject)\n\n[Create New Project](command:lakebaseSync.createProject)\n\n[Learn more](https://github.com/databricks-solutions/lakebase-scm-extension#first-time-setup-existing-project)",
+        "when": "!lakebaseSync.hasProjectId"
+      },
+      {
+        "view": "lakebaseChanges",
+        "contents": "No Lakebase project configured. Set one up to start tracking schema and code changes per branch.\n\n[Set Up Lakebase for This Workspace](command:lakebaseSync.createLakebaseProject)",
+        "when": "!lakebaseSync.hasProjectId"
+      }
+    ],
     "views": {
       "lakebase-synced-scm": [
         {
@@ -1564,7 +1576,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.36",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-alpha.37",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

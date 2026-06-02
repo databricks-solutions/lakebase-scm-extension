@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from './services/gitService';
-import { LakebaseService, isAuthStorageCacheError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
+import { LakebaseService, isAuthStorageCacheError, isMissingProjectError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
@@ -146,6 +146,29 @@ async function handleAuthError(lakebaseService: LakebaseService, err: any): Prom
     vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
   } else if (action === 'Select Workspace') {
     vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+  }
+  return true;
+}
+
+/**
+ * Catch the typed `MissingProjectError` thrown by lakebaseService when
+ * an extension command is invoked without a configured project id, and
+ * route the user to the onboarding command instead of surfacing a raw
+ * substrate error. Returns true when the error was handled so the
+ * caller can short-circuit its own catch logic; returns false when the
+ * error is unrelated.
+ */
+async function handleMissingProjectError(err: unknown): Promise<boolean> {
+  if (!isMissingProjectError(err)) {
+    return false;
+  }
+  const action = await vscode.window.showWarningMessage(
+    "No LAKEBASE_PROJECT_ID configured for this workspace. Set up Lakebase to enable branch + database operations.",
+    "Set Up Lakebase",
+    "Dismiss",
+  );
+  if (action === "Set Up Lakebase") {
+    void vscode.commands.executeCommand("lakebaseSync.createLakebaseProject");
   }
   return true;
 }
@@ -460,9 +483,30 @@ export async function activate(context: vscode.ExtensionContext) {
   const config = getConfig();
 
   if (!config.lakebaseProjectId) {
-    vscode.window.showWarningMessage(
-      'Lakebase Sync: No LAKEBASE_PROJECT_ID found. Set it in .env or extension settings.'
-    );
+    // The bare warning toast (no action button) used to be the user's
+    // first signal that something was off. It left them to discover
+    // the palette command on their own. Surface the onboarding path
+    // directly as a button, and gate the prompt on a globalState
+    // dismissal stamp so existing users don't re-see it every
+    // activation.
+    const ONBOARDING_DISMISSED_KEY = 'lakebaseSync.onboarding.dismissedAt';
+    const dismissedAt = context.globalState.get<string>(ONBOARDING_DISMISSED_KEY);
+    if (!dismissedAt) {
+      void vscode.window.showWarningMessage(
+        'Lakebase Sync: this workspace has no LAKEBASE_PROJECT_ID. Set up Lakebase to enable branch + database operations.',
+        'Set Up Lakebase',
+        'Connect to Existing',
+        'Dismiss',
+      ).then((action) => {
+        if (action === 'Set Up Lakebase') {
+          void vscode.commands.executeCommand('lakebaseSync.createLakebaseProject');
+        } else if (action === 'Connect to Existing') {
+          void vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+        } else if (action === 'Dismiss') {
+          void context.globalState.update(ONBOARDING_DISMISSED_KEY, new Date().toISOString());
+        }
+      });
+    }
   }
 
   // Initialize services
@@ -619,6 +663,11 @@ export async function activate(context: vscode.ExtensionContext) {
     && !isTierBranch(initialBranch);
   vscode.commands.executeCommand('setContext', 'lakebaseSync.onFeatureBranch', isFeature);
   vscode.commands.executeCommand('setContext', 'lakebaseSync.isRebasing', await gitService.isRebasing());
+  // Drives the viewsWelcome contributions for `lakebaseBranches` /
+  // `lakebaseChanges` in package.json: when this is false the views
+  // render an onboarding button rather than silently rendering an
+  // empty list.
+  vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', !!getConfig().lakebaseProjectId);
 
   // Sync .env connection on git branch change, optionally auto-create Lakebase branch
   const autoBranchDisposable = gitService.onBranchChanged(async (newBranch: string) => {
@@ -684,7 +733,16 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       }
     } catch (err: any) {
-      if (!await handleAuthError(lakebaseService, err)) {
+      if (isMissingProjectError(err)) {
+        // No Lakebase project configured – the post-checkout hook would
+        // normally sync .env here, but the workspace is not yet onboarded.
+        // Silently log; the activation prompt + viewsWelcome already
+        // surface the onboarding path to the user. Avoid a toast on every
+        // checkout to keep the rest of the IDE quiet.
+        console.warn(
+          `Auto-branch sync skipped for ${newBranch}: workspace has no LAKEBASE_PROJECT_ID.`
+        );
+      } else if (!await handleAuthError(lakebaseService, err)) {
         // Silently log – don't block the user's checkout
         console.warn(`Auto-branch creation failed for ${newBranch}: ${err.message}`);
       }
@@ -1149,8 +1207,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
-      const fs = require('fs');
       const path = require('path');
+      const { adoptLakebaseProject, assertAdoptionPreflight } = require('@databricks-solutions/lakebase-app-dev-kit');
 
       const root = getWorkspaceRoot();
       if (!root) {
@@ -1164,9 +1222,21 @@ export async function activate(context: vscode.ExtensionContext) {
         prompt: 'Lakebase project ID',
         value: existing || defaultName,
         validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
-        title: 'Lakebase: Create Database Project for This Workspace',
+        title: 'Lakebase: Set Up Existing Project',
       });
       if (!projectId) { return; }
+
+      // Brownfield pre-flight: refuse fast if the workspace is not a
+      // git repo or .env already declares a different LAKEBASE_PROJECT_ID.
+      // The kit primitive enforces the same gates but surfacing them
+      // before the auth prompt is friendlier (no point asking the user
+      // to log in if we are going to refuse anyway).
+      try {
+        assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(err.message);
+        return;
+      }
 
       const authStatus = await lakebaseService.checkAuth();
       if (!authStatus.authenticated) {
@@ -1186,25 +1256,42 @@ export async function activate(context: vscode.ExtensionContext) {
       const host = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
 
       try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Creating Lakebase project: ${projectId}`, cancellable: false },
+        const result = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Setting up Lakebase: ${projectId}`, cancellable: false },
           async (progress) => {
-            progress.report({ message: 'Creating database...' });
-            await lakebaseService.createProject(projectId);
-
-            progress.report({ message: 'Updating .env...' });
-            const envPath = path.join(root, '.env');
-            const existingContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
-            const updated = upsertEnvKeys(existingContent, {
-              DATABRICKS_HOST: host,
-              LAKEBASE_PROJECT_ID: projectId,
+            progress.report({ message: 'Creating database and writing .env...' });
+            // Delegates to the kit's brownfield primitive
+            // (adoptLakebaseProject) which creates the Lakebase project
+            // server-side, resolves the default branch, and writes
+            // .env / .env.example to the workspace. It deliberately
+            // skips the GitHub-side steps (repo creation, clone, push)
+            // since this is a brownfield onboarding; the user already
+            // has a git repo.
+            return await adoptLakebaseProject({
+              projectDir: root,
+              projectName: projectId,
+              databricksHost: host,
             });
-            fs.writeFileSync(envPath, updated);
           }
         );
+
+        // Persist a completion stamp in workspaceState so the activation
+        // prompt does not re-fire on the next window reload, and refresh
+        // the hasProjectId context so viewsWelcome flips immediately.
+        await context.workspaceState.update('lakebaseSync.onboarding.completedAt', new Date().toISOString());
+        await context.workspaceState.update('lakebaseSync.onboarding.defaultBranch', result.defaultBranch);
+        await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
+        branchTreeProvider.refresh();
+        statusBarProvider.refresh();
+
+        if (result.warnings.length > 0) {
+          for (const w of result.warnings) {
+            void vscode.window.showWarningMessage(w);
+          }
+        }
       } catch (err: any) {
         if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Failed to create Lakebase project: ${err.message}`);
+          vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${err.message}`);
         }
         return;
       }
@@ -1244,6 +1331,23 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.createUnifiedBranch', async () => {
+      // Pre-check: refuse to create a git branch when no Lakebase
+      // project is configured, otherwise the user lands on a dangling
+      // local branch after `git checkout -b` succeeds and the Lakebase
+      // side fails with a cryptic "instance not found" error. The
+      // onboarding path is one button away.
+      if (!getConfig().lakebaseProjectId) {
+        const action = await vscode.window.showWarningMessage(
+          "No LAKEBASE_PROJECT_ID configured for this workspace. Set up Lakebase first; otherwise the git branch would be created without a matching database branch.",
+          "Set Up Lakebase",
+          "Cancel",
+        );
+        if (action === "Set Up Lakebase") {
+          void vscode.commands.executeCommand("lakebaseSync.createLakebaseProject");
+        }
+        return;
+      }
+
       const branchName = await vscode.window.showInputBox({
         prompt: 'New branch name',
         placeHolder: 'feature/my-feature',
@@ -1305,7 +1409,9 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
           } catch (err: any) {
-            if (!await handleAuthError(lakebaseService, err)) {
+            if (await handleMissingProjectError(err)) {
+              // Friendly toast already surfaced + onboarding offered.
+            } else if (!await handleAuthError(lakebaseService, err)) {
               vscode.window.showErrorMessage(`Failed to create branch: ${err.message}`);
             }
           } finally {

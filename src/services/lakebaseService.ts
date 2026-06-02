@@ -201,15 +201,60 @@ function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {
   };
 }
 
+/**
+ * Thrown when the extension tries to talk to Lakebase but the workspace
+ * has no `LAKEBASE_PROJECT_ID` configured. The activation flow and most
+ * command handlers catch this and route to the "Set Up Lakebase for
+ * This Workspace" onboarding command instead of surfacing the raw
+ * substrate error.
+ */
+export class MissingProjectError extends Error {
+  constructor(detail = "No LAKEBASE_PROJECT_ID configured for this workspace.") {
+    super(detail);
+    this.name = "MissingProjectError";
+  }
+}
+
+/** Type guard so catches that already accept `unknown` can route reliably. */
+export function isMissingProjectError(err: unknown): err is MissingProjectError {
+  return err instanceof MissingProjectError || (typeof err === "object" && err !== null && (err as { name?: string }).name === "MissingProjectError");
+}
+
 export class LakebaseService {
   /** Runtime host override – set when user selects a workspace via the picker */
   private hostOverride: string | undefined;
   /** Runtime project ID override – set for integration tests or when workspace .env is not available */
   private projectIdOverride: string | undefined;
 
+  /**
+   * Resolve the active Lakebase project id from the runtime override
+   * (set by the workspace picker) or `getConfig().lakebaseProjectId`
+   * (read from `.env` / workspace settings). Returns the empty string
+   * when nothing is configured.
+   *
+   * Prefer `requireProjectInstance` at the entry of any method that is
+   * about to call substrate: it throws `MissingProjectError` so the
+   * command-level catch can route to onboarding instead of propagating
+   * an "" instance into substrate and getting back a cryptic error.
+   */
   private projectInstance(): string {
     if (this.projectIdOverride) { return this.projectIdOverride; }
     return getConfig().lakebaseProjectId;
+  }
+
+  /**
+   * Same lookup as `projectInstance` but throws `MissingProjectError`
+   * when no project id is configured. Use this at the entry of any
+   * public method that is about to call substrate; that way command
+   * catches can dispatch to the onboarding flow without inspecting the
+   * substrate error string.
+   */
+  private requireProjectInstance(): string {
+    const id = this.projectInstance();
+    if (!id) {
+      throw new MissingProjectError();
+    }
+    return id;
   }
 
   private projectPath(): string {
@@ -438,7 +483,7 @@ export class LakebaseService {
 
   async listBranches(): Promise<LakebaseBranch[]> {
     const branches = await this.withHost(() =>
-      substrateListBranches({ instance: this.projectInstance() })
+      substrateListBranches({ instance: this.requireProjectInstance() })
     );
     // FEIP-7098: refresh the theme.ts tier cache from substrate's
     // auto-discovery. Sync helpers like isTierBranch() (used by VS Code
@@ -451,7 +496,7 @@ export class LakebaseService {
 
   async getDefaultBranch(): Promise<LakebaseBranch | undefined> {
     const b = await this.withHost(() =>
-      substrateGetDefaultBranch({ instance: this.projectInstance() })
+      substrateGetDefaultBranch({ instance: this.requireProjectInstance() })
     );
     return b ? adaptBranchInfo(b) : undefined;
   }
@@ -465,7 +510,7 @@ export class LakebaseService {
     // are already in [a-z0-9-]+), so this is safe across all call sites.
     const lookup = substrateSanitizeBranchName(name);
     const b = await this.withHost(() =>
-      substrateGetBranchByName(lookup, { instance: this.projectInstance() })
+      substrateGetBranchByName(lookup, { instance: this.requireProjectInstance() })
     );
     return b ? adaptBranchInfo(b) : undefined;
   }
@@ -494,7 +539,7 @@ export class LakebaseService {
     // current branch / explicit base override.
     const created = await this.withHost(() =>
       substrateCreateFeatureBranch({
-        instance: this.projectInstance(),
+        instance: this.requireProjectInstance(),
         branch: gitBranch,
         parentBranch,
       })
@@ -521,7 +566,7 @@ export class LakebaseService {
       substrateCreateLongRunningBranch({
         name: args.name,
         forkFromBranch: args.forkFromBranch,
-        projectId: this.projectInstance(),
+        projectId: this.requireProjectInstance(),
         workTreeDir: args.workTreeDir,
         databricksHost: this.getEffectiveHost(),
       })
@@ -534,7 +579,7 @@ export class LakebaseService {
     try {
       const b = await this.withHost(() =>
         substrateWaitForBranchReady({
-          instance: this.projectInstance(),
+          instance: this.requireProjectInstance(),
           branch: substrateSanitizeBranchName(branchName),
           timeoutMs: maxAttempts * 5_000,
         })
@@ -548,7 +593,7 @@ export class LakebaseService {
   async deleteBranch(branchNameOrUid: string): Promise<void> {
     await this.withHost(() =>
       substrateDeleteBranch({
-        instance: this.projectInstance(),
+        instance: this.requireProjectInstance(),
         branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
@@ -559,7 +604,7 @@ export class LakebaseService {
   async getEndpoint(branchNameOrUid: string): Promise<{ host: string; state: string } | undefined> {
     return this.withHost(() =>
       substrateGetEndpoint({
-        instance: this.projectInstance(),
+        instance: this.requireProjectInstance(),
         branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
@@ -568,7 +613,7 @@ export class LakebaseService {
   async getCredential(branchNameOrUid: string): Promise<LakebaseCredential> {
     return this.withHost(() =>
       substrateGetCredential({
-        instance: this.projectInstance(),
+        instance: this.requireProjectInstance(),
         branch: substrateSanitizeBranchName(branchNameOrUid),
       })
     );
@@ -632,7 +677,7 @@ export class LakebaseService {
     try {
       return await this.withHost(() =>
         substrateQueryBranchTables({
-          instance: this.projectInstance(),
+          instance: this.requireProjectInstance(),
           branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
@@ -656,7 +701,7 @@ export class LakebaseService {
     try {
       const tables = await this.withHost(() =>
         substrateQueryBranchSchema({
-          instance: this.projectInstance(),
+          instance: this.requireProjectInstance(),
           branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
@@ -673,7 +718,7 @@ export class LakebaseService {
     try {
       return await this.withHost(() =>
         substrateQueryBranchSchema({
-          instance: this.projectInstance(),
+          instance: this.requireProjectInstance(),
           branch: substrateSanitizeBranchName(branchNameOrUid),
           database: getProjectDatabase(),
         })
@@ -700,14 +745,14 @@ export class LakebaseService {
 
   async getProjectDisplayName(): Promise<string | undefined> {
     const info = await this.withHost(() =>
-      substrateGetProjectInfo({ projectId: this.projectInstance(), host: this.hostOverride })
+      substrateGetProjectInfo({ projectId: this.requireProjectInstance(), host: this.hostOverride })
     );
     return info?.displayName;
   }
 
   async getProjectUid(): Promise<string | undefined> {
     const info = await this.withHost(() =>
-      substrateGetProjectInfo({ projectId: this.projectInstance(), host: this.hostOverride })
+      substrateGetProjectInfo({ projectId: this.requireProjectInstance(), host: this.hostOverride })
     );
     return info?.uid;
   }
