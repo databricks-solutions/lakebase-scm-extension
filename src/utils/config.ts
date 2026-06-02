@@ -239,6 +239,10 @@ export function updateEnvConnection(opts: {
   if (fs.existsSync(envPath)) {
     lines = fs.readFileSync(envPath, 'utf-8').split('\n')
       .filter(l => {
+        // Strip any prior "# Connection pending at ..." breadcrumb so
+        // .env doesn't accumulate one per call. The current comment (if
+        // any) is re-appended below alongside the fresh connection block.
+        if (/^#\s*Connection pending at /.test(l)) { return false; }
         const key = l.trim().split('=')[0]?.trim();
         return !keysToReplace.has(key);
       });

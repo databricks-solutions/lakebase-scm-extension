@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GitService } from './services/gitService';
-import { LakebaseService, isAuthStorageCacheError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange } from './services/lakebaseService';
+import { LakebaseService, isAuthStorageCacheError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
@@ -40,6 +40,12 @@ let branchTreeProvider: BranchTreeProvider;
 let schemaDiffProvider: SchemaDiffProvider;
 let schemaScmProvider: SchemaScmProvider;
 
+/** Set in activate(); used by handleAuthError to persist the auth-
+ *  storage override to globalState without threading context through
+ *  every call site. */
+let extensionContext: vscode.ExtensionContext | undefined;
+const AUTH_STORAGE_STATE_KEY = 'lakebaseSync.authStorageOverride';
+
 /** Prompt user to login when auth errors are detected */
 async function handleAuthError(lakebaseService: LakebaseService, err: any): Promise<boolean> {
   // Special-case: CLI upgraded past a credential-storage break. The new
@@ -49,6 +55,13 @@ async function handleAuthError(lakebaseService: LakebaseService, err: any): Prom
   // re-logged in: the real remediation is either a clean re-auth that
   // overwrites the cache or an explicit DATABRICKS_AUTH_STORAGE=plaintext
   // opt-in. Surface BOTH as one-click actions.
+  //
+  // The "Use plaintext storage" path persists to globalState (NOT to
+  // .env). Writing to .env leaks the override into every shell script
+  // that sources it (post-checkout hook, refresh-token.sh, etc.) and
+  // those scripts then force plaintext when the user's actual auth has
+  // migrated back to the keyring – surfacing as "auth failed" messages
+  // in unrelated tools. globalState keeps the override extension-only.
   if (isAuthStorageCacheError(err)) {
     const choice = await vscode.window.showErrorMessage(
       'Databricks CLI rejected its stored credentials (credential-storage format changed in a newer CLI version). ' +
@@ -59,25 +72,14 @@ async function handleAuthError(lakebaseService: LakebaseService, err: any): Prom
     if (choice === 'Re-authenticate') {
       vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
     } else if (choice === 'Use plaintext storage') {
-      const root = getWorkspaceRoot();
-      if (root) {
-        const envPath = path.join(root, '.env');
-        const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
-        fs.writeFileSync(envPath, upsertEnvKeys(existing, { DATABRICKS_AUTH_STORAGE: 'plaintext' }));
-        vscode.window.showInformationMessage(
-          'Wrote DATABRICKS_AUTH_STORAGE=plaintext to .env. Reload the window for it to take effect.',
-          'Reload Window',
-        ).then((a) => {
-          if (a === 'Reload Window') {
-            vscode.commands.executeCommand('workbench.action.reloadWindow');
-          }
-        });
-      } else {
-        vscode.window.showWarningMessage(
-          'No workspace open: can\'t write .env. ' +
-            'Run `export DATABRICKS_AUTH_STORAGE=plaintext` in the shell that launches VS Code, then restart.',
-        );
+      setAuthStorageRuntime('plaintext');
+      if (extensionContext) {
+        await extensionContext.globalState.update(AUTH_STORAGE_STATE_KEY, 'plaintext');
       }
+      vscode.window.showInformationMessage(
+        'Lakebase SCM: using plaintext auth storage for this session and persisting the choice. ' +
+          'Shell scripts in this project will continue to use your default storage.',
+      );
     }
     return true;
   }
@@ -440,6 +442,10 @@ function watchForOwnInstall(context: vscode.ExtensionContext): void {
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  // Stash on a module-level ref so helpers (handleAuthError etc) can
+  // reach globalState without threading context through every call.
+  extensionContext = context;
+
   // Fire-and-forget post-install: auto-clean stale older install dirs
   // on disk (silent), then prompt the user to restart the host editor
   // (Cursor / VS Code) when this is an upgrade or a stale-clean event.
@@ -464,22 +470,20 @@ export async function activate(context: vscode.ExtensionContext) {
   githubService = new GitHubService();
   lakebaseService = new LakebaseService();
 
-  // Persist DATABRICKS_AUTH_STORAGE to .env the first time auto-retry
-  // discovers that plaintext works. Without this, the fallback is
-  // runtime-only and the next extension reload pays the same retry cost
-  // (and surfaces the same scary error to the user on first call).
+  // Persist the auth-storage override to globalState (NOT to .env) when
+  // the runtime auto-retry discovers that plaintext works for the
+  // extension's own CLI calls. Persisting to .env poisoned every shell
+  // script in the project that sourced .env (post-checkout hook,
+  // refresh-token.sh, etc.) – those scripts then forced plaintext when
+  // the user's actual auth had migrated back to the keyring, surfacing
+  // as spurious "Databricks CLI auth failed" messages. The runtime
+  // override is extension-internal; shells should NOT inherit it.
+  const persistedStorage = context.globalState.get<string>(AUTH_STORAGE_STATE_KEY);
+  if (persistedStorage) {
+    setAuthStorageRuntime(persistedStorage);
+  }
   onAuthStorageRuntimeChange((value) => {
-    try {
-      const root = getWorkspaceRoot();
-      if (!root) { return; }
-      const envPath = path.join(root, '.env');
-      const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
-      if (new RegExp('^DATABRICKS_AUTH_STORAGE=', 'm').test(existing)) { return; }
-      fs.writeFileSync(envPath, upsertEnvKeys(existing, { DATABRICKS_AUTH_STORAGE: value }));
-      vscode.window.showInformationMessage(
-        `Lakebase SCM: persisted DATABRICKS_AUTH_STORAGE=${value} to .env so the auth fallback survives reload.`,
-      );
-    } catch { /* best-effort persistence; runtime override still in place */ }
+    void context.globalState.update(AUTH_STORAGE_STATE_KEY, value);
   });
   migrationService = new SchemaMigrationService(lakebaseService);
   schemaDiffService = new SchemaDiffService(lakebaseService);
