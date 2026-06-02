@@ -20,9 +20,10 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 
 ## Getting Started: Create a New Project
 
-The fastest way to start is the **Create New Project** wizard. From the Command Palette:
+The fastest way to start is the **Create New Project** wizard. Two keystrokes get you there:
 
-**Lakebase: Create New Project**
+1. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** (Windows/Linux) to open the VS Code Command Palette.
+2. Type **`Lakebase: Create New Project`** and hit return.
 
 The wizard walks through 10 steps:
 
@@ -94,13 +95,23 @@ Smart scripts (`flyway-migrate.sh`, `run-tests.sh`) auto-detect the language fro
 
 ### First-Time Setup (Existing Project)
 
-If you already have a project with Lakebase:
+Two paths, depending on whether the project already has a Lakebase database project:
 
-1. Open your project folder in VS Code
-2. The extension activates when it detects a `.env` or `.env.example` file
-3. Click **Connect to Workspace** in the Lakebase sidebar title bar
-4. Complete OAuth login in the terminal
-5. Run **Health Check** (`⋯` → Lakebase → Health Check) to verify everything is wired up
+**Project already has Lakebase (`.env` or `.env.example` declares `LAKEBASE_PROJECT_ID`)**:
+
+1. Open your project folder in VS Code. The extension activates when it sees the `.env`.
+2. Click **Connect to Workspace** in the Lakebase sidebar title bar.
+3. Complete OAuth login in the terminal.
+4. Run **Health Check** (`⋯` → Lakebase → Health Check) to verify everything is wired up.
+
+**Project has no Lakebase database project yet (existing git repo, fresh slate)**:
+
+1. Open your project folder in VS Code.
+2. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** and run **`Lakebase: Set Up Existing Project`**.
+3. The command prompts for project name, Databricks host, and language (auto-detected from `pom.xml` / `pyproject.toml` / `package.json`), then composes the kit's brownfield onboarding: creates the Lakebase database project, drops `.env`, the git hooks under `.githooks/`, the GitHub Actions workflows under `.github/workflows/`, and (when applicable) the `.tdd/` and `.claude/commands/` scaffolds. Existing files are detected as drift and preserved by default; pass an explicit overwrite when the kit's templates should win.
+4. Run **Health Check** to verify the wiring.
+
+If you skip step 2 and open a non-Lakebase project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
 
 ## Developer Workflow
 

@@ -37,6 +37,18 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "lakebaseBranches",
+        "contents": "This workspace has no Lakebase database project yet. Run the first-time setup to create one, or open an existing Lakebase-paired project.\n\n[Set Up Lakebase for This Workspace](command:lakebaseSync.createLakebaseProject)\n\n[Create New Project](command:lakebaseSync.createProject)\n\n[Learn more](https://github.com/databricks-solutions/lakebase-scm-extension#first-time-setup-existing-project)",
+        "when": "!lakebaseSync.hasProjectId"
+      },
+      {
+        "view": "lakebaseChanges",
+        "contents": "No Lakebase project configured. Set one up to start tracking schema and code changes per branch.\n\n[Set Up Lakebase for This Workspace](command:lakebaseSync.createLakebaseProject)",
+        "when": "!lakebaseSync.hasProjectId"
+      }
+    ],
     "views": {
       "lakebase-synced-scm": [
         {

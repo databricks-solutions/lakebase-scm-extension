@@ -186,6 +186,19 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
         lbItem.command = { command: 'lakebaseSync.connectWorkspace', title: 'Connect' };
       }
       items.push(lbItem);
+    } else {
+      // Defense-in-depth: when `lakebaseSync.hasProjectId` is false the
+      // package.json `viewsWelcome` contribution paints the onboarding
+      // copy across the entire view, so the user lands on a CTA, not
+      // an empty list. If the view rendered through this path anyway
+      // (older VS Code, partial state, refresh race), the row below is
+      // the same one-click escape hatch.
+      const onboardItem = new BranchItem(undefined, undefined, 'detail', 'Set Up Lakebase for This Workspace');
+      onboardItem.iconPath = new vscode.ThemeIcon('database');
+      onboardItem.description = 'no LAKEBASE_PROJECT_ID configured';
+      onboardItem.tooltip = 'Click to run the first-time-setup command and create a Lakebase database project for this workspace.';
+      onboardItem.command = { command: 'lakebaseSync.createLakebaseProject', title: 'Set Up Lakebase' };
+      items.push(onboardItem);
     }
 
     // Three section layout: Current (auto-relabels to "Current Tier" when
