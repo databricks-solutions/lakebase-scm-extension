@@ -15,8 +15,8 @@ The headline theme is **First-Time Setup for existing projects actually works**,
 
 ### Fixed: README discoverability
 
-- **Getting Started: 2-step `Cmd-Shift-P`** keystroke instruction so the Create New Project wizard is one keystroke away. The wizard table + Language Templates + Runner Types subsections are untouched.
-- **First-Time Setup (Existing Project)** rewritten with two paths split on whether `LAKEBASE_PROJECT_ID` is already configured. The non-Lakebase path points at the same `lakebaseSync.createLakebaseProject` command the activation prompt and viewsWelcome surface.
+- **Restructured the top of the README** so install comes BEFORE Getting Started, and Getting Started branches into two parallel paths the reader picks from: `1. Create a New Project` (wizard) or `2. Adopt an Existing Project` (the `Lakebase: Set Up Existing Project` command). The brownfield path is no longer buried under "How to Install".
+- **`Cmd-Shift-P` keystroke front and center**: every path now leads with the two-step Command Palette instructions so the relevant command is one keystroke away.
 
 ### Substrate
 
