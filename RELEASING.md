@@ -5,6 +5,30 @@ End-to-end checklist for cutting a new release. The extension ships as a
 not via the VS Code Marketplace. Users install via "Extensions -> Install
 from VSIX" after downloading.
 
+## TL;DR
+
+```bash
+# 1. CHANGELOG entry written for the new version (## X.Y.Z (YYYY-MM-DD))
+# 2. All code changes for the release merged to main BEFORE this step
+# 3. From a clean main, run:
+scripts/release.sh 0.6.0
+```
+
+`scripts/release.sh` IS the canonical release flow. The manual steps below are the underlying procedure the script automates; read them only when debugging the script or recovering from a partial release.
+
+## Principles enshrined in `scripts/release.sh`
+
+Lessons from prior releases that the script now enforces in code:
+
+1. **Smoke the vsix BEFORE the tag, never after.** v0.5.8 was re-tagged three times because we tagged + cut a release before installing the vsix in a real editor. The script halts at an interactive gate after building the vsix and refuses to proceed until the human types `yes`.
+2. **Refuse to release a version without a CHANGELOG entry.** The `version` field in `package.json` is not enough; the script `grep`s for `^## X.Y.Z ` in `CHANGELOG.md` and bails if missing.
+3. **Refuse to release on a non-main / dirty / out-of-sync branch.** Catches the "I'll just commit on this branch real quick" mistake at the start, not after artifacts have been built.
+4. **Refuse to re-claim an existing tag.** The script checks local + remote refs for `vX.Y.Z` and bails if it exists. Re-tagging an existing version is the path to inconsistent published artifacts.
+5. **Tag points at the squash-merge commit of the release PR.** Enforced by tagging only after `gh pr merge` + `git pull --ff-only`.
+6. **vsix attached to the GitHub release is REBUILT from the tagged commit.** The pre-merge vsix is what the human smoked; the published vsix comes from the tagged commit so SHA in release notes matches artifact bits. Phase 10 of the script.
+7. **Hermetic checks (typecheck + tests) run inside the script** in addition to pre-push, so `HUSKY=0 git push` cannot route around them.
+8. **A failed smoke does not leak release state.** Aborting at the smoke gate leaves the release branch on origin for iteration; no tag is created, no GitHub release is cut, no artifact is published.
+
 ## When to release
 
 Default cadence is **one tagged release per substantive feature / bug-fix
