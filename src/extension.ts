@@ -5,6 +5,7 @@ import './preload-env';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { GitService } from './services/gitService';
 import { LakebaseService, isAuthStorageCacheError, isMissingProjectError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
@@ -620,6 +621,34 @@ export async function activate(context: vscode.ExtensionContext) {
   const runnerView = vscode.window.createTreeView('lakebaseRunner', {
     treeDataProvider: runnerTreeProvider,
   });
+
+  // FEIP-7480: auto-refresh the runner pane when projects are scaffolded
+  // / removed externally (e.g. via lakebase-create-project on the CLI)
+  // or when the open workspace's .env changes (projectId switch). Two
+  // watchers, both fire runnerTreeProvider.refresh().
+  const runnersRoot = path.join(os.homedir(), '.lakebase', 'runners');
+  try {
+    if (fs.existsSync(runnersRoot)) {
+      const runnersWatcher = fs.watch(
+        runnersRoot,
+        { persistent: false },
+        () => runnerTreeProvider.refresh(),
+      );
+      context.subscriptions.push({ dispose: () => runnersWatcher.close() });
+    }
+  } catch {
+    // best-effort; fs.watch on macOS sometimes throws on freshly-created dirs
+  }
+  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (wsRoot) {
+    const envWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(wsRoot, '.env'),
+    );
+    envWatcher.onDidCreate(() => runnerTreeProvider.refresh());
+    envWatcher.onDidChange(() => runnerTreeProvider.refresh());
+    envWatcher.onDidDelete(() => runnerTreeProvider.refresh());
+    context.subscriptions.push(envWatcher);
+  }
   const mergesView = vscode.window.createTreeView('lakebaseMerges', {
     treeDataProvider: mergesTreeProvider,
   });
