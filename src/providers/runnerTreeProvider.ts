@@ -222,6 +222,20 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<AnyItem> {
         }
       }
 
+      // Remove Runner. Available on every self-hosted project entry so a
+      // user can clean up stale runners for projects whose workspace they
+      // no longer have open. The command itself confirms via a modal
+      // dialog before stopping + deregistering + deleting on-disk dir.
+      const removeItem = new LeafItem('Remove Runner', 'action', project);
+      removeItem.iconPath = new vscode.ThemeIcon('trash', new vscode.ThemeColor('charts.red'));
+      removeItem.tooltip = 'Stop, deregister from GitHub, and delete the runner directory';
+      removeItem.command = {
+        command: 'lakebaseSync.removeRunner',
+        title: 'Remove Runner',
+        arguments: [project.projectName, project.ownerRepo],
+      };
+      items.push(removeItem);
+
       // Logs
       const logFile = runnerService.getLatestLogFile(project.projectName);
       if (logFile) {

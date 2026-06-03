@@ -1877,6 +1877,51 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
 
+    // FEIP-7480: remove a self-hosted runner from any paired project the tree
+    // surfaces, not just the open workspace. Args (projectName, ownerRepo)
+    // come from the tree item's command.arguments; if absent, falls back to
+    // the current workspace (matches stopRunner / startRunner shape). Confirms
+    // before stopping + deregistering + deleting on-disk dir since the action
+    // is destructive.
+    vscode.commands.registerCommand(
+      'lakebaseSync.removeRunner',
+      async (projectName?: string, ownerRepo?: string) => {
+        let resolvedProject = projectName ?? '';
+        let resolvedRepo = ownerRepo ?? '';
+        if (!resolvedProject) {
+          const config = getConfig();
+          resolvedProject = config.lakebaseProjectId;
+        }
+        if (!resolvedProject) {
+          vscode.window.showErrorMessage('Remove Runner: no project selected.');
+          return;
+        }
+        if (!resolvedRepo) {
+          try {
+            const repoUrl = await gitService.getGitHubUrl();
+            const m = repoUrl.match(/github\.com\/(.+?)\/?$/);
+            if (m) { resolvedRepo = m[1]; }
+          } catch {}
+        }
+        const choice = await vscode.window.showWarningMessage(
+          `Remove runner for "${resolvedProject}"?\n\n` +
+            'This will stop the running process, deregister it from GitHub' +
+            (resolvedRepo ? ` (${resolvedRepo})` : ''),
+          { modal: true, detail: 'On-disk runner dir under ~/.lakebase/runners/ will also be deleted.' },
+          'Remove Runner',
+        );
+        if (choice !== 'Remove Runner') { return; }
+        try {
+          const runnerService = new RunnerService(githubService, lakebaseService);
+          await runnerService.removeRunner(resolvedRepo, resolvedProject);
+          vscode.window.showInformationMessage(`Runner removed for ${resolvedProject}.`);
+          runnerTreeProvider.refresh();
+        } catch (err: any) {
+          vscode.window.showErrorMessage(`Failed to remove runner: ${err.message}`);
+        }
+      },
+    ),
+
     vscode.commands.registerCommand('lakebaseSync.connectWorkspace', async () => {
       const effectiveHost = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
 
