@@ -8,6 +8,12 @@ node_modules/**
 !node_modules/tweetnacl/**
 !node_modules/blakejs/**
 !node_modules/adm-zip/**
+# Ship the kit so scaffold.ts can resolve templates/project/ at runtime.
+# Without this whitelist, the kit (and its templates/) are stripped from
+# the VSIX and `Lakebase: Create Database Project` fails on a fresh
+# install with "Could not locate templates/project tree relative to /Users/
+# .../extensions/.../dist".
+!node_modules/@databricks-solutions/lakebase-app-dev-kit/**
 src/**
 docs/**
 *.vsix
