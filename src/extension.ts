@@ -1259,6 +1259,30 @@ export async function activate(context: vscode.ExtensionContext) {
       // The kit primitive enforces the same gates but surfacing them
       // before the auth prompt is friendlier (no point asking the user
       // to log in if we are going to refuse anyway).
+      //
+      // Special-case the "no .git directory yet" gate: a user pointing
+      // the wizard at a fresh empty folder will hit this on day one.
+      // Offer to `git init` for them; the kit primitive requires a
+      // git repo because every paired-branch operation downstream uses
+      // git as the gate surface.
+      const nodePath = require('path');
+      const nodeFs = require('fs');
+      if (!nodeFs.existsSync(nodePath.join(root, '.git'))) {
+        const choice = await vscode.window.showInformationMessage(
+          `${root} is not a git repository yet. Lakebase pairs every git branch with a database branch, so a git repo is required. Initialize one here now?`,
+          'Initialize git repo', 'Cancel',
+        );
+        if (choice !== 'Initialize git repo') { return; }
+        try {
+          const { execFileSync } = require('child_process');
+          execFileSync('git', ['init', '-q'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (initErr: any) {
+          vscode.window.showErrorMessage(
+            `git init failed: ${initErr?.stderr?.toString() || initErr?.message || initErr}`,
+          );
+          return;
+        }
+      }
       try {
         assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
       } catch (err: any) {
