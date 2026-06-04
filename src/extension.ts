@@ -2052,21 +2052,33 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // Need to authenticate – open terminal
+      // Need to authenticate. Open the terminal AND block this command
+      // until the user closes it, so callers that `await
+      // executeCommand('lakebaseSync.connectWorkspace')` (e.g.
+      // setupExistingProject) see auth completion before they run their
+      // recheck. Without the await, the command returns the instant the
+      // terminal is shown, the caller's recheck races the user's still-
+      // pending browser flow, and the caller aborts with "Still not
+      // authenticated" even though the auth eventually succeeds.
       const loginCmd = lakebaseService.getLoginCommand(targetHost);
       const terminal = vscode.window.createTerminal('Databricks Connect');
       terminal.show();
       terminal.sendText(loginCmd);
 
-      const disposable = vscode.window.onDidCloseTerminal(t => {
-        if (t === terminal) {
-          disposable.dispose();
-          vscode.window.showInformationMessage(
-            `Connected to ${targetHost}`
-          );
-          statusBarProvider.refresh();
-          branchTreeProvider.refresh();
-        }
+      await new Promise<void>((resolve) => {
+        const disposable = vscode.window.onDidCloseTerminal((t) => {
+          if (t === terminal) {
+            disposable.dispose();
+            vscode.window.showInformationMessage(`Connected to ${targetHost}`);
+            statusBarProvider.refresh();
+            branchTreeProvider.refresh();
+            // Force the profile-cache to rebuild on the next CLI call, in
+            // case the user just authenticated a brand-new profile that
+            // wasn't in the cached snapshot.
+            lakebaseService.invalidateProfileCache();
+            resolve();
+          }
+        });
       });
     }),
 
