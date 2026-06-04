@@ -1390,7 +1390,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
       const path = require('path');
-      const { adoptLakebaseProject, assertAdoptionPreflight } = require('@databricks-solutions/lakebase-app-dev-kit');
+      const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId } = require('@databricks-solutions/lakebase-app-dev-kit');
 
       const root = getWorkspaceRoot();
       if (!root) {
@@ -1461,18 +1461,20 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const host = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
 
+      // Idempotency: a prior run may have created the server-side
+      // Lakebase project but never written the local .env (a crash, a
+      // network blip, or a wizard exit between create and env-write).
+      // In that case adoptLakebaseProject throws "project with such id
+      // already exists" and the user is stuck unable to re-run. Catch
+      // that specific error and fall through to the local-only
+      // adoption (resolve default branch, write .env) so the workflow
+      // completes as if the create had just succeeded.
+      let result: { defaultBranch?: string; warnings?: string[] };
       try {
-        const result = await vscode.window.withProgress(
+        result = await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: `Setting up Lakebase: ${projectId}`, cancellable: false },
           async (progress) => {
             progress.report({ message: 'Creating database and writing .env...' });
-            // Delegates to the kit's brownfield primitive
-            // (adoptLakebaseProject) which creates the Lakebase project
-            // server-side, resolves the default branch, and writes
-            // .env / .env.example to the workspace. It deliberately
-            // skips the GitHub-side steps (repo creation, clone, push)
-            // since this is a brownfield onboarding; the user already
-            // has a git repo.
             return await adoptLakebaseProject({
               projectDir: root,
               projectName: projectId,
@@ -1480,26 +1482,55 @@ export async function activate(context: vscode.ExtensionContext) {
             });
           }
         );
-
-        // Persist a completion stamp in workspaceState so the activation
-        // prompt does not re-fire on the next window reload, and refresh
-        // the hasProjectId context so viewsWelcome flips immediately.
-        await context.workspaceState.update('lakebaseSync.onboarding.completedAt', new Date().toISOString());
-        await context.workspaceState.update('lakebaseSync.onboarding.defaultBranch', result.defaultBranch);
-        await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
-        branchTreeProvider.refresh();
-        statusBarProvider.refresh();
-
-        if (result.warnings.length > 0) {
-          for (const w of result.warnings) {
-            void vscode.window.showWarningMessage(w);
-          }
-        }
       } catch (err: any) {
-        if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${err.message}`);
+        const msg = err?.message || String(err);
+        const alreadyExists = /project with such id already exists/i.test(msg);
+        if (!alreadyExists) {
+          if (!(await handleAuthError(lakebaseService, err))) {
+            vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${msg}`);
+          }
+          return;
         }
-        return;
+        // Recovery path: server already has the project. Skip the
+        // create + run only steps 2-3 of adoptLakebaseProject.
+        try {
+          result = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Adopting existing Lakebase project: ${projectId}`, cancellable: false },
+            async (progress) => {
+              progress.report({ message: 'Resolving default branch...' });
+              const defaultBranch = await getDefaultBranchId({ projectId, host });
+              progress.report({ message: 'Writing .env...' });
+              await deployEnvExample(root, { databricksHost: host, lakebaseProjectId: projectId });
+              await deployEnv(root, { databricksHost: host, lakebaseProjectId: projectId });
+              return { defaultBranch, warnings: [] };
+            }
+          );
+          vscode.window.showInformationMessage(
+            `Adopted existing Lakebase project "${projectId}". A prior setup attempt left it server-side; .env now wired up locally.`,
+          );
+        } catch (recoveryErr: any) {
+          vscode.window.showErrorMessage(
+            `Recovery from "already exists" failed: ${recoveryErr?.message || recoveryErr}. ` +
+              `You can either delete the server-side project (databricks postgres delete-project ${projectId}) and retry, ` +
+              `or pick a different project name.`,
+          );
+          return;
+        }
+      }
+
+      // Persist a completion stamp in workspaceState so the activation
+      // prompt does not re-fire on the next window reload, and refresh
+      // the hasProjectId context so viewsWelcome flips immediately.
+      await context.workspaceState.update('lakebaseSync.onboarding.completedAt', new Date().toISOString());
+      await context.workspaceState.update('lakebaseSync.onboarding.defaultBranch', result.defaultBranch);
+      await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
+      branchTreeProvider.refresh();
+      statusBarProvider.refresh();
+
+      if (result.warnings && result.warnings.length > 0) {
+        for (const w of result.warnings) {
+          void vscode.window.showWarningMessage(w);
+        }
       }
 
       const runnerChoice = await vscode.window.showInformationMessage(
