@@ -444,16 +444,45 @@ function watchForOwnInstall(context: vscode.ExtensionContext): void {
     }
     return 0;
   };
+  // Install-event fingerprint of THIS running extension's on-disk
+  // package.json. Captured at activation so we can detect a same-version
+  // reinstall (rebuilt VSIX with identical manifest version) by noticing
+  // the mtime/size of the manifest file changes underneath us. Without
+  // this, a same-version reinstall replaces the bytes on disk but the
+  // running extension host stays on the cached pre-install copy, no
+  // activate() re-fires, and the user never sees a restart prompt.
+  const fingerprint = (extPath: string): string => {
+    try {
+      const st = fs.statSync(path.join(extPath, 'package.json'));
+      return `${st.mtimeMs}:${st.size}`;
+    } catch {
+      return '';
+    }
+  };
+  const myFingerprint = fingerprint(context.extensionPath);
   let prompted = false;
   const sub = vscode.extensions.onDidChange(() => {
     if (prompted) { return; }
     const seen = vscode.extensions.getExtension(myId);
     const seenVersion = (seen?.packageJSON as { version?: string } | undefined)?.version;
     if (!seenVersion) { return; }
-    if (cmp(seenVersion, myVersion) <= 0) { return; }
+    const seenExtPath = seen?.extensionPath;
+    const seenFingerprint = seenExtPath ? fingerprint(seenExtPath) : '';
+    // Trigger the prompt on either:
+    //   1. a higher-version install, OR
+    //   2. a same-or-different version install whose package.json mtime+size
+    //      differs from what we fingerprinted at activation (rebuilt VSIX,
+    //      hot reinstall, etc.).
+    const isUpgrade = cmp(seenVersion, myVersion) > 0;
+    const isRebuild =
+      !!myFingerprint && !!seenFingerprint && myFingerprint !== seenFingerprint;
+    if (!isUpgrade && !isRebuild) { return; }
     prompted = true;
+    const verb = isUpgrade
+      ? `${seenVersion} was just installed`
+      : `${seenVersion} was just reinstalled (rebuilt bits)`;
     void vscode.window.showInformationMessage(
-      `Lakebase SCM ${seenVersion} was just installed. The running session is still on ${myVersion}; reload the window so the new code activates.`,
+      `Lakebase SCM ${verb}. The running session is still on ${myVersion}; reload the window so the new code activates.`,
       { modal: false },
       'Reload Window',
     ).then((choice) => {
