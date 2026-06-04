@@ -416,7 +416,7 @@
       },
       {
         "command": "lakebaseSync.createLakebaseProject",
-        "title": "Lakebase: Create Database Project for This Workspace",
+        "title": "Lakebase: Set Up Existing Project",
         "icon": "$(database)",
         "category": "Lakebase SCM"
       },
