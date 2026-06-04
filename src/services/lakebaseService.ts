@@ -38,7 +38,7 @@ import {
   type LakebaseBranchInfo,
   type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
-import { setKnownTierNames } from "../utils/theme";
+import { setKnownTierNames, isMainBranch } from "../utils/theme";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -499,6 +499,33 @@ export class LakebaseService {
       substrateGetDefaultBranch({ instance: this.requireProjectInstance() })
     );
     return b ? adaptBranchInfo(b) : undefined;
+  }
+
+  /**
+   * Resolve the Lakebase branch paired with a given git branch. The
+   * trunk/main git branch maps to the project default Lakebase branch;
+   * every other git branch (tier or feature) maps to a same-named
+   * Lakebase branch. This is the single source of truth for the
+   * trunk-vs-named branch decision that command handlers previously
+   * inlined as `isMainBranch(b, trunk) ? getDefaultBranch() :
+   * getBranchByName(b)`.
+   *
+   * @param gitBranch - current git branch name
+   * @param trunkBranch - the configured trunk alias (cfg.trunkBranch)
+   * @param opts.fallbackToDefault - when the named lookup misses, fall
+   *   back to the default branch (used by open-in-console).
+   */
+  async resolveBranchForGitBranch(
+    gitBranch: string,
+    trunkBranch: string,
+    opts: { fallbackToDefault?: boolean } = {}
+  ): Promise<LakebaseBranch | undefined> {
+    if (isMainBranch(gitBranch, trunkBranch)) {
+      return this.getDefaultBranch();
+    }
+    const named = await this.getBranchByName(gitBranch);
+    if (named) { return named; }
+    return opts.fallbackToDefault ? this.getDefaultBranch() : undefined;
   }
 
   async getBranchByName(name: string): Promise<LakebaseBranch | undefined> {

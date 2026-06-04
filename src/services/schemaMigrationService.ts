@@ -156,6 +156,41 @@ export class SchemaMigrationService {
   }
 
   /**
+   * Build the language-aware migration command (terminal name + shell
+   * command) for the configured stack. Single source of truth: the
+   * command map was previously inlined in both the runMigrate command
+   * and the switchBranch flow, and the two had DIVERGED. The
+   * switchBranch copy omitted the `refresh-token.sh` wrapper for
+   * java/kotlin/nodejs/unknown, so migrations on those stacks ran with
+   * a stale (often expired) Databricks token after a branch switch.
+   * This builder ALWAYS wraps in refresh-token.sh, fixing that bug.
+   *
+   * @param language - detected stack (java/kotlin/python/nodejs/unknown)
+   * @param opts.branchLabel - when set, the terminal name reads
+   *   "<Tool>: <branch>" (switch flow); otherwise "<Tool> Migrate".
+   */
+  buildMigrateCommand(
+    language: string,
+    opts: { branchLabel?: string } = {}
+  ): { name: string; cmd: string } {
+    const map: Record<string, { tool: string; base: string }> = {
+      java:    { tool: 'Flyway',  base: './scripts/flyway-migrate.sh' },
+      kotlin:  { tool: 'Flyway',  base: './scripts/flyway-migrate.sh' },
+      python:  { tool: 'Alembic', base: 'uv run alembic upgrade head' },
+      nodejs:  { tool: 'Knex',    base: 'bash -c "set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest"' },
+      unknown: { tool: 'Migrate', base: './scripts/flyway-migrate.sh' },
+    };
+    const entry = map[language] ?? map.unknown;
+    const cmd = `./scripts/refresh-token.sh ${entry.base}`;
+    const name = opts.branchLabel
+      ? `${entry.tool}: ${opts.branchLabel}`
+      : entry.tool === 'Migrate'
+        ? 'Run Migrations'
+        : `${entry.tool} Migrate`;
+    return { name, cmd };
+  }
+
+  /**
    * Parse raw SQL to extract schema changes (CREATE TABLE, ALTER TABLE, DROP TABLE).
    * Accepts a SQL string directly – no file I/O needed.
    */

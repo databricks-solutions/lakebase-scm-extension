@@ -11,7 +11,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { getWorkspaceRoot } from "../utils/config";
+import { getWorkspaceRoot, parseEnvFile } from "../utils/config";
 import { GitHubService } from "./githubService";
 import { LakebaseService } from "./lakebaseService";
 import {
@@ -85,12 +85,9 @@ export class RunnerService {
     let profile = "";
     let host = "";
     try {
-      const envFile = path.join(root, ".env");
-      if (fs.existsSync(envFile)) {
-        const content = fs.readFileSync(envFile, "utf-8");
-        profile = content.match(/^DATABRICKS_CONFIG_PROFILE=(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "") || "";
-        host = content.match(/^DATABRICKS_HOST=(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "") || "";
-      }
+      const env = parseEnvFile(path.join(root, ".env"));
+      profile = env.DATABRICKS_CONFIG_PROFILE || "";
+      host = env.DATABRICKS_HOST || "";
     } catch { /* non-fatal */ }
 
     const result = await this.lakebaseService.probeCliAuth({ profile, host });

@@ -1690,12 +1690,10 @@ export async function activate(context: vscode.ExtensionContext) {
       );
 
       if (runnerChoice === 'Set up runner') {
-        const ghUrl = await gitService.getGitHubUrl();
-        const match = ghUrl.match(/github\.com\/(.+)$/);
-        if (!match) {
+        const fullRepoName = await gitService.getOwnerRepo();
+        if (!fullRepoName) {
           vscode.window.showWarningMessage('No GitHub origin remote found. Skipping runner setup. Run "Lakebase: Start CI Runner" after pushing to GitHub.');
         } else {
-          const fullRepoName = match[1];
           try {
             await vscode.window.withProgress(
               { location: vscode.ProgressLocation.Notification, title: `Setting up runner for ${fullRepoName}`, cancellable: false },
@@ -2079,27 +2077,16 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('lakebaseSync.refreshCredentials', async () => {
       const gitBranch = await gitService.getCurrentBranch();
       const cfgRc = getConfig();
-      const isMain = isMainBranch(gitBranch, cfgRc.trunkBranch);
-
-      let branchId: string;
-      if (isMain) {
-        const defaultBranch = await lakebaseService.getDefaultBranch();
-        if (!defaultBranch) {
-          vscode.window.showErrorMessage('No default Lakebase branch found.');
-          return;
-        }
-        branchId = defaultBranch.branchId;
-      } else {
-        // Non-trunk: tier or feature. Both pair with a Lakebase branch
-        // of the same sanitized name (auto-discovered for tiers, created
-        // for features). getBranchByName sanitizes at entry.
-        const lb = await lakebaseService.getBranchByName(gitBranch);
-        if (!lb) {
-          vscode.window.showErrorMessage(`No Lakebase branch for "${gitBranch}".`);
-          return;
-        }
-        branchId = lb.branchId;
+      const lb = await lakebaseService.resolveBranchForGitBranch(gitBranch, cfgRc.trunkBranch);
+      if (!lb) {
+        vscode.window.showErrorMessage(
+          isMainBranch(gitBranch, cfgRc.trunkBranch)
+            ? 'No default Lakebase branch found.'
+            : `No Lakebase branch for "${gitBranch}".`,
+        );
+        return;
       }
+      const branchId = lb.branchId;
 
       try {
         const cred = await lakebaseService.getCredential(branchId);
@@ -2123,13 +2110,11 @@ export async function activate(context: vscode.ExtensionContext) {
         const runnerService = new RunnerService(githubService, lakebaseService);
 
         // Get GitHub repo name
-        const repoUrl = await gitService.getGitHubUrl();
-        const match = repoUrl.match(/github\.com\/(.+)/);
-        if (!match) {
+        const fullRepoName = await gitService.getOwnerRepo();
+        if (!fullRepoName) {
           vscode.window.showErrorMessage('Could not determine GitHub repo from remote.');
           return;
         }
-        const fullRepoName = match[1];
 
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: 'Starting CI runner...' },
@@ -2153,13 +2138,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('lakebaseSync.setupCiSecrets', async () => {
       const config = getConfig();
-      const repoUrl = await gitService.getGitHubUrl();
-      const match = repoUrl && repoUrl.match(/github\.com\/(.+)/);
-      if (!match) {
+      const fullRepoName = await gitService.getOwnerRepo();
+      if (!fullRepoName) {
         vscode.window.showErrorMessage('Could not determine GitHub repo from remote.');
         return;
       }
-      const fullRepoName = match[1];
       await offerCiSecretsSetup(
         fullRepoName,
         { host: config.databricksHost, projectId: config.lakebaseProjectId },
@@ -2258,9 +2241,8 @@ export async function activate(context: vscode.ExtensionContext) {
         }
         if (!resolvedRepo) {
           try {
-            const repoUrl = await gitService.getGitHubUrl();
-            const m = repoUrl.match(/github\.com\/(.+?)\/?$/);
-            if (m) { resolvedRepo = m[1]; }
+            const ownerRepo = await gitService.getOwnerRepo();
+            if (ownerRepo) { resolvedRepo = ownerRepo; }
           } catch {}
         }
         const choice = await vscode.window.showWarningMessage(
@@ -2301,14 +2283,7 @@ export async function activate(context: vscode.ExtensionContext) {
       schemaDiffService.clearCache();
       const root = getWorkspaceRoot();
       const lang = detectLanguage(root);
-      const cmds: Record<string, { name: string; cmd: string }> = {
-        java:    { name: 'Flyway Migrate',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
-        kotlin:  { name: 'Flyway Migrate',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
-        python:  { name: 'Alembic Migrate',  cmd: './scripts/refresh-token.sh uv run alembic upgrade head' },
-        nodejs:  { name: 'Knex Migrate',     cmd: './scripts/refresh-token.sh bash -c "set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest"' },
-        unknown: { name: 'Run Migrations',   cmd: './scripts/refresh-token.sh ./scripts/flyway-migrate.sh' },
-      };
-      const { name, cmd } = cmds[lang];
+      const { name, cmd } = migrationService.buildMigrateCommand(lang);
       const terminal = vscode.window.createTerminal(name);
       terminal.show();
       terminal.sendText(cmd);
@@ -2472,16 +2447,11 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           const gitBranch = await gitService.getCurrentBranch();
           const cfgOc = getConfig();
-          const isMain = isMainBranch(gitBranch, cfgOc.trunkBranch);
-          // Trunk → default; everything else (tier OR feature) → name-match.
-          const lb = isMain
-            ? await lakebaseService.getDefaultBranch()
-            : await lakebaseService.getBranchByName(gitBranch);
+          // Trunk → default; tier/feature → name-match; fall back to
+          // default when the named branch is missing.
+          const lb = await lakebaseService.resolveBranchForGitBranch(
+            gitBranch, cfgOc.trunkBranch, { fallbackToDefault: true });
           branchUid = lb?.uid;
-          if (!branchUid) {
-            const defaultBranch = await lakebaseService.getDefaultBranch();
-            branchUid = defaultBranch?.uid;
-          }
         } catch {
           // Fall through – url will be project-level
         }
@@ -2555,14 +2525,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
             // 2. Find or create Lakebase branch
             progress.report({ message: 'Finding database branch...' });
-            let lb;
-            if (isMain) {
-              lb = await lakebaseService.getDefaultBranch();
-            } else {
-              // Tier OR feature: pair by exact branchId. Substrate
-              // sanitizes at entry, so a git slash still resolves.
-              lb = await lakebaseService.getBranchByName(targetGitBranch);
-            }
+            // Trunk → default; tier/feature → name-match (substrate
+            // sanitizes at entry, so a git slash still resolves).
+            let lb = await lakebaseService.resolveBranchForGitBranch(targetGitBranch, cfgSb.trunkBranch);
 
             if (!lb && !isMain && !isTier) {
               progress.report({ message: 'Creating database branch...' });
@@ -2607,14 +2572,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const migrationCount = migrationService.getMigrationCount();
             if (migrationCount > 0) {
               const switchLang = detectLanguage(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
-              const migCmds: Record<string, { name: string; cmd: string }> = {
-                java:    { name: `Flyway: ${targetGitBranch}`,   cmd: './scripts/flyway-migrate.sh' },
-                kotlin:  { name: `Flyway: ${targetGitBranch}`,   cmd: './scripts/flyway-migrate.sh' },
-                python:  { name: `Alembic: ${targetGitBranch}`,  cmd: './scripts/refresh-token.sh uv run alembic upgrade head' },
-                nodejs:  { name: `Knex: ${targetGitBranch}`,     cmd: 'set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest' },
-                unknown: { name: `Migrate: ${targetGitBranch}`,  cmd: './scripts/flyway-migrate.sh' },
-              };
-              const migCmd = migCmds[switchLang];
+              const migCmd = migrationService.buildMigrateCommand(switchLang, { branchLabel: targetGitBranch });
               const terminal = vscode.window.createTerminal({
                 name: migCmd.name,
                 cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
@@ -4874,11 +4832,8 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!currentBranch) { return; }
 
         const cfgTimer = getConfig();
-        const isMain = isMainBranch(currentBranch, cfgTimer.trunkBranch);
         // Trunk → default; everything else (tier OR feature) → name-match.
-        const lb = isMain
-          ? await lakebaseService.getDefaultBranch()
-          : await lakebaseService.getBranchByName(currentBranch);
+        const lb = await lakebaseService.resolveBranchForGitBranch(currentBranch, cfgTimer.trunkBranch);
 
         if (!lb) { return; }
 

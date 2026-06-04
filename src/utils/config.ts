@@ -64,6 +64,7 @@ export interface LakebaseConfig {
 
 export interface EnvConfig {
   DATABRICKS_HOST?: string;
+  DATABRICKS_CONFIG_PROFILE?: string;
   DATABRICKS_TOKEN?: string;
   DATABRICKS_AUTH_STORAGE?: string;
   LAKEBASE_PROJECT_ID?: string;
@@ -108,7 +109,11 @@ export function parseEnvFile(filePath: string): EnvConfig {
       continue;
     }
     const key = trimmed.substring(0, eqIdx).trim();
-    const value = trimmed.substring(eqIdx + 1).trim();
+    // Strip one layer of surrounding single/double quotes: a quoted
+    // .env value (DATABRICKS_HOST="https://...") should yield the bare
+    // value, not include the quote characters. Every reader benefits;
+    // runnerService previously hand-rolled this strip separately.
+    const value = trimmed.substring(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
     config[key] = value;
   }
   return config as EnvConfig;

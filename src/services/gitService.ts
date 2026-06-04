@@ -884,6 +884,18 @@ export class GitService {
   }
 
   /**
+   * Bare repository name (the "repo" half of owner/repo) for the origin
+   * remote, or empty string if not GitHub. For display labels that want
+   * just the repo name, not owner/repo. Derived from {@link getOwnerRepo}
+   * so URL normalization (.git stripping, ssh, trailing slash) is shared.
+   * @param cwd - Optional repo root (defaults to workspace root)
+   */
+  async getRepoName(cwd?: string): Promise<string> {
+    const ownerRepo = await this.getOwnerRepo(cwd);
+    return ownerRepo ? ownerRepo.split('/').pop() || '' : '';
+  }
+
+  /**
    * Get commit log with custom format. Returns raw output string.
    */
   async getLogRaw(format: string, limit: number, refArgs: string): Promise<string> {
