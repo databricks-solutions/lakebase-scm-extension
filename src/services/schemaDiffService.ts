@@ -13,7 +13,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
-import { exec } from "../utils/exec";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 
@@ -107,25 +106,20 @@ export class SchemaDiffService {
     return getEnvConfig().LAKEBASE_BRANCH_ID || undefined;
   }
 
-  /** Run the bundled prepare-schema-diff.sh and parse its markdown output. */
+  /**
+   * Compute a fresh schema diff for the current branch via the kit's
+   * substrate (FEIP-7494). Previously this method shelled to
+   * ./scripts/prepare-schema-diff.sh, read the markdown file it
+   * produced, and parsed the text back into structured fields - that
+   * round trip is gone now. The substrate's getSchemaDiff returns the
+   * structured shape directly; this method is a thin alias over
+   * compareBranchSchemas with force=true for the "always recompute"
+   * UX the legacy generateDiff guaranteed.
+   */
   async generateDiff(): Promise<SchemaDiffResult> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error("No workspace root"); }
-    const host = this.lakebaseService.getEffectiveHost();
-    const env: Record<string, string> = {};
-    if (host) { env.DATABRICKS_HOST = host; }
-
-    try {
-      await exec("./scripts/prepare-schema-diff.sh", root, env);
-    } catch {
-      // Script may fail but still produce schema-diff.md
-    }
-
-    const diffPath = path.join(root, "schema-diff.md");
-    if (!fs.existsSync(diffPath)) {
-      return this.emptyResult("Schema diff script produced no output");
-    }
-    return this.parseMarkdownDiff(fs.readFileSync(diffPath, "utf-8"));
+    return this.compareBranchSchemas(undefined, /* force */ true);
   }
 
   private parseMarkdownDiff(raw: string): SchemaDiffResult {
