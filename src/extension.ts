@@ -1310,22 +1310,26 @@ export async function activate(context: vscode.ExtensionContext) {
           dbHost = wsPick.host;
         }
 
-        // Authenticate if needed
+        // Authenticate if needed. Route through the shared background
+        // spawn helper -- same as connectWorkspace + handleAuthError's
+        // refresh-token branch -- so the greenfield wizard does NOT
+        // plant a terminal pane the user has to find and close. Without
+        // this, the user picked a workspace, browser auth completed,
+        // and the wizard sat waiting on onDidCloseTerminal forever
+        // because the user never closes their terminals.
         lakebaseService.setHostOverride(dbHost);
         const newAuth = await lakebaseService.checkAuth();
         if (!newAuth.authenticated) {
-          const loginCmd = lakebaseService.getLoginCommand(dbHost);
-          const terminal = vscode.window.createTerminal('Databricks Login');
-          terminal.show();
-          terminal.sendText(loginCmd);
-
-          await new Promise<void>(resolve => {
-            const d = vscode.window.onDidCloseTerminal(t => { if (t === terminal) { d.dispose(); resolve(); } });
-          });
-
-          const recheck = await lakebaseService.checkAuth();
-          if (!recheck.authenticated) {
-            vscode.window.showErrorMessage('Databricks authentication failed. Please try again.');
+          const result = await runDatabricksLoginInBackground(
+            lakebaseService,
+            dbHost,
+            null,
+          );
+          if (!result.authenticated) {
+            vscode.window.showErrorMessage(
+              `Databricks authentication failed: ${result.error || 'unknown'}. ` +
+                `See "View > Output > Lakebase SCM" for details.`,
+            );
             return;
           }
         }
@@ -1413,7 +1417,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
       log('=== setupExistingProject START ===');
       const path = require('path');
-      const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId } = require('@databricks-solutions/lakebase-app-dev-kit');
+      const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId, scaffoldAll } = require('@databricks-solutions/lakebase-app-dev-kit');
 
       const root = getWorkspaceRoot();
       log(`workspace root: ${root || '<none>'}`);
@@ -1461,6 +1465,27 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
       }
+      // Pick language + runner BEFORE auth so users don't authenticate
+      // first only to abandon the wizard at language pick. These drive
+      // the scaffoldAll call after .env is wired up; without them, the
+      // adopt path leaves an empty folder with just .env, which is not
+      // a usable Lakebase project tree.
+      const setupLanguagePick = await vscode.window.showQuickPick([
+        { label: '$(symbol-class) Java / Spring Boot', description: 'Maven, Flyway, JPA', value: 'java' as const },
+        { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' as const },
+        { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' as const },
+        { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' as const },
+      ], { title: 'Lakebase: Project Language', placeHolder: 'Choose language for scaffolding (alembic/flyway/knex tree, scripts, workflows)' });
+      if (!setupLanguagePick) { log('=== ABORT: user dismissed language pick ==='); return; }
+      log(`language: ${setupLanguagePick.value}`);
+
+      const setupRunnerPick = await vscode.window.showQuickPick([
+        { label: '$(vm) Self-hosted runner (local)', description: 'Runs CI on your machine. No internet needed for builds.', value: 'self-hosted' as const },
+        { label: '$(cloud) GitHub-hosted runner', description: 'Runs CI on GitHub infrastructure. Requires internet access.', value: 'github-hosted' as const },
+      ], { title: 'Lakebase: CI Runner Type', placeHolder: 'How should CI/CD workflows run?' });
+      if (!setupRunnerPick) { log('=== ABORT: user dismissed runner pick ==='); return; }
+      log(`runner: ${setupRunnerPick.value}`);
+
       try {
         assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
       } catch (err: any) {
@@ -1548,6 +1573,38 @@ export async function activate(context: vscode.ExtensionContext) {
           );
           return;
         }
+      }
+
+      // Scaffold the language tree + scripts + workflows + hooks into
+      // the workspace so the user has a usable project tree, not just
+      // a lone .env file. Errors here are non-fatal: .env is already
+      // written and the welcome view flip below still completes; we
+      // surface a warning and the user can re-run setup.
+      log(`scaffolding language tree (lang=${setupLanguagePick.value}, runner=${setupRunnerPick.value})`);
+      try {
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguagePick.value} project tree...`, cancellable: false },
+          async (progress) => {
+            await scaffoldAll({
+              targetDir: root,
+              databricksHost: host,
+              lakebaseProjectId: projectId,
+              language: setupLanguagePick.value,
+              runnerType: setupRunnerPick.value,
+              report: (step: string, detail?: string) => {
+                progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
+                log(`scaffold: ${step}${detail ? ' (' + detail + ')' : ''}`);
+              },
+            });
+          },
+        );
+        log('scaffold ok');
+      } catch (scaffoldErr: any) {
+        log(`scaffold FAILED (non-fatal): ${scaffoldErr?.message || scaffoldErr}`);
+        vscode.window.showWarningMessage(
+          `Lakebase project wired up but scaffolding the ${setupLanguagePick.value} tree failed: ${scaffoldErr?.message || scaffoldErr}. ` +
+            `See "View > Output > Lakebase SCM" for the failing step.`,
+        );
       }
 
       // Persist a completion stamp in workspaceState so the activation
