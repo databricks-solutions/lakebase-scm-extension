@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { GitService } from './services/gitService';
-import { LakebaseService, isAuthStorageCacheError, isMissingProjectError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
+import { LakebaseService, getAuthStorageRuntime, isAuthStorageCacheError, isMissingProjectError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
 import { StatusBarProvider } from './providers/statusBarProvider';
@@ -2093,7 +2093,23 @@ export async function activate(context: vscode.ExtensionContext) {
       // terminal is shown, the caller's recheck races the user's still-
       // pending browser flow, and the caller aborts with "Still not
       // authenticated" even though the auth eventually succeeds.
-      const loginCmd = lakebaseService.getLoginCommand(targetHost);
+      //
+      // Auth-storage trap: if the extension currently has a `plaintext`
+      // runtime override (set previously when the user clicked "Use
+      // plaintext storage" on the keyring-cache error dialog), a plain
+      // `databricks auth login` writes to whatever the user's
+      // [__settings__] section says (typically `secure` / keyring),
+      // while subsequent extension reads use `plaintext`. Login saves
+      // to keyring, reads read from plaintext, the auth-cache lookup
+      // misses, the recheck fails, and the user gets dropped back at
+      // "Still not authenticated" with no idea why. Prepend the
+      // override to the login command so save and read use the same
+      // store.
+      const storageOverride = getAuthStorageRuntime();
+      const baseLoginCmd = lakebaseService.getLoginCommand(targetHost);
+      const loginCmd = storageOverride
+        ? `DATABRICKS_AUTH_STORAGE=${storageOverride} ${baseLoginCmd}`
+        : baseLoginCmd;
       const terminal = vscode.window.createTerminal('Databricks Connect');
       terminal.show();
       terminal.sendText(loginCmd);
@@ -2113,6 +2129,38 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         });
       });
+
+      // Probe + auto-correct the auth-storage mode. After the user closes
+      // the terminal, run a current-user-me check. If it fails AND we
+      // have an active runtime override, clear it and probe again: the
+      // CLI may have written to a different store than the override
+      // says we should read from (e.g. user pre-set their config to
+      // `secure` but the extension was still on `plaintext` from an
+      // earlier session). Whichever mode produces a working probe wins;
+      // we persist that to globalState. Failures are non-fatal; the
+      // caller's own recheck path handles the user-facing error.
+      try {
+        const probe = await lakebaseService.checkAuth();
+        if (!probe.authenticated && storageOverride) {
+          setAuthStorageRuntime('');
+          if (extensionContext) {
+            await extensionContext.globalState.update(AUTH_STORAGE_STATE_KEY, undefined);
+          }
+          const reprobe = await lakebaseService.checkAuth();
+          if (!reprobe.authenticated) {
+            // Restore the override; the cleared mode didn't help either.
+            setAuthStorageRuntime(storageOverride);
+            if (extensionContext) {
+              await extensionContext.globalState.update(
+                AUTH_STORAGE_STATE_KEY,
+                storageOverride,
+              );
+            }
+          }
+        }
+      } catch {
+        // Probe failures are diagnostic; never block the connect flow.
+      }
     }),
 
     vscode.commands.registerCommand('lakebaseSync.runMigrate', async () => {
