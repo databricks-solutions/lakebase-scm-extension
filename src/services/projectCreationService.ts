@@ -74,7 +74,15 @@ export const PROJECT_CREATION_PROMPTS = {
     prompt: 'Databricks workspace URL',
     placeHolder: 'https://your-workspace.cloud.databricks.com',
     validateInput: (value: string) => {
-      if (!value.startsWith('https://')) { return 'URL must start with https://'; }
+      // Strip leading/trailing whitespace AND common invisible
+      // characters that sneak in from paste (NBSP, zero-width space,
+      // zero-width non-joiner, BOM). Without this, a paste from
+      // Slack/email/doc with one of these glued to the front fails the
+      // startsWith() check even though the URL looks fine on screen,
+      // and the user is convinced they typed the right thing.
+      const v = value.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '');
+      if (!v) { return undefined; } // empty: don't nag while the user is still typing
+      if (!/^https:\/\//i.test(v)) { return 'URL must start with https://'; }
       return undefined;
     },
   },

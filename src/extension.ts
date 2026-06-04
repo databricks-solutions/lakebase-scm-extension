@@ -1158,7 +1158,7 @@ export async function activate(context: vscode.ExtensionContext) {
             validateInput: PROJECT_CREATION_PROMPTS.databricksHost.validateInput,
           });
           if (!hostInput) { return; }
-          dbHost = hostInput.replace(/\/+$/, '');
+          dbHost = hostInput.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '').replace(/\/+$/, '');
         } else {
           dbHost = wsPick.host;
         }
@@ -2056,7 +2056,11 @@ export async function activate(context: vscode.ExtensionContext) {
           prompt: 'Databricks workspace URL',
           placeHolder: 'https://your-workspace.cloud.databricks.com',
           validateInput: (val) => {
-            if (!val.startsWith('https://')) {
+            // See projectCreationService.PROJECT_CREATION_PROMPTS.databricksHost
+            // for why we tolerate invisibles from paste; same rationale here.
+            const v = val.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '');
+            if (!v) { return undefined; }
+            if (!/^https:\/\//i.test(v)) {
               return 'URL must start with https://';
             }
             return undefined;
@@ -2065,7 +2069,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!input) {
           return;
         }
-        targetHost = input.replace(/\/+$/, '');
+        targetHost = input.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '').replace(/\/+$/, '');
       } else {
         targetHost = pick.host;
       }
