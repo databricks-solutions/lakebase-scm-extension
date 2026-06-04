@@ -48,6 +48,21 @@ let extensionContext: vscode.ExtensionContext | undefined;
 const AUTH_STORAGE_STATE_KEY = 'lakebaseSync.authStorageOverride';
 
 /**
+ * Output channel for setup + auth diagnostics. Surface every meaningful
+ * step (auth-check result, connect outcome, recovery branch taken) here
+ * so the user can `View > Output > Lakebase SCM` if the wizard ends in
+ * a state they didn't expect. Previously, anything between the auth
+ * toast and the welcome-view flip happened silently; users were left
+ * staring at an unchanged UI with no signal about where it stopped.
+ */
+let output: vscode.OutputChannel | undefined;
+function log(msg: string): void {
+  if (!output) { return; }
+  const ts = new Date().toISOString();
+  output.appendLine(`[${ts}] ${msg}`);
+}
+
+/**
  * Run `databricks auth login` as a hidden background child process.
  * The CLI opens the system browser itself, so the user just sees a
  * progress notification + the browser tab. No terminal pane gets
@@ -634,6 +649,13 @@ export async function activate(context: vscode.ExtensionContext) {
   // so the user gets a "reload window" prompt without needing to know
   // to do it themselves.
   watchForOwnInstall(context);
+
+  // Output channel for setup + auth diagnostics. Stored module-level so
+  // the helper `log()` can write without threading context through every
+  // call site. Visible via View > Output > Lakebase SCM.
+  output = vscode.window.createOutputChannel('Lakebase SCM');
+  context.subscriptions.push(output);
+  log(`activated v${(context.extension.packageJSON as { version?: string }).version || '?'} at ${context.extensionPath}`);
 
   const config = getConfig();
 
@@ -1389,10 +1411,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
+      log('=== setupExistingProject START ===');
       const path = require('path');
       const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId } = require('@databricks-solutions/lakebase-app-dev-kit');
 
       const root = getWorkspaceRoot();
+      log(`workspace root: ${root || '<none>'}`);
       if (!root) {
         vscode.window.showErrorMessage('Open a project folder first.');
         return;
@@ -1444,31 +1468,35 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
+      log('preflight ok, running checkAuth');
       const authStatus = await lakebaseService.checkAuth();
+      log(`checkAuth -> authenticated=${authStatus.authenticated} expectedHost="${authStatus.expectedHost}" error=${authStatus.error || ''}`);
       if (!authStatus.authenticated) {
         const action = await vscode.window.showWarningMessage(
           `Not authenticated to Databricks${authStatus.expectedHost ? ` (${authStatus.expectedHost})` : ''}. Connect first?`,
           'Connect', 'Cancel'
         );
+        log(`Connect prompt -> "${action ?? 'dismissed'}"`);
         if (action !== 'Connect') { return; }
+        log('invoking lakebaseSync.connectWorkspace');
         await vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+        log('connectWorkspace returned, running recheck');
         const recheck = await lakebaseService.checkAuth();
+        log(`recheck -> authenticated=${recheck.authenticated} expectedHost="${recheck.expectedHost}" error=${recheck.error || ''}`);
         if (!recheck.authenticated) {
-          vscode.window.showErrorMessage('Still not authenticated. Aborting.');
+          vscode.window.showErrorMessage(
+            `Still not authenticated after Connect. Reason: ${recheck.error || 'unknown'}. ` +
+              `Check "View > Output > Lakebase SCM" for details.`,
+          );
+          log('=== ABORT: recheck failed ===');
           return;
         }
       }
 
       const host = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
+      log(`effective host: ${host}`);
 
-      // Idempotency: a prior run may have created the server-side
-      // Lakebase project but never written the local .env (a crash, a
-      // network blip, or a wizard exit between create and env-write).
-      // In that case adoptLakebaseProject throws "project with such id
-      // already exists" and the user is stuck unable to re-run. Catch
-      // that specific error and fall through to the local-only
-      // adoption (resolve default branch, write .env) so the workflow
-      // completes as if the create had just succeeded.
+      log(`starting adoptLakebaseProject(projectName=${projectId}, host=${host})`);
       let result: { defaultBranch?: string; warnings?: string[] };
       try {
         result = await vscode.window.withProgress(
@@ -1482,15 +1510,19 @@ export async function activate(context: vscode.ExtensionContext) {
             });
           }
         );
+        log(`adoptLakebaseProject ok: defaultBranch=${result.defaultBranch || ''} warnings=${result.warnings?.length || 0}`);
       } catch (err: any) {
         const msg = err?.message || String(err);
+        log(`adoptLakebaseProject threw: ${msg}`);
         const alreadyExists = /project with such id already exists/i.test(msg);
         if (!alreadyExists) {
           if (!(await handleAuthError(lakebaseService, err))) {
-            vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${msg}`);
+            vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${msg}. See "View > Output > Lakebase SCM" for details.`);
           }
+          log('=== ABORT: adoptLakebaseProject failed (not the already-exists path) ===');
           return;
         }
+        log('recovery: server-side project already exists, running local-only adoption');
         // Recovery path: server already has the project. Skip the
         // create + run only steps 2-3 of adoptLakebaseProject.
         try {
@@ -1526,6 +1558,7 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
       branchTreeProvider.refresh();
       statusBarProvider.refresh();
+      log('=== setupExistingProject DONE ===');
 
       if (result.warnings && result.warnings.length > 0) {
         for (const w of result.warnings) {
