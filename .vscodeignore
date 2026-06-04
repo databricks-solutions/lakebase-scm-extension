@@ -1,19 +1,20 @@
 .mocharc.yml
 test/**
-node_modules/**
-# Externalized in webpack.config.js — must ship at runtime. Both have
-# module-load-time property assignments that webpack's CJS wrapping
-# can crash on. See webpack.config.js comments for details.
-!node_modules/tweetsodium/**
-!node_modules/tweetnacl/**
-!node_modules/blakejs/**
-!node_modules/adm-zip/**
-# Ship the kit so scaffold.ts can resolve templates/project/ at runtime.
-# Without this whitelist, the kit (and its templates/) are stripped from
-# the VSIX and `Lakebase: Create Database Project` fails on a fresh
-# install with "Could not locate templates/project tree relative to /Users/
-# .../extensions/.../dist".
-!node_modules/@databricks-solutions/lakebase-app-dev-kit/**
+# Ship node_modules in full. The kit (@databricks-solutions/lakebase-app-dev-kit)
+# is required at runtime by the extension and brings ~417 transitive
+# dependencies (tar, octokit, pg, @databricks/appkit, etc.). Maintaining a
+# whitelist of every transitive package is brittle; one missing entry
+# breaks the extension on fresh install with ERR_MODULE_NOT_FOUND.
+# v0.5.13 / 0.5.14 shipped under the old "node_modules/** + whitelist 4"
+# pattern; both failed on fresh install because the kit + its deps were
+# stripped (templates missing + tar not found).
+#
+# We do NOT add blanket node_modules exclude rules here. Earlier
+# trim-bloat patterns (node_modules/**/.github/**, etc.) accidentally
+# stripped scaffolded templates the kit ships INSIDE templates/project/
+# (e.g. templates/project/common/.github/workflows/{pr,merge}.yml).
+# Trade VSIX size for correctness; users see ~45 MB on disk after
+# install, comparable to other multi-feature VS Code extensions.
 src/**
 docs/**
 *.vsix
