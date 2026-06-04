@@ -1432,7 +1432,10 @@ export async function activate(context: vscode.ExtensionContext) {
             cancellable: false,
           },
           async (progress) => {
-            return creationSvc.createProject(
+            // withHostEnv sets the resolved DATABRICKS_CONFIG_PROFILE
+            // alongside DATABRICKS_HOST so the substrate's `databricks
+            // postgres create-project` shell-out can load OAuth config.
+            return lakebaseService.withHostEnv(() => creationSvc.createProject(
               {
                 projectName: lakebaseProjectName,
                 parentDir,
@@ -1446,7 +1449,7 @@ export async function activate(context: vscode.ExtensionContext) {
               (step, detail) => {
                 progress.report({ message: `${step}${detail ? ' – ' + detail : ''}` });
               }
-            );
+            ));
           }
         );
 
@@ -1589,11 +1592,16 @@ export async function activate(context: vscode.ExtensionContext) {
           { location: vscode.ProgressLocation.Notification, title: `Setting up Lakebase: ${projectId}`, cancellable: false },
           async (progress) => {
             progress.report({ message: 'Creating database and writing .env...' });
-            return await adoptLakebaseProject({
+            // withHostEnv sets DATABRICKS_HOST *and* the resolved
+            // DATABRICKS_CONFIG_PROFILE so the kit's `databricks postgres
+            // create-project` shell-out can load OAuth config. Without
+            // the profile the CLI fails with "Unable to load OAuth Config"
+            // even though the wizard's own auth check passed.
+            return await lakebaseService.withHostEnv(() => adoptLakebaseProject({
               projectDir: root,
               projectName: projectId,
               databricksHost: host,
-            });
+            }));
           }
         );
         log(`adoptLakebaseProject ok: defaultBranch=${result.defaultBranch || ''} warnings=${result.warnings?.length || 0}`);
@@ -1616,7 +1624,8 @@ export async function activate(context: vscode.ExtensionContext) {
             { location: vscode.ProgressLocation.Notification, title: `Adopting existing Lakebase project: ${projectId}`, cancellable: false },
             async (progress) => {
               progress.report({ message: 'Resolving default branch...' });
-              const defaultBranch = await getDefaultBranchId({ projectId, host });
+              const defaultBranch = await lakebaseService.withHostEnv<string>(
+                () => getDefaultBranchId({ projectId, host }));
               progress.report({ message: 'Writing .env...' });
               await deployEnvExample(root, { databricksHost: host, lakebaseProjectId: projectId });
               await deployEnv(root, { databricksHost: host, lakebaseProjectId: projectId });
@@ -1646,7 +1655,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguageValue} project tree...`, cancellable: false },
           async (progress) => {
-            await scaffoldAll({
+            await lakebaseService.withHostEnv(() => scaffoldAll({
               targetDir: root,
               databricksHost: host,
               lakebaseProjectId: projectId,
@@ -1656,7 +1665,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
                 log(`scaffold: ${step}${detail ? ' (' + detail + ')' : ''}`);
               },
-            });
+            }));
           },
         );
         log('scaffold ok');

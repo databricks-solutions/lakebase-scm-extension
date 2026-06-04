@@ -284,6 +284,20 @@ export class LakebaseService {
    * against `~/.databrickscfg` and sets it in env, so CLI auth always
    * uses the right profile instead of falling back to a broken DEFAULT.
    */
+  /**
+   * Public wrapper around {@link withHost}. Use this to run kit
+   * primitives that shell out to the `databricks` CLI but are NOT
+   * methods on this service (e.g. adoptLakebaseProject, scaffoldAll,
+   * createProject, getDefaultBranchId, deployEnv). Without it those
+   * calls inherit only DATABRICKS_HOST (set via setHostOverride) and
+   * NOT the resolved DATABRICKS_CONFIG_PROFILE, so the CLI fails with
+   * "Unable to load OAuth Config" even though the extension's own
+   * auth check (which goes through withHost) succeeded.
+   */
+  async withHostEnv<T>(fn: () => Promise<T>): Promise<T> {
+    return this.withHost(fn);
+  }
+
   private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
     if (!host) { return fn(); }
