@@ -21,6 +21,7 @@ import { PullRequestTreeProvider } from './providers/pullRequestTree';
 import { MergesTreeProvider } from './providers/mergesTree';
 import { GraphWebviewProvider } from './providers/graphWebview';
 import { getConfig, getWorkspaceRoot, detectLanguage } from './utils/config';
+import { stripInvisibles } from './utils/text';
 import { isMainBranch, isTierBranch } from './utils/theme';
 import { buildDiffTuples, DiffTuple } from './utils/diffBuilder';
 import { ProjectCreationService, PROJECT_CREATION_PROMPTS } from './services/projectCreationService';
@@ -208,6 +209,109 @@ async function pickLakebaseRunner(title: string): Promise<LakebaseRunner | undef
     { title, placeHolder: 'How should CI/CD workflows run?' },
   );
   return pick?.value;
+}
+
+/**
+ * Single source of truth for "pick a Databricks workspace and make sure
+ * we are authenticated to it." Previously this exact flow (list profiles
+ * -> build quick-pick -> optional new-workspace URL input -> setHostOverride
+ * -> background login) was copy-pasted into createProject (greenfield),
+ * connectWorkspace, and partially into createLakebaseProject (adopt). A
+ * fix to one copy left the others broken, which is exactly how the
+ * "stuck auth loop" kept resurfacing in untouched flows.
+ *
+ * Returns the chosen host (trailing slashes stripped) plus whether the
+ * session was already authenticated to it (so callers can short-circuit
+ * the "Connected" toast), or undefined if the user cancelled or auth
+ * failed (the helper surfaces the failure toast itself).
+ */
+interface WorkspaceSelection { host: string; alreadyConnected: boolean; }
+async function selectAndAuthenticateWorkspace(
+  lakebaseService: LakebaseService,
+  opts: { title: string; includeCurrentWorkspace?: boolean },
+): Promise<WorkspaceSelection | undefined> {
+  const effectiveHost = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
+  const authStatus = await lakebaseService.checkAuth();
+
+  interface WsItem extends vscode.QuickPickItem { host: string; valid: boolean; action?: 'new'; }
+  const items: WsItem[] = [];
+
+  if (opts.includeCurrentWorkspace && effectiveHost) {
+    items.push({
+      label: `${authStatus.authenticated ? '$(check)' : '$(plug)'} Project workspace`,
+      description: effectiveHost,
+      detail: authStatus.authenticated ? 'Connected' : 'Not authenticated – select to connect',
+      host: effectiveHost,
+      valid: authStatus.authenticated,
+    });
+  }
+
+  const profiles = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Discovering Lakebase workspaces...' },
+    () => lakebaseService.listLakebaseProfiles(),
+  );
+  const otherProfiles = opts.includeCurrentWorkspace
+    ? profiles.filter((p) => p.host.replace(/\/+$/, '') !== effectiveHost)
+    : profiles;
+  if (otherProfiles.length > 0) {
+    items.push({ label: '', kind: vscode.QuickPickItemKind.Separator, host: '', valid: false });
+    for (const p of otherProfiles) {
+      const count = p.lakebaseProjects?.length || 0;
+      const names = p.lakebaseProjects?.map((pr) => pr.displayName).join(', ') || '';
+      items.push({
+        label: `$(database) ${p.name}`,
+        description: `${p.host} (${p.cloud})`,
+        detail: `${count} Lakebase project${count !== 1 ? 's' : ''}${names ? ': ' + names : ''}`,
+        host: p.host,
+        valid: p.valid,
+      });
+    }
+  }
+
+  items.push({ label: '', kind: vscode.QuickPickItemKind.Separator, host: '', valid: false });
+  items.push({
+    label: '$(add) Connect to a new workspace...',
+    detail: 'Enter a workspace URL and authenticate',
+    host: '', valid: false, action: 'new',
+  });
+
+  const pick = await vscode.window.showQuickPick(items, {
+    title: opts.title,
+    placeHolder: authStatus.authenticated && effectiveHost
+      ? `Connected to ${effectiveHost}`
+      : 'Choose a Databricks workspace with Lakebase',
+  });
+  if (!pick) { return undefined; }
+
+  let targetHost: string;
+  if (pick.action === 'new') {
+    const input = await vscode.window.showInputBox({
+      prompt: PROJECT_CREATION_PROMPTS.databricksHost.prompt,
+      placeHolder: PROJECT_CREATION_PROMPTS.databricksHost.placeHolder,
+      validateInput: PROJECT_CREATION_PROMPTS.databricksHost.validateInput,
+    });
+    if (!input) { return undefined; }
+    targetHost = stripInvisibles(input).replace(/\/+$/, '');
+  } else {
+    targetHost = pick.host.replace(/\/+$/, '');
+  }
+
+  lakebaseService.setHostOverride(targetHost);
+
+  // Already authenticated to exactly this host -> no login needed.
+  if (pick.valid && targetHost === effectiveHost && authStatus.authenticated) {
+    return { host: targetHost, alreadyConnected: true };
+  }
+
+  const result = await runDatabricksLoginInBackground(lakebaseService, targetHost, null);
+  if (!result.authenticated) {
+    vscode.window.showErrorMessage(
+      `Databricks sign-in did not complete: ${result.error || 'timed out'}. ` +
+        `See "View > Output > Lakebase SCM" for details.`,
+    );
+    return undefined;
+  }
+  return { host: targetHost, alreadyConnected: false };
 }
 
 /** Prompt user to login when auth errors are detected */
@@ -1282,87 +1386,27 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!runnerValue) { return; }
 
       // ── Step 3: Databricks / Lakebase auth ───────────────────────
+      // If already authenticated, offer "use this / switch". Otherwise
+      // (or on switch) route through the ONE shared workspace-select +
+      // authenticate helper that connectWorkspace also uses.
       let dbHost: string | undefined;
       const authStatus = await lakebaseService.checkAuth();
       if (authStatus.authenticated) {
-        dbHost = lakebaseService.getEffectiveHost();
-      }
-
-      if (dbHost) {
+        const current = lakebaseService.getEffectiveHost();
         const dbPick = await vscode.window.showQuickPick([
-          { label: `$(check) Connected to ${dbHost.replace(/^https?:\/\//, '')}`, description: 'Use this workspace', action: 'continue' },
+          { label: `$(check) Connected to ${current.replace(/^https?:\/\//, '')}`, description: 'Use this workspace', action: 'continue' },
           { label: '$(plug) Connect to a different workspace...', description: 'Choose another Databricks workspace', action: 'switch' },
         ], { title: 'Lakebase: Databricks Workspace (7/10)', placeHolder: 'Databricks workspace' });
         if (!dbPick) { return; }
-        if (dbPick.action === 'switch') { dbHost = undefined; }
+        if (dbPick.action === 'continue') { dbHost = current; }
       }
 
       if (!dbHost) {
-        // Reuse the workspace picker pattern from connectWorkspace
-        const profiles = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Discovering Lakebase workspaces...' },
-          () => lakebaseService.listLakebaseProfiles()
-        );
-
-        interface WsPick extends vscode.QuickPickItem { host: string; valid: boolean; action?: string }
-        const wsItems: WsPick[] = [];
-        for (const p of profiles) {
-          const count = p.lakebaseProjects?.length || 0;
-          wsItems.push({
-            label: `$(database) ${p.name}`,
-            description: `${p.host} (${p.cloud})`,
-            detail: `${count} Lakebase project${count !== 1 ? 's' : ''}`,
-            host: p.host, valid: p.valid,
-          });
-        }
-        wsItems.push({ label: '', kind: vscode.QuickPickItemKind.Separator, host: '', valid: false });
-        wsItems.push({
-          label: '$(add) Connect to a new workspace...',
-          detail: 'Enter a workspace URL and authenticate',
-          host: '', valid: false, action: 'new',
-        });
-
-        const wsPick = await vscode.window.showQuickPick(wsItems, {
+        const selection = await selectAndAuthenticateWorkspace(lakebaseService, {
           title: 'Lakebase: Select Workspace (7/10)',
-          placeHolder: 'Choose a Databricks workspace with Lakebase',
         });
-        if (!wsPick) { return; }
-
-        if (wsPick.action === 'new') {
-          const hostInput = await vscode.window.showInputBox({
-            prompt: PROJECT_CREATION_PROMPTS.databricksHost.prompt,
-            placeHolder: PROJECT_CREATION_PROMPTS.databricksHost.placeHolder,
-            validateInput: PROJECT_CREATION_PROMPTS.databricksHost.validateInput,
-          });
-          if (!hostInput) { return; }
-          dbHost = hostInput.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '').replace(/\/+$/, '');
-        } else {
-          dbHost = wsPick.host;
-        }
-
-        // Authenticate if needed. Route through the shared background
-        // spawn helper -- same as connectWorkspace + handleAuthError's
-        // refresh-token branch -- so the greenfield wizard does NOT
-        // plant a terminal pane the user has to find and close. Without
-        // this, the user picked a workspace, browser auth completed,
-        // and the wizard sat waiting on onDidCloseTerminal forever
-        // because the user never closes their terminals.
-        lakebaseService.setHostOverride(dbHost);
-        const newAuth = await lakebaseService.checkAuth();
-        if (!newAuth.authenticated) {
-          const result = await runDatabricksLoginInBackground(
-            lakebaseService,
-            dbHost,
-            null,
-          );
-          if (!result.authenticated) {
-            vscode.window.showErrorMessage(
-              `Databricks authentication failed: ${result.error || 'unknown'}. ` +
-                `See "View > Output > Lakebase SCM" for details.`,
-            );
-            return;
-          }
-        }
+        if (!selection) { return; }
+        dbHost = selection.host;
       }
 
       const lakebaseProjectName = await vscode.window.showInputBox({
@@ -1519,25 +1563,20 @@ export async function activate(context: vscode.ExtensionContext) {
       const authStatus = await lakebaseService.checkAuth();
       log(`checkAuth -> authenticated=${authStatus.authenticated} expectedHost="${authStatus.expectedHost}" error=${authStatus.error || ''}`);
       if (!authStatus.authenticated) {
-        const action = await vscode.window.showWarningMessage(
-          `Not authenticated to Databricks${authStatus.expectedHost ? ` (${authStatus.expectedHost})` : ''}. Connect first?`,
-          'Connect', 'Cancel'
-        );
-        log(`Connect prompt -> "${action ?? 'dismissed'}"`);
-        if (action !== 'Connect') { return; }
-        log('invoking lakebaseSync.connectWorkspace');
-        await vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
-        log('connectWorkspace returned, running recheck');
-        const recheck = await lakebaseService.checkAuth();
-        log(`recheck -> authenticated=${recheck.authenticated} expectedHost="${recheck.expectedHost}" error=${recheck.error || ''}`);
-        if (!recheck.authenticated) {
-          vscode.window.showErrorMessage(
-            `Still not authenticated after Connect. Reason: ${recheck.error || 'unknown'}. ` +
-              `Check "View > Output > Lakebase SCM" for details.`,
-          );
-          log('=== ABORT: recheck failed ===');
+        // Route through the ONE shared workspace-select + authenticate
+        // helper instead of delegating to connectWorkspace and racing a
+        // recheck. The helper completes auth (polling current-user me)
+        // before it returns, so there is no recheck-too-early window.
+        log('not authenticated, invoking selectAndAuthenticateWorkspace');
+        const selection = await selectAndAuthenticateWorkspace(lakebaseService, {
+          title: 'Lakebase: Connect to Workspace',
+          includeCurrentWorkspace: true,
+        });
+        if (!selection) {
+          log('=== ABORT: workspace selection / auth cancelled or failed ===');
           return;
         }
+        log(`authenticated via helper: host=${selection.host} alreadyConnected=${selection.alreadyConnected}`);
       }
 
       const host = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
@@ -2244,130 +2283,18 @@ export async function activate(context: vscode.ExtensionContext) {
     ),
 
     vscode.commands.registerCommand('lakebaseSync.connectWorkspace', async () => {
-      const effectiveHost = lakebaseService.getEffectiveHost().replace(/\/+$/, '');
-
-      // Check current auth status
-      const authStatus = await lakebaseService.checkAuth();
-      const connectedLabel = authStatus.authenticated
-        ? `Connected to ${effectiveHost}`
-        : `Not connected`;
-
-      interface WorkspacePickItem extends vscode.QuickPickItem {
-        host: string;
-        valid: boolean;
-        action?: 'new';
-      }
-
-      const items: WorkspacePickItem[] = [];
-
-      // Show project workspace first if configured
-      if (effectiveHost) {
-        const isConnected = authStatus.authenticated;
-        items.push({
-          label: `${isConnected ? '$(check)' : '$(plug)'} Project workspace`,
-          description: effectiveHost,
-          detail: isConnected ? 'Connected' : 'Not authenticated – select to connect',
-          host: effectiveHost,
-          valid: isConnected,
-        });
-      }
-
-      // Discover workspaces with Lakebase (filtered)
-      const lakebaseProfiles = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: 'Discovering Lakebase workspaces...',
-        },
-        () => lakebaseService.listLakebaseProfiles()
-      );
-
-      const otherProfiles = lakebaseProfiles.filter(p => p.host !== effectiveHost);
-      if (otherProfiles.length > 0) {
-        items.push({ label: '', kind: vscode.QuickPickItemKind.Separator, host: '', valid: false });
-        for (const p of otherProfiles) {
-          const projectCount = p.lakebaseProjects?.length || 0;
-          const projectNames = p.lakebaseProjects?.map(pr => pr.displayName).join(', ') || '';
-          items.push({
-            label: `$(database) ${p.name}`,
-            description: `${p.host} (${p.cloud})`,
-            detail: `${projectCount} Lakebase project${projectCount !== 1 ? 's' : ''}: ${projectNames}`,
-            host: p.host,
-            valid: p.valid,
-          });
-        }
-      }
-
-      // New workspace option
-      items.push({ label: '', kind: vscode.QuickPickItemKind.Separator, host: '', valid: false });
-      items.push({
-        label: '$(add) Connect to a new workspace...',
-        description: '',
-        detail: 'Enter a workspace URL and authenticate',
-        host: '',
-        valid: false,
-        action: 'new',
-      });
-
-      const pick = await vscode.window.showQuickPick(items, {
-        placeHolder: connectedLabel,
+      const selection = await selectAndAuthenticateWorkspace(lakebaseService, {
         title: 'Lakebase: Connect to Workspace',
+        includeCurrentWorkspace: true,
       });
-
-      if (!pick) {
-        return;
-      }
-
-      let targetHost: string;
-
-      if (pick.action === 'new') {
-        const input = await vscode.window.showInputBox({
-          prompt: 'Databricks workspace URL',
-          placeHolder: 'https://your-workspace.cloud.databricks.com',
-          validateInput: (val) => {
-            // See projectCreationService.PROJECT_CREATION_PROMPTS.databricksHost
-            // for why we tolerate invisibles from paste; same rationale here.
-            const v = val.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '');
-            if (!v) { return undefined; }
-            if (!/^https:\/\//i.test(v)) {
-              return 'URL must start with https://';
-            }
-            return undefined;
-          },
-        });
-        if (!input) {
-          return;
-        }
-        targetHost = input.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '').replace(/\/+$/, '');
-      } else {
-        targetHost = pick.host;
-      }
-
-      // Set as session target
-      lakebaseService.setHostOverride(targetHost);
-
-      if (pick.valid && targetHost === effectiveHost) {
-        // Already connected – just refresh
-        vscode.window.showInformationMessage(`Already connected to ${targetHost}`);
-        statusBarProvider.refresh();
-        branchTreeProvider.refresh();
-        return;
-      }
-
-      const result = await runDatabricksLoginInBackground(
-        lakebaseService,
-        targetHost,
-        null, // helper resolves profile from cache or host
+      if (!selection) { return; }
+      vscode.window.showInformationMessage(
+        selection.alreadyConnected
+          ? `Already connected to ${selection.host}`
+          : `Connected to ${selection.host}`,
       );
-      if (result.authenticated) {
-        vscode.window.showInformationMessage(`Connected to ${targetHost}`);
-        statusBarProvider.refresh();
-        branchTreeProvider.refresh();
-      } else {
-        vscode.window.showWarningMessage(
-          `Databricks sign-in did not complete: ${result.error || 'timed out'}. ` +
-            `Run "Lakebase: Connect to Workspace" to retry.`,
-        );
-      }
+      statusBarProvider.refresh();
+      branchTreeProvider.refresh();
     }),
 
     vscode.commands.registerCommand('lakebaseSync.runMigrate', async () => {

@@ -10,6 +10,7 @@ import { RunnerService } from './runnerService';
 // no longer reached through this DI graph. Constructor signature is preserved
 // for caller compat. FEIP-7065.
 import { createProject as substrateCreateProject } from '@databricks-solutions/lakebase-app-dev-kit';
+import { validateDatabricksHostInput } from '../utils/text';
 
 /**
  * Input collected from UI prompts before project creation begins.
@@ -73,18 +74,7 @@ export const PROJECT_CREATION_PROMPTS = {
   databricksHost: {
     prompt: 'Databricks workspace URL',
     placeHolder: 'https://your-workspace.cloud.databricks.com',
-    validateInput: (value: string) => {
-      // Strip leading/trailing whitespace AND common invisible
-      // characters that sneak in from paste (NBSP, zero-width space,
-      // zero-width non-joiner, BOM). Without this, a paste from
-      // Slack/email/doc with one of these glued to the front fails the
-      // startsWith() check even though the URL looks fine on screen,
-      // and the user is convinced they typed the right thing.
-      const v = value.replace(/^[\s ​‌﻿]+|[\s ​‌﻿]+$/g, '');
-      if (!v) { return undefined; } // empty: don't nag while the user is still typing
-      if (!/^https:\/\//i.test(v)) { return 'URL must start with https://'; }
-      return undefined;
-    },
+    validateInput: validateDatabricksHostInput,
   },
 };
 
