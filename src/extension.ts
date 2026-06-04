@@ -172,6 +172,44 @@ async function runDatabricksLoginInBackground(
   );
 }
 
+/**
+ * Single source of truth for the language picker. Both the greenfield
+ * wizard and the adopt path used to inline-duplicate this list, which
+ * meant adding a language (or fixing a label) required edits in two
+ * places and risked drift. The `title` arg lets each caller supply the
+ * step-numbered title appropriate to its flow.
+ */
+type LakebaseLanguage = 'java' | 'kotlin' | 'python' | 'nodejs';
+async function pickLakebaseLanguage(title: string): Promise<LakebaseLanguage | undefined> {
+  const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: LakebaseLanguage }>(
+    [
+      { label: '$(symbol-class) Java / Spring Boot', description: 'Maven, Flyway, JPA', value: 'java' },
+      { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' },
+      { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' },
+      { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' },
+    ],
+    { title, placeHolder: 'Choose project language and framework' },
+  );
+  return pick?.value;
+}
+
+/**
+ * Single source of truth for the CI runner picker. Same rationale as
+ * pickLakebaseLanguage: was duplicated across the greenfield wizard
+ * and the adopt path.
+ */
+type LakebaseRunner = 'self-hosted' | 'github-hosted';
+async function pickLakebaseRunner(title: string): Promise<LakebaseRunner | undefined> {
+  const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: LakebaseRunner }>(
+    [
+      { label: '$(vm) Self-hosted runner (local)', description: 'Runs CI on your machine. No internet needed for builds.', value: 'self-hosted' },
+      { label: '$(cloud) GitHub-hosted runner', description: 'Runs CI on GitHub infrastructure. Requires internet access.', value: 'github-hosted' },
+    ],
+    { title, placeHolder: 'How should CI/CD workflows run?' },
+  );
+  return pick?.value;
+}
+
 /** Prompt user to login when auth errors are detected */
 async function handleAuthError(lakebaseService: LakebaseService, err: any): Promise<boolean> {
   // Special-case: CLI upgraded past a credential-storage break. The new
@@ -1236,20 +1274,12 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       // ── Language stack ───────────────────────────────────────────
-      const languagePick = await vscode.window.showQuickPick([
-        { label: '$(symbol-class) Java / Spring Boot', description: 'Maven, Flyway, JPA', value: 'java' as const },
-        { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' as const },
-        { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' as const },
-        { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' as const },
-      ], { title: 'Lakebase: Project Language (5/10)', placeHolder: 'Choose project language and framework' });
-      if (!languagePick) { return; }
+      const languageValue = await pickLakebaseLanguage('Lakebase: Project Language (5/10)');
+      if (!languageValue) { return; }
 
       // ── Step 2c: Runner type ─────────────────────────────────────
-      const runnerPick = await vscode.window.showQuickPick([
-        { label: '$(vm) Self-hosted runner (local)', description: 'Runs CI on your machine. No internet needed for builds.', value: 'self-hosted' as const },
-        { label: '$(cloud) GitHub-hosted runner', description: 'Runs CI on GitHub infrastructure. Requires internet access.', value: 'github-hosted' as const },
-      ], { title: 'Lakebase: CI Runner Type (6/10)', placeHolder: 'How should CI/CD workflows run?' });
-      if (!runnerPick) { return; }
+      const runnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type (6/10)');
+      if (!runnerValue) { return; }
 
       // ── Step 3: Databricks / Lakebase auth ───────────────────────
       let dbHost: string | undefined;
@@ -1366,8 +1396,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 createGithubRepo,
                 githubOwner: ghUser,
                 privateRepo,
-                language: languagePick.value,
-                runnerType: runnerPick.value,
+                language: languageValue,
+                runnerType: runnerValue,
               },
               (step, detail) => {
                 progress.report({ message: `${step}${detail ? ' – ' + detail : ''}` });
@@ -1470,21 +1500,13 @@ export async function activate(context: vscode.ExtensionContext) {
       // the scaffoldAll call after .env is wired up; without them, the
       // adopt path leaves an empty folder with just .env, which is not
       // a usable Lakebase project tree.
-      const setupLanguagePick = await vscode.window.showQuickPick([
-        { label: '$(symbol-class) Java / Spring Boot', description: 'Maven, Flyway, JPA', value: 'java' as const },
-        { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' as const },
-        { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' as const },
-        { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' as const },
-      ], { title: 'Lakebase: Project Language', placeHolder: 'Choose language for scaffolding (alembic/flyway/knex tree, scripts, workflows)' });
-      if (!setupLanguagePick) { log('=== ABORT: user dismissed language pick ==='); return; }
-      log(`language: ${setupLanguagePick.value}`);
+      const setupLanguageValue = await pickLakebaseLanguage('Lakebase: Project Language');
+      if (!setupLanguageValue) { log('=== ABORT: user dismissed language pick ==='); return; }
+      log(`language: ${setupLanguageValue}`);
 
-      const setupRunnerPick = await vscode.window.showQuickPick([
-        { label: '$(vm) Self-hosted runner (local)', description: 'Runs CI on your machine. No internet needed for builds.', value: 'self-hosted' as const },
-        { label: '$(cloud) GitHub-hosted runner', description: 'Runs CI on GitHub infrastructure. Requires internet access.', value: 'github-hosted' as const },
-      ], { title: 'Lakebase: CI Runner Type', placeHolder: 'How should CI/CD workflows run?' });
-      if (!setupRunnerPick) { log('=== ABORT: user dismissed runner pick ==='); return; }
-      log(`runner: ${setupRunnerPick.value}`);
+      const setupRunnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type');
+      if (!setupRunnerValue) { log('=== ABORT: user dismissed runner pick ==='); return; }
+      log(`runner: ${setupRunnerValue}`);
 
       try {
         assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
@@ -1580,17 +1602,17 @@ export async function activate(context: vscode.ExtensionContext) {
       // a lone .env file. Errors here are non-fatal: .env is already
       // written and the welcome view flip below still completes; we
       // surface a warning and the user can re-run setup.
-      log(`scaffolding language tree (lang=${setupLanguagePick.value}, runner=${setupRunnerPick.value})`);
+      log(`scaffolding language tree (lang=${setupLanguageValue}, runner=${setupRunnerValue})`);
       try {
         await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguagePick.value} project tree...`, cancellable: false },
+          { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguageValue} project tree...`, cancellable: false },
           async (progress) => {
             await scaffoldAll({
               targetDir: root,
               databricksHost: host,
               lakebaseProjectId: projectId,
-              language: setupLanguagePick.value,
-              runnerType: setupRunnerPick.value,
+              language: setupLanguageValue,
+              runnerType: setupRunnerValue,
               report: (step: string, detail?: string) => {
                 progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
                 log(`scaffold: ${step}${detail ? ' (' + detail + ')' : ''}`);
@@ -1602,7 +1624,7 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (scaffoldErr: any) {
         log(`scaffold FAILED (non-fatal): ${scaffoldErr?.message || scaffoldErr}`);
         vscode.window.showWarningMessage(
-          `Lakebase project wired up but scaffolding the ${setupLanguagePick.value} tree failed: ${scaffoldErr?.message || scaffoldErr}. ` +
+          `Lakebase project wired up but scaffolding the ${setupLanguageValue} tree failed: ${scaffoldErr?.message || scaffoldErr}. ` +
             `See "View > Output > Lakebase SCM" for the failing step.`,
         );
       }
