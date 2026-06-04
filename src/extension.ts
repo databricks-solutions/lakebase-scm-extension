@@ -2085,81 +2085,129 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // Need to authenticate. Open the terminal AND block this command
-      // until the user closes it, so callers that `await
-      // executeCommand('lakebaseSync.connectWorkspace')` (e.g.
-      // setupExistingProject) see auth completion before they run their
-      // recheck. Without the await, the command returns the instant the
-      // terminal is shown, the caller's recheck races the user's still-
-      // pending browser flow, and the caller aborts with "Still not
-      // authenticated" even though the auth eventually succeeds.
+      // Spawn `databricks auth login` as a hidden child process: the
+      // CLI itself opens the system browser for the OAuth flow and
+      // runs a local callback server, so there is nothing for the
+      // user to see in a terminal. The previous flow used
+      // vscode.window.createTerminal() which planted a visible
+      // terminal pane the user had to notice, switch focus to, and
+      // close. That terminal is also their working session a lot of
+      // the time, so closing it is hostile. Background spawn + a
+      // single progress notification is the right shape: user clicks
+      // Connect, browser opens, signs in, the notification flips to
+      // "Connected".
       //
-      // Auth-storage trap: if the extension currently has a `plaintext`
-      // runtime override (set previously when the user clicked "Use
-      // plaintext storage" on the keyring-cache error dialog), a plain
-      // `databricks auth login` writes to whatever the user's
-      // [__settings__] section says (typically `secure` / keyring),
-      // while subsequent extension reads use `plaintext`. Login saves
-      // to keyring, reads read from plaintext, the auth-cache lookup
-      // misses, the recheck fails, and the user gets dropped back at
-      // "Still not authenticated" with no idea why. Prepend the
-      // override to the login command so save and read use the same
-      // store.
+      // Auth-storage trap: still honor the plaintext runtime override
+      // by setting DATABRICKS_AUTH_STORAGE on the child's environment,
+      // so login saves to the same store the extension reads from
+      // (otherwise login -> keyring per [__settings__], reads ->
+      // plaintext per override, the two miss each other).
       const storageOverride = getAuthStorageRuntime();
-      const baseLoginCmd = lakebaseService.getLoginCommand(targetHost);
-      const loginCmd = storageOverride
-        ? `DATABRICKS_AUTH_STORAGE=${storageOverride} ${baseLoginCmd}`
-        : baseLoginCmd;
-      const terminal = vscode.window.createTerminal('Databricks Connect');
-      terminal.show();
-      terminal.sendText(loginCmd);
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      if (storageOverride) {
+        childEnv.DATABRICKS_AUTH_STORAGE = storageOverride;
+      }
+      // Resolve a profile name for `--profile` so the CLI does not
+      // sit prompting on stdin for "Databricks profile name [...]:".
+      // Prefer the existing profile that matches this host; fall back
+      // to a host-derived name for brand-new workspaces.
+      const resolvedProfile =
+        (await lakebaseService.resolveProfileForHost(targetHost)) ||
+        new URL(targetHost).hostname.replace(/\./g, '_');
 
-      await new Promise<void>((resolve) => {
-        const disposable = vscode.window.onDidCloseTerminal((t) => {
-          if (t === terminal) {
-            disposable.dispose();
-            vscode.window.showInformationMessage(`Connected to ${targetHost}`);
-            statusBarProvider.refresh();
-            branchTreeProvider.refresh();
-            // Force the profile-cache to rebuild on the next CLI call, in
-            // case the user just authenticated a brand-new profile that
-            // wasn't in the cached snapshot.
-            lakebaseService.invalidateProfileCache();
-            resolve();
-          }
-        });
-      });
+      // Profile cache may be stale (it was built before this auth
+      // event); force a rebuild so the first poll picks up the
+      // freshly-saved profile.
+      lakebaseService.invalidateProfileCache();
 
-      // Probe + auto-correct the auth-storage mode. After the user closes
-      // the terminal, run a current-user-me check. If it fails AND we
-      // have an active runtime override, clear it and probe again: the
-      // CLI may have written to a different store than the override
-      // says we should read from (e.g. user pre-set their config to
-      // `secure` but the extension was still on `plaintext` from an
-      // earlier session). Whichever mode produces a working probe wins;
-      // we persist that to globalState. Failures are non-fatal; the
-      // caller's own recheck path handles the user-facing error.
-      try {
-        const probe = await lakebaseService.checkAuth();
-        if (!probe.authenticated && storageOverride) {
-          setAuthStorageRuntime('');
-          if (extensionContext) {
-            await extensionContext.globalState.update(AUTH_STORAGE_STATE_KEY, undefined);
-          }
-          const reprobe = await lakebaseService.checkAuth();
-          if (!reprobe.authenticated) {
-            // Restore the override; the cleared mode didn't help either.
-            setAuthStorageRuntime(storageOverride);
-            if (extensionContext) {
-              await extensionContext.globalState.update(
-                AUTH_STORAGE_STATE_KEY,
-                storageOverride,
-              );
+      const finalStatus = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Sign in to ${targetHost} in your browser...`,
+          cancellable: true,
+        },
+        async (progress, token) => {
+          progress.report({ message: 'opening browser...' });
+          const { spawn } = await import('child_process');
+          const child = spawn(
+            'databricks',
+            ['auth', 'login', '--host', targetHost, '--profile', resolvedProfile],
+            { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          let stderr = '';
+          child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+          child.stdout?.on('data', () => { /* drain */ });
+          token.onCancellationRequested(() => {
+            try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+          });
+
+          // Poll auth status in parallel with the child. The child
+          // exits when login completes (success OR failure); polling
+          // catches success even before exit, and on child exit we
+          // surface the stderr if auth failed.
+          const deadline = Date.now() + 5 * 60 * 1000;
+          let childExited = false;
+          let childExitCode: number | null = null;
+          child.on('exit', (code) => {
+            childExited = true;
+            childExitCode = code;
+          });
+
+          let last = await lakebaseService.checkAuth();
+          while (!token.isCancellationRequested && Date.now() < deadline) {
+            if (last.authenticated) {
+              try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+              return last;
             }
+            if (childExited) {
+              // Child exited but auth still failing. Try one auto-
+              // correct if we have a runtime override: login may have
+              // saved to a different store than the override forces
+              // reads from.
+              if (storageOverride) {
+                setAuthStorageRuntime('');
+                const probe = await lakebaseService.checkAuth();
+                if (probe.authenticated) {
+                  if (extensionContext) {
+                    await extensionContext.globalState.update(
+                      AUTH_STORAGE_STATE_KEY,
+                      undefined,
+                    );
+                  }
+                  return probe;
+                }
+                setAuthStorageRuntime(storageOverride);
+              }
+              return {
+                authenticated: false,
+                currentHost: '',
+                expectedHost: targetHost,
+                mismatch: false,
+                error:
+                  childExitCode === 0
+                    ? `databricks CLI exited but the session is not authenticated yet. ` +
+                      `Last check: ${last.error || 'unknown'}`
+                    : `databricks auth login failed: ${stderr.trim() || `exit ${childExitCode}`}`,
+              };
+            }
+            await new Promise<void>((r) => setTimeout(r, 2000));
+            last = await lakebaseService.checkAuth();
           }
-        }
-      } catch {
-        // Probe failures are diagnostic; never block the connect flow.
+          // Timeout or cancel
+          try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+          return last;
+        },
+      );
+
+      if (finalStatus.authenticated) {
+        vscode.window.showInformationMessage(`Connected to ${targetHost}`);
+        statusBarProvider.refresh();
+        branchTreeProvider.refresh();
+      } else {
+        vscode.window.showWarningMessage(
+          `Databricks sign-in did not complete: ${finalStatus.error || 'timed out'}. ` +
+            `Run "Lakebase: Connect to Workspace" to retry.`,
+        );
       }
     }),
 
