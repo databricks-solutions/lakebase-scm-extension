@@ -1741,22 +1741,29 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
 
-      const runnerChoice = await vscode.window.showInformationMessage(
-        `Lakebase project "${projectId}" created. Set up self-hosted CI runner now?`,
-        'Set up runner', 'Skip'
-      );
-
-      if (runnerChoice === 'Set up runner') {
-        const fullRepoName = await gitService.getOwnerRepo();
-        if (!fullRepoName) {
-          vscode.window.showWarningMessage('No GitHub origin remote found. Skipping runner setup. Run "Lakebase: Start CI Runner" after pushing to GitHub.');
-        } else {
+      // CI runner setup needs a GitHub origin remote to attach to. Only
+      // OFFER it when one exists -- a brownfield/local-only folder has no
+      // remote yet, and offering "Set up runner" only to then warn "no
+      // remote" reads as a failure. Resolve the remote up front and skip
+      // the offer (with a gentle pointer) when there is none.
+      const runnerRepo = await gitService.getOwnerRepo();
+      log(`runner setup: origin repo = ${runnerRepo || '<none>'}`);
+      if (!runnerRepo) {
+        vscode.window.showInformationMessage(
+          `Lakebase project "${projectId}" is set up. CI runner setup is available once this repo has a GitHub remote: push to GitHub, then run "Lakebase: Start CI Runner".`,
+        );
+      } else {
+        const runnerChoice = await vscode.window.showInformationMessage(
+          `Lakebase project "${projectId}" created. Set up self-hosted CI runner for ${runnerRepo} now?`,
+          'Set up runner', 'Skip'
+        );
+        if (runnerChoice === 'Set up runner') {
           try {
             await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: `Setting up runner for ${fullRepoName}`, cancellable: false },
+              { location: vscode.ProgressLocation.Notification, title: `Setting up runner for ${runnerRepo}`, cancellable: false },
               async (progress) => {
                 const runnerService = new RunnerService(githubService, lakebaseService);
-                await runnerService.setupRunner(fullRepoName, projectId, (msg: string) => progress.report({ message: msg }));
+                await runnerService.setupRunner(runnerRepo, projectId, (msg: string) => progress.report({ message: msg }));
               }
             );
             vscode.window.showInformationMessage(`Runner started for ${projectId}.`);
@@ -1764,8 +1771,7 @@ export async function activate(context: vscode.ExtensionContext) {
           } catch (err: any) {
             vscode.window.showErrorMessage(`Runner setup failed: ${err.message}`);
           }
-
-          await offerCiSecretsSetup(fullRepoName, { host, projectId });
+          await offerCiSecretsSetup(runnerRepo, { host, projectId });
         }
       }
 
