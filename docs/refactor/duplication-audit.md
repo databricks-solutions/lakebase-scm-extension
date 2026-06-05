@@ -21,6 +21,27 @@ Already fixed during the audit (do not re-report):
 
 Line numbers are as of the audit commit; reverify before editing.
 
+## Status (as of v0.5.16)
+
+- **Tier 1 (A-D): DONE.** owner/repo, Lakebase-branch-resolve,
+  migrate-command, .env parse all moved to services. Fixed 2 latent
+  bugs (divergent owner/repo regexes; missing refresh-token wrap).
+- **Tier 2 (F-K): DONE.** `withDatabricksHostEnv`, `parseCliJsonList`,
+  `fetchCurrentUser`, `branchCall`, `parseNameStatus` + `parentCandidates`
+  reuse, `latestDiagLog`, `parseColumnLines`, `loadCommitFiles`.
+- **Tier 2 (E): SKIPPED by decision.** The ~50-site GitService
+  workspace-root guard prelude is uniform boilerplate, not divergent
+  logic (no latent bug). High-churn, low-value; deliberately left
+  as-is. Do not re-open without a reason.
+- **Tier 3 (L-O) + cluster J: NOT STARTED.** Provider status-map /
+  placeholder-tree / file-row / html-escape utils, and DiffService
+  adopting its own `utils/diffBuilder.ts`. Plus misc: auth-error
+  signature corpus, `KNOWN_TIERS` const. All still open.
+- **Greenfield GitHub creation: intentionally NOT unified** onto
+  `setUpGitHubRemoteForFolder` (it targets a not-yet-opened folder via
+  the kit's `createProject`; the helper targets the open workspace).
+  This is a structural difference, not duplication.
+
 ---
 
 ## Tier 1: logic in the UI layer that belongs in a service
