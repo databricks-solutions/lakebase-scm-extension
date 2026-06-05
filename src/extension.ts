@@ -1672,7 +1672,20 @@ export async function activate(context: vscode.ExtensionContext) {
       const root = getWorkspaceRoot();
       log(`workspace root: ${root || '<none>'}`);
       if (!root) {
-        vscode.window.showErrorMessage('Open a project folder first.');
+        // No folder open. Rather than dead-ending, route the user into
+        // the create-project workflow (which prompts for a name AND a
+        // location), or let them open an existing folder to set up here.
+        log('no workspace folder open; offering create/open routing');
+        const choice = await vscode.window.showInformationMessage(
+          'No folder is open. Create a new Lakebase project (you pick the name and location), or open an existing folder to set up here.',
+          'Create New Project', 'Open Folder', 'Cancel',
+        );
+        log(`no-folder routing -> "${choice ?? 'dismissed'}"`);
+        if (choice === 'Create New Project') {
+          await vscode.commands.executeCommand('lakebaseSync.createProject');
+        } else if (choice === 'Open Folder') {
+          await vscode.commands.executeCommand('workbench.action.files.openFolder');
+        }
         return;
       }
 
