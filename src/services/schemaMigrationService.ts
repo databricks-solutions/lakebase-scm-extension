@@ -14,7 +14,6 @@ import {
   type RollbackSchemaMigrationResult,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { LakebaseService } from './lakebaseService';
-import { withDatabricksHostEnv } from '../utils/databricksEnv';
 
 export interface SchemaMigrationFile {
   version: string;
@@ -61,10 +60,16 @@ export class SchemaMigrationService {
     return { instance, branch, projectDir };
   }
 
-  /** Run a substrate call with DATABRICKS_HOST set to the extension's
-   *  effective host. Delegates to the shared env wrapper. */
+  /** Run a substrate call with DATABRICKS_HOST *and the resolved
+   *  DATABRICKS_CONFIG_PROFILE* set, via LakebaseService.withHostEnv. Going
+   *  through the profile-attaching wrapper (rather than a host-only one) is
+   *  required: withDatabricksHostEnv mutates global process.env and deletes
+   *  DATABRICKS_CONFIG_PROFILE in its finally, so a host-only call racing a
+   *  concurrent credential mint would strip the mint's profile and leave a
+   *  bare host ("Unable to load OAuth Config"). One host+profile wrapper for
+   *  every host-scoped CLI call avoids that. */
   private withEffectiveHost<T>(fn: () => Promise<T>): Promise<T> {
-    return withDatabricksHostEnv(this.lakebaseService?.getEffectiveHost(), fn);
+    return this.lakebaseService ? this.lakebaseService.withHostEnv(fn) : fn();
   }
 
   /** Substrate proxy: enumerate pending + applied migrations against the

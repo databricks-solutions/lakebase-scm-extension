@@ -235,11 +235,14 @@ export class SchemaDiffService {
       if (cached) { return cached; }
     }
 
-    // Run the substrate diff with DATABRICKS_HOST set to the effective
-    // extension host (the kit's CLI invocations read it from env).
+    // Run the substrate diff with DATABRICKS_HOST *and the resolved
+    // DATABRICKS_CONFIG_PROFILE* set, via the profile-attaching wrapper.
+    // A host-only wrapper would race concurrent host+profile calls on the
+    // shared process.env and strip the profile (see withEffectiveHost note
+    // in schemaMigrationService); routing through withHostEnv avoids that.
     let result: SchemaDiffResult;
     try {
-      result = await withDatabricksHostEnv(this.lakebaseService.getEffectiveHost(), async () => {
+      result = await this.lakebaseService.withHostEnv(async () => {
         const comparisonBranch = await this.resolveComparisonBranch(branchId);
         const sub = await substrateGetSchemaDiff({
           instance: this.projectInstance(),
