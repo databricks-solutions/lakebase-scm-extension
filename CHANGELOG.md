@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.17 (2026-06-05)
+
+The headline theme is **Databricks auth is reliable on multi-workspace machines**: the extension and the substrate now resolve and pin the right CLI profile for a project's host, so branch switches and credential mints stop failing with "Unable to load OAuth Config" when a developer has several `~/.databrickscfg` profiles. Plus the Tier-3 leg of the DRY consolidation (FEIP-7507) and a kit bump to `v0.3.0-alpha.57`. 442/442 mocha tests pass; tsc clean.
+
+### Fixed: multi-workspace auth
+
+- **`resolveProfileForHost` requires a unique VALID match.** It was last-write-wins over all profiles and ignored the `valid` flag, so a host served by several profiles (or a stale/invalid entry) could be cached and passed to the CLI. It now builds the host map from valid profiles only and returns a name only when exactly one valid profile matches the host; ambiguous or none falls back to the CLI's own resolution.
+- **Schema-diff and migration CLI calls now attach the resolved profile.** Both went through a host-only env wrapper; because `withDatabricksHostEnv` mutates the global `process.env` and clears `DATABRICKS_CONFIG_PROFILE` in its `finally`, a host-only call racing the credential mint could strip the mint's profile and leave a bare host ("Unable to load OAuth Config"). Both now route through `LakebaseService.withHostEnv` (host + profile).
+- **`withDatabricksHostEnv` is ref-counted.** Concurrent calls wanting the same host + profile share one `process.env` mutation (save on first enter, restore on last exit); a conflicting different-host call waits for full unwind. This closes the residual race where one call's restore stripped the profile mid-flight of another's child process.
+- **Branch switch skips the redundant credential mint.** The git checkout fires the project's post-checkout hook, which already syncs `.env`. The extension now detects that (`envReflectsBranch`) and skips its own `syncConnection`, removing the duplicate mint and the concurrent host-scoped call that widened the race; it falls back to `syncConnection` only when the hook was absent or did not run.
+
+### Changed: DRY / service-layer consolidation (FEIP-7507, Tier 3)
+
+- **One source for status presentation, by domain** (`utils/statusPresentation.ts`, vscode-free): `CI_STATUS`, `CHECK_CONCLUSION`, `REVIEW_DECISION`, `REVIEW_STATE`, `SYNC_STATE`, plus `workflowRunStyle` + `resolveStatusStyle`. Adopted by pullRequestTree, schemaScmProvider, runnerTreeProvider, statusBarProvider, and branchTreeProvider (which also dropped its dead local status maps for `theme.ts`).
+- **One placeholder-tree base** (`providers/scmStateTree.ts`): `ScmStateTreeProvider` + `scmStateToTreeItem`; the merges / migrations / lakebase-schema trees collapse to thin subclasses.
+- **One open/diff dispatch** (`utils/fileRow.ts` `buildFileDiffCommand`): added opens the file, deleted opens the merge-base (or nothing), otherwise diffs against the merge-base (honoring renamed paths). Adopted by pullRequestTree, schemaScmProvider, branchTreeProvider. New hermetic coverage written first for each util.
+
+### Substrate
+
+- **Kit pin bumped to `v0.3.0-alpha.57`.** Adds profile auto-pin so a project's `.env` survives the auth preflight on multi-workspace machines: a `lakebase-resolve-profile` CLI + `ensureProfilePinned` heal wired into the post-checkout hook (self-heals before its preflight), the `sync-env` branch ops, and a `lakebase-doctor --fix` remediation. Names the workspace host's unique valid profile and pins `DATABRICKS_CONFIG_PROFILE` next to `DATABRICKS_HOST`.
+
 ## 0.5.16 (2026-06-04)
 
 The headline theme is **the new-project / set-up wizard and Databricks auth now work end to end**, plus a large DRY / service-layer consolidation (FEIP-7507). First changelog entry since 0.5.11; the intervening 0.5.12 to 0.5.15 tags shipped the day-zero defect fixes, the FEIP-7494 shell-thinning kit pin, the full-`node_modules` VSIX bundling fix, and the git-init prompt. 372/372 mocha tests pass; tsc clean. Kit pin unchanged at `v0.3.0-alpha.55`.
