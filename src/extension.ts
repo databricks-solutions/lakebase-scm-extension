@@ -331,6 +331,107 @@ async function selectAndAuthenticateWorkspace(
   return { host: targetHost, alreadyConnected: false };
 }
 
+/**
+ * Ensure the current folder has a GitHub `origin` remote, offering to
+ * create a repo or connect an existing one. Shared by the adopt setup
+ * flow (and available to any caller that needs a remote before CI runner
+ * setup). Returns the resolved `owner/repo` once a remote exists, or
+ * undefined if the user skipped / cancelled / it failed.
+ *
+ * UI orchestration only; the actual work (createRepo, addRemote, commit,
+ * push) is delegated to GitHubService / GitService.
+ */
+async function setUpGitHubRemoteForFolder(
+  gitService: GitService,
+  githubService: GitHubService,
+  opts: { defaultRepoName: string },
+): Promise<string | undefined> {
+  // Already has a remote? Nothing to do.
+  const existingRepo = await gitService.getOwnerRepo().catch(() => '');
+  if (existingRepo) { log(`GitHub: origin already set (${existingRepo})`); return existingRepo; }
+
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: '$(github) Create a GitHub repository', description: 'Create a new repo, set origin, and push', value: 'create' as const },
+      { label: '$(plug) Connect an existing remote', description: 'Paste a GitHub repo URL to use as origin', value: 'connect' as const },
+      { label: '$(circle-slash) Skip', description: 'Stay local-only; add a remote later', value: 'skip' as const },
+    ],
+    { title: 'Lakebase: GitHub', placeHolder: 'This folder has no GitHub remote. Set one up?' },
+  );
+  log(`GitHub step -> "${choice?.value ?? 'dismissed'}"`);
+  if (!choice || choice.value === 'skip') { return undefined; }
+
+  if (choice.value === 'connect') {
+    const url = await vscode.window.showInputBox({
+      prompt: 'GitHub repository URL (origin)',
+      placeHolder: 'https://github.com/owner/repo',
+      validateInput: (v) => (stripInvisibles(v) ? undefined : 'Enter a repository URL'),
+    });
+    if (!url) { return undefined; }
+    try {
+      await gitService.addRemote('origin', stripInvisibles(url).replace(/\/+$/, ''));
+      const resolved = await gitService.getOwnerRepo().catch(() => '');
+      log(`GitHub: connected origin -> ${resolved || '<unresolved>'}`);
+      return resolved || undefined;
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Could not set origin remote: ${err?.message || err}`);
+      return undefined;
+    }
+  }
+
+  // create
+  try {
+    await ensureGitHubAuth();
+  } catch {
+    vscode.window.showErrorMessage('GitHub authentication failed. Sign in via VS Code or set lakebaseSync.githubToken.');
+    return undefined;
+  }
+  const repoName = await vscode.window.showInputBox({
+    prompt: 'New GitHub repository name',
+    value: opts.defaultRepoName,
+    placeHolder: opts.defaultRepoName,
+    validateInput: (v) => {
+      const t = stripInvisibles(v);
+      if (!t) { return 'Repository name is required'; }
+      if (!/^[a-zA-Z0-9._-]+$/.test(t)) { return 'Invalid characters in repo name'; }
+      return undefined;
+    },
+  });
+  if (!repoName) { return undefined; }
+  const visibility = await vscode.window.showQuickPick(
+    [
+      { label: '$(lock) Private', value: true },
+      { label: '$(globe) Public', value: false },
+    ],
+    { title: 'Lakebase: Repository Visibility', placeHolder: 'Choose repository visibility' },
+  );
+  if (!visibility) { return undefined; }
+
+  try {
+    return await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Creating GitHub repo ${stripInvisibles(repoName)}...`, cancellable: false },
+      async (progress) => {
+        const name = stripInvisibles(repoName);
+        progress.report({ message: 'creating repository...' });
+        const url = await githubService.createRepo(name, { private: visibility.value });
+        log(`GitHub: created repo ${url}`);
+        await gitService.addRemote('origin', url);
+        progress.report({ message: 'committing scaffold...' });
+        try { await gitService.commitAll('Initial Lakebase scaffold'); }
+        catch (e: any) { log(`GitHub: commitAll skipped (${e?.message || e})`); }
+        progress.report({ message: 'pushing...' });
+        await gitService.publishBranch();
+        const resolved = await gitService.getOwnerRepo().catch(() => '');
+        vscode.window.showInformationMessage(`Created and pushed to ${resolved || url}.`);
+        return resolved || undefined;
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`GitHub repo setup failed: ${err?.message || err}`);
+    return undefined;
+  }
+}
+
 /** Prompt user to login when auth errors are detected */
 async function handleAuthError(lakebaseService: LakebaseService, err: any): Promise<boolean> {
   // Special-case: CLI upgraded past a credential-storage break. The new
@@ -1741,12 +1842,14 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
 
-      // CI runner setup needs a GitHub origin remote to attach to. Only
-      // OFFER it when one exists -- a brownfield/local-only folder has no
-      // remote yet, and offering "Set up runner" only to then warn "no
-      // remote" reads as a failure. Resolve the remote up front and skip
-      // the offer (with a gentle pointer) when there is none.
-      const runnerRepo = await gitService.getOwnerRepo();
+      // GitHub step: a fresh folder has no remote. Offer to create a
+      // repo (or connect an existing one) so the project is backed by
+      // GitHub and the CI runner step below has a remote to attach to.
+      // No-op + returns the existing repo if origin is already set.
+      log('GitHub remote step');
+      const runnerRepo = await setUpGitHubRemoteForFolder(gitService, githubService, {
+        defaultRepoName: projectId,
+      });
       log(`runner setup: origin repo = ${runnerRepo || '<none>'}`);
       if (!runnerRepo) {
         vscode.window.showInformationMessage(
