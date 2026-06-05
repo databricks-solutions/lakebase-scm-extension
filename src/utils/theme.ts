@@ -34,6 +34,18 @@ export const STATUS_COLORS: Record<string, string> = {
  *   your project's default Lakebase branch.
  * - When no alias is set, falls back to the conventional `main`/`master`.
  */
+/**
+ * Conventional long-running tier / trunk branch names, used as a
+ * FALLBACK when the auto-discovered tier cache ({@link isTierBranch}) is
+ * empty (e.g. before the first listBranches of a session). Single source
+ * of truth: previously duplicated as `KNOWN_TIERS` in schemaDiffService
+ * and `KNOWN_TIER_FALLBACK` in branchTreeProvider, which could drift if
+ * one list gained a name the other lacked.
+ */
+export const TIER_FALLBACK_NAMES: ReadonlySet<string> = new Set([
+  'main', 'master', 'staging', 'uat', 'perf',
+]);
+
 export function isMainBranch(name: string, trunkAlias?: string): boolean {
   if (trunkAlias && trunkAlias.length > 0) {
     return name === trunkAlias;

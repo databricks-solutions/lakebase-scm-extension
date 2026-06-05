@@ -12,6 +12,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { getWorkspaceRoot, parseEnvFile } from "../utils/config";
+import { isRefreshTokenInvalidError } from "../utils/databricksAuth";
 import { GitHubService } from "./githubService";
 import { LakebaseService } from "./lakebaseService";
 import {
@@ -95,7 +96,7 @@ export class RunnerService {
       const profileSuffix = profile ? ` -p ${profile}` : "";
       const hostSuffix = host ? ` --host ${host}` : "";
       const reAuthCmd = `databricks auth login${hostSuffix}${profileSuffix}`;
-      if (/refresh token is invalid|cannot get access token|unauthenticated/i.test(result.stderr)) {
+      if (isRefreshTokenInvalidError(result.stderr)) {
         report(`⚠ Databricks CLI auth on the runner is expired. Re-auth before your next CI run:\n    ${reAuthCmd}`);
       } else {
         report(`⚠ Could not verify Databricks CLI auth (${result.stderr.split("\n")[0].slice(0, 120)}). Re-auth if needed:\n    ${reAuthCmd}`);

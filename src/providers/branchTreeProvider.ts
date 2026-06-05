@@ -3,7 +3,7 @@ import { GitService, GitBranchInfo } from '../services/gitService';
 import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService } from '../services/schemaDiffService';
-import { isMainBranch, isTierBranch } from '../utils/theme';
+import { isMainBranch, isTierBranch, TIER_FALLBACK_NAMES } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 
@@ -15,11 +15,10 @@ import { isMigrationMetadataTable } from '../utils/migrationMetadata';
  * status checks before the first listBranches call still classify the
  * obvious tiers correctly.
  */
-const KNOWN_TIER_FALLBACK = new Set(['main', 'master', 'staging', 'uat', 'perf']);
 export function isLongRunningTier(branchName: string): boolean {
   if (!branchName) return false;
   if (isTierBranch(branchName)) return true;
-  if (KNOWN_TIER_FALLBACK.has(branchName)) return true;
+  if (TIER_FALLBACK_NAMES.has(branchName)) return true;
   const cfg = getConfig();
   if (cfg.trunkBranch && branchName === cfg.trunkBranch) return true;
   if (cfg.stagingBranch && branchName === cfg.stagingBranch) return true;

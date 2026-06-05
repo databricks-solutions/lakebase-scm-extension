@@ -40,6 +40,7 @@ import {
 } from "@databricks-solutions/lakebase-app-dev-kit";
 import { setKnownTierNames, isMainBranch } from "../utils/theme";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
+import { isAuthStorageCacheError } from "../utils/databricksAuth";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -81,33 +82,11 @@ export interface DatabricksProfile {
   lakebaseProjects?: Array<{ uid: string; displayName: string }>;
 }
 
-/**
- * Substring match for the new-CLI-rejects-old-cache error class. Emitted
- * when a user upgrades the `databricks` CLI and the new binary refuses
- * to read credentials saved by an older version. Tagged separately from
- * generic auth errors so the extension can surface a different remediation
- * (re-login OR DATABRICKS_AUTH_STORAGE=plaintext) than for a plain
- * not-logged-in case.
- */
-export function isAuthStorageCacheError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /stored credentials from older CLI versions/i.test(msg);
-}
-
-/**
- * Substring match for the OAuth refresh-token-invalid error class.
- * Surfaces when a previously-saved OAuth refresh token has expired or
- * been revoked. ONLY remedy is a fresh `databricks auth login` against
- * the workspace, which mints a new refresh token via the browser flow.
- * No automatic retry is possible (OAuth requires interactive sign-in);
- * the extension catches this class to surface a one-click "Re-
- * authenticate" notification that opens the right terminal command.
- */
-export function isRefreshTokenInvalidError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /refresh token is invalid/i.test(msg) ||
-    /access token could not be retrieved/i.test(msg);
-}
+// Auth-error classifiers live in one place (utils/databricksAuth) and
+// are re-exported here so existing importers (extension.ts) keep
+// importing them from this service. They are also imported at the top
+// of this file for internal use (lakebaseExec).
+export { isAuthStorageCacheError, isRefreshTokenInvalidError } from "../utils/databricksAuth";
 
 /**
  * Module-level cache of the auth-storage mode the extension switched

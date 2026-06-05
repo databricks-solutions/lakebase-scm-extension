@@ -16,8 +16,7 @@ import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
-
-const KNOWN_TIERS = new Set(["main", "master", "staging", "uat", "perf"]);
+import { TIER_FALLBACK_NAMES } from "../utils/theme";
 
 export interface SchemaObject {
   type: "TABLE" | "INDEX";
@@ -280,7 +279,7 @@ export class SchemaDiffService {
    *   4. Fall through to substrate's default.
    */
   private async resolveComparisonBranch(branchId: string): Promise<string | undefined> {
-    if (KNOWN_TIERS.has(branchId)) { return undefined; }
+    if (TIER_FALLBACK_NAMES.has(branchId)) { return undefined; }
     const cfg = getConfig();
     if (cfg.trunkBranch && branchId === cfg.trunkBranch) { return undefined; }
     if (cfg.stagingBranch && branchId === cfg.stagingBranch) { return undefined; }

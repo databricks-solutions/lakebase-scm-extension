@@ -11,6 +11,7 @@
 // the extension. The only behavior beyond substrate is the auth-tagging.
 
 import { exec as substrateExec } from "@databricks-solutions/lakebase-app-dev-kit";
+import { isTaggableAuthError } from "./databricksAuth";
 
 export interface ExecOptions {
   cwd?: string;
@@ -18,16 +19,6 @@ export interface ExecOptions {
   timeout?: number;
   tagAuthErrors?: boolean;
 }
-
-const AUTH_ERROR_SIGNATURES = [
-  "project id not found",
-  "not authenticated",
-  "PERMISSION_DENIED",
-  "401",
-  "invalid token",
-  "no configuration",
-  "cannot configure default credentials",
-];
 
 export function exec(command: string, opts?: ExecOptions): Promise<string>;
 export function exec(command: string, cwd?: string, env?: Record<string, string>): Promise<string>;
@@ -48,7 +39,7 @@ export async function exec(
   } catch (err) {
     if (opts.tagAuthErrors) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (AUTH_ERROR_SIGNATURES.some((sig) => msg.includes(sig))) {
+      if (isTaggableAuthError(msg)) {
         const authErr = new Error(msg);
         (authErr as Error & { isAuthError?: boolean }).isAuthError = true;
         throw authErr;

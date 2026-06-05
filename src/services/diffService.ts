@@ -3,8 +3,9 @@ import { GitService } from './gitService';
 import { SchemaMigrationService } from './schemaMigrationService';
 import { getWorkspaceRoot } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
+import { sortMigrationsToEnd, DiffTuple } from '../utils/diffBuilder';
 
-export type DiffTuple = [vscode.Uri, vscode.Uri | undefined, vscode.Uri | undefined];
+export type { DiffTuple };
 
 export interface DiffFileInfo {
   status: string;
@@ -145,20 +146,15 @@ export class DiffService {
   }
 
   /**
-   * Sort tuples so migration SQL files appear at the end.
+   * Sort tuples so migration SQL files appear at the end, and return the
+   * set of migration file paths (for appendSchemaDiffs). The tuple
+   * code/migration split delegates to the shared `sortMigrationsToEnd`
+   * (single source of truth, shared with graphWebview); this previously
+   * used a divergent basename-substring match.
    */
   private sortMigrations(tuples: DiffTuple[], files: DiffFileInfo[]): { code: DiffTuple[]; migrations: DiffTuple[]; migPaths: Set<string> } {
     const migPaths = new Set(files.map(f => f.path).filter(fp => /V\d+.*\.sql$/i.test(fp)));
-    const code: DiffTuple[] = [];
-    const migrations: DiffTuple[] = [];
-    for (const t of tuples) {
-      const p = t[0].fsPath || t[0].path;
-      if ([...migPaths].some(mp => p.includes(mp.split('/').pop() || ''))) {
-        migrations.push(t);
-      } else {
-        code.push(t);
-      }
-    }
+    const { code, migrations } = sortMigrationsToEnd(tuples);
     return { code, migrations, migPaths };
   }
 
