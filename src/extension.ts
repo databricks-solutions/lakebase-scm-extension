@@ -1505,13 +1505,42 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const defaultName = path.basename(root).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
       const existing = getConfig().lakebaseProjectId;
+      log(`existing LAKEBASE_PROJECT_ID=${existing || '<none>'} defaultName=${defaultName}`);
+
+      // Already-configured short circuit: this workspace's .env already
+      // declares a project. Re-running full setup on it is a dead end
+      // (the user "lands nowhere"). Offer to just (re)connect: refresh
+      // the views + flip the welcome context so the SCM tree appears.
+      if (existing) {
+        log(`workspace already configured for "${existing}" -> offering reconnect`);
+        const choice = await vscode.window.showInformationMessage(
+          `This workspace is already set up for Lakebase project "${existing}". Reconnect and refresh the views?`,
+          'Reconnect', 'Re-run full setup', 'Cancel',
+        );
+        log(`already-configured prompt -> "${choice ?? 'dismissed'}"`);
+        if (!choice || choice === 'Cancel') { return; }
+        if (choice === 'Reconnect') {
+          await context.workspaceState.update('lakebaseSync.onboarding.completedAt', new Date().toISOString());
+          await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
+          branchTreeProvider.refresh();
+          statusBarProvider.refresh();
+          schemaScmProvider.refresh();
+          vscode.window.showInformationMessage(`Reconnected to Lakebase project "${existing}".`);
+          log('=== reconnect DONE ===');
+          return;
+        }
+        // 'Re-run full setup' falls through to the normal flow below.
+      }
+
+      log('prompting for project ID');
       const projectId = await vscode.window.showInputBox({
         prompt: 'Lakebase project ID',
         value: existing || defaultName,
         validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
         title: 'Lakebase: Set Up Existing Project',
       });
-      if (!projectId) { return; }
+      if (!projectId) { log('=== ABORT: project ID input dismissed ==='); return; }
+      log(`project ID: ${projectId}`);
 
       // Brownfield pre-flight: refuse fast if the workspace is not a
       // git repo or .env already declares a different LAKEBASE_PROJECT_ID.
@@ -1526,12 +1555,14 @@ export async function activate(context: vscode.ExtensionContext) {
       // git as the gate surface.
       const nodePath = require('path');
       const nodeFs = require('fs');
-      if (!nodeFs.existsSync(nodePath.join(root, '.git'))) {
+      const hasGit = nodeFs.existsSync(nodePath.join(root, '.git'));
+      log(`git repo present: ${hasGit}`);
+      if (!hasGit) {
         const choice = await vscode.window.showInformationMessage(
           `${root} is not a git repository yet. Lakebase pairs every git branch with a database branch, so a git repo is required. Initialize one here now?`,
           'Initialize git repo', 'Cancel',
         );
-        if (choice !== 'Initialize git repo') { return; }
+        if (choice !== 'Initialize git repo') { log('=== ABORT: git init declined ==='); return; }
         try {
           const { execFileSync } = require('child_process');
           execFileSync('git', ['init', '-q'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
