@@ -109,11 +109,7 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<AnyItem> {
 
     let ownerRepo = '';
     try {
-      const repoUrl = await this.gitService.getGitHubUrl();
-      const m = repoUrl.match(/github\.com\/(.+?)\/?$/);
-      if (m) {
-        ownerRepo = m[1];
-      }
+      ownerRepo = await this.gitService.getOwnerRepo();
     } catch {
       // best-effort; if there is no github remote, the github section
       // renders an inline "no remote" leaf rather than disappearing

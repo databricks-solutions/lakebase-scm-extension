@@ -119,11 +119,9 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
 
     // Derive repo name from git remote for the root label
     let repoName = 'my-project';
-    let repoUrl = '';
     try {
-      repoUrl = await this.gitService.getGitHubUrl();
-      const match = repoUrl.match(/\/([^/]+)$/);
-      repoName = match ? match[1] : repoName;
+      const name = await this.gitService.getRepoName();
+      if (name) { repoName = name; }
     } catch { /* no remote */ }
 
     const projectItem = new BranchItem(
@@ -152,8 +150,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     try {
       const repoUrl = await this.gitService.getGitHubUrl();
       if (repoUrl) {
-        const match = repoUrl.match(/github\.com\/(.+)/);
-        const fullRepoName = match ? match[1] : repoUrl;
+        const fullRepoName = (await this.gitService.getOwnerRepo()) || repoUrl;
         const ghItem = new BranchItem(undefined, undefined, 'detail', fullRepoName);
         ghItem.iconPath = new vscode.ThemeIcon('github');
         ghItem.tooltip = `${repoUrl}\nClick to open on GitHub`;
