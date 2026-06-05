@@ -432,6 +432,18 @@ async function setUpGitHubRemoteForFolder(
   }
 }
 
+/**
+ * Refresh the `lakebaseSync.hasGitRemote` context key so the
+ * "Attach GitHub Repository" tree affordance shows only when the folder
+ * has no origin remote. Cheap; safe to call after any flow that may
+ * change the remote.
+ */
+async function setGitRemoteContext(gitService: GitService): Promise<boolean> {
+  const repo = await gitService.getOwnerRepo().catch(() => '');
+  await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasGitRemote', !!repo);
+  return !!repo;
+}
+
 /** Prompt user to login when auth errors are detected */
 async function handleAuthError(lakebaseService: LakebaseService, err: any): Promise<boolean> {
   // Special-case: CLI upgraded past a credential-storage break. The new
@@ -1133,6 +1145,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // render an onboarding button rather than silently rendering an
   // empty list.
   vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', !!getConfig().lakebaseProjectId);
+  // Drive the "Attach GitHub Repository" tree affordance: show it only
+  // when the folder has no origin remote.
+  void setGitRemoteContext(gitService);
 
   // Sync .env connection on git branch change, optionally auto-create Lakebase branch
   const autoBranchDisposable = gitService.onBranchChanged(async (newBranch: string) => {
@@ -1878,6 +1893,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
 
+      await setGitRemoteContext(gitService);
       statusBarProvider.refresh();
       branchTreeProvider.refresh();
     }),
@@ -2470,6 +2486,33 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('lakebaseSync.createLakebaseProject');
       }
       log('=== connectWorkspace DONE ===');
+    }),
+
+    // Tree-view recovery affordance: attach a GitHub repo to a folder
+    // that has none (e.g. setup was skipped or the user tabbed away from
+    // the GitHub step). Uses the SAME shared helper as the setup flow, so
+    // the create/connect UX is identical everywhere (unified process).
+    vscode.commands.registerCommand('lakebaseSync.attachGitHubRepo', async () => {
+      log('=== attachGitHubRepo START ===');
+      const root = getWorkspaceRoot();
+      if (!root) { vscode.window.showErrorMessage('Open a project folder first.'); return; }
+      const path = require('path');
+      const repo = await setUpGitHubRemoteForFolder(gitService, githubService, {
+        defaultRepoName: getConfig().lakebaseProjectId || path.basename(root),
+      });
+      await setGitRemoteContext(gitService);
+      branchTreeProvider.refresh();
+      statusBarProvider.refresh();
+      if (repo) {
+        // Offer CI runner setup now that a remote exists.
+        const setUp = await vscode.window.showInformationMessage(
+          `GitHub remote set to ${repo}. Set up the CI runner now?`, 'Set up runner', 'Later',
+        );
+        if (setUp === 'Set up runner') {
+          await vscode.commands.executeCommand('lakebaseSync.startRunner');
+        }
+      }
+      log(`=== attachGitHubRepo DONE (repo=${repo || '<none>'}) ===`);
     }),
 
     vscode.commands.registerCommand('lakebaseSync.runMigrate', async () => {

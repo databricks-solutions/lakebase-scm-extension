@@ -98,6 +98,12 @@
         "category": "Lakebase SCM"
       },
       {
+        "command": "lakebaseSync.attachGitHubRepo",
+        "title": "Attach GitHub Repository",
+        "icon": "$(github)",
+        "category": "Lakebase SCM"
+      },
+      {
         "command": "lakebaseSync.refreshBranches",
         "title": "Refresh",
         "icon": "$(refresh)",
@@ -1101,6 +1107,11 @@
         {
           "command": "lakebaseSync.connectWorkspace",
           "when": "view == lakebaseBranches",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lakebaseSync.attachGitHubRepo",
+          "when": "view == lakebaseBranches && !lakebaseSync.hasGitRemote",
           "group": "navigation@1"
         },
         {
