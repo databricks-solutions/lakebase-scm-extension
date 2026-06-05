@@ -6,6 +6,7 @@ import { RunnerService } from '../services/runnerService';
 import { GitService } from '../services/gitService';
 import { GitHubService } from '../services/githubService';
 import { getConfig } from '../utils/config';
+import { workflowRunStyle } from '../utils/statusPresentation';
 
 // FEIP-7480: the runner pane shows ONLY the open workspace's project.
 // Two sub-sections, each a top-level entry:
@@ -240,25 +241,14 @@ export class RunnerTreeProvider implements vscode.TreeDataProvider<AnyItem> {
     }
 
     return runs.map((run) => {
-      const statusIcons: Record<string, string> = {
-        completed: run.conclusion === 'success' ? 'pass' : run.conclusion === 'failure' ? 'error' : 'warning',
-        in_progress: 'loading~spin',
-        queued: 'clock',
-      };
-      const statusColors: Record<string, string> = {
-        success: 'charts.green',
-        failure: 'charts.red',
-        cancelled: 'charts.yellow',
-      };
-      const icon = statusIcons[run.status] || 'circle-outline';
-      const color = statusColors[run.conclusion] || 'foreground';
+      const { icon, color } = workflowRunStyle(run.status, run.conclusion);
 
       const runItem = new LeafItem(
         `${run.name} #${run.id.toString().slice(-4)}`,
         'run',
         section,
       );
-      runItem.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
+      runItem.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color || 'foreground'));
       runItem.description = `${run.branch} · ${run.conclusion || run.status}`;
       runItem.tooltip = `${run.name}\nBranch: ${run.branch}\nEvent: ${run.event}\nStatus: ${run.status}\nConclusion: ${run.conclusion || 'pending'}`;
       runItem.command = {

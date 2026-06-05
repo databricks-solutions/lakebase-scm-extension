@@ -5,6 +5,8 @@ import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService, SchemaDiffResult } from '../services/schemaDiffService';
 import { LakebaseService } from '../services/lakebaseService';
 import { isMainBranch, STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
+import { CI_STATUS, resolveStatusStyle } from '../utils/statusPresentation';
+import { buildFileDiffCommand } from '../utils/fileRow';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 
 /**
@@ -461,24 +463,7 @@ export class SchemaScmProvider {
 
     vscode.commands.executeCommand('setContext', 'lakebaseSync.hasPR', true);
 
-    const ciIcons: Record<string, string> = {
-      pending: 'loading~spin',
-      success: 'pass-filled',
-      failure: 'error',
-      unknown: 'question',
-    };
-    const ciColors: Record<string, string> = {
-      pending: 'charts.yellow',
-      success: 'charts.green',
-      failure: 'charts.red',
-      unknown: 'foreground',
-    };
-    const ciLabels: Record<string, string> = {
-      pending: 'CI running...',
-      success: 'CI passed',
-      failure: 'CI failed',
-      unknown: 'CI status unknown',
-    };
+    const ci = resolveStatusStyle(CI_STATUS, pr.ciStatus, CI_STATUS.unknown);
 
     const ciBranchName = `ci-pr-${pr.number}`;
     const items: vscode.SourceControlResourceState[] = [];
@@ -488,8 +473,8 @@ export class SchemaScmProvider {
     items.push({
       resourceUri: vscode.Uri.parse(`lakebase-pr://status/${encodeURIComponent(prLabel)}`),
       decorations: {
-        tooltip: `${prLabel}\n${ciLabels[pr.ciStatus]}\nCI branch: ${ciBranchName}\n\nClick to open PR`,
-        iconPath: new vscode.ThemeIcon(ciIcons[pr.ciStatus], new vscode.ThemeColor(ciColors[pr.ciStatus])),
+        tooltip: `${prLabel}\n${ci.label}\nCI branch: ${ciBranchName}\n\nClick to open PR`,
+        iconPath: new vscode.ThemeIcon(ci.icon, new vscode.ThemeColor(ci.color || 'foreground')),
       },
       command: {
         command: 'vscode.open',
@@ -526,7 +511,7 @@ export class SchemaScmProvider {
           : `${lbLabel}\nBranch not yet created – CI may still be running`,
         iconPath: new vscode.ThemeIcon(
           ciBranchFound ? 'database' : 'loading~spin',
-          new vscode.ThemeColor(ciBranchFound ? ciColors[pr.ciStatus] : 'charts.yellow')
+          new vscode.ThemeColor(ciBranchFound ? (ci.color || 'foreground') : 'charts.yellow')
         ),
       },
       command: ciBranchCommand,
@@ -629,16 +614,12 @@ export class SchemaScmProvider {
   }
 
   private makeDiffCommand(file: GitFileChange, resourceUri: vscode.Uri): vscode.Command {
-    if (file.status === 'added') {
-      return { command: 'vscode.open', title: 'Open File', arguments: [resourceUri] };
-    }
-    if (file.status === 'deleted') {
-      const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${file.path}`);
-      return { command: 'vscode.open', title: 'Open Base Version', arguments: [baseUri] };
-    }
-    const diffPath = file.status === 'renamed' && file.oldPath ? file.oldPath : file.path;
-    const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${diffPath}`);
-    return { command: 'vscode.diff', title: 'Show Diff', arguments: [baseUri, resourceUri, `${file.path} (main ↔ branch)`] };
+    // SCM resource states always carry a command (added/deleted/diff all
+    // resolve), so the shared builder never returns undefined here.
+    return buildFileDiffCommand(file, resourceUri, {
+      labelSuffix: '(main ↔ branch)',
+      deletedTitle: 'Open Base Version',
+    })!;
   }
 
   private getStatusIcon(status: string): string {

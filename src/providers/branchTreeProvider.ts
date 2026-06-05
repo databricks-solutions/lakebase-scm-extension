@@ -3,9 +3,10 @@ import { GitService, GitBranchInfo } from '../services/gitService';
 import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService } from '../services/schemaDiffService';
-import { isMainBranch, isTierBranch, TIER_FALLBACK_NAMES } from '../utils/theme';
+import { isMainBranch, isTierBranch, TIER_FALLBACK_NAMES, STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
+import { buildFileDiffCommand } from '../utils/fileRow';
 
 /**
  * Long-running tier detection. After FEIP-7098 the authoritative source
@@ -822,32 +823,21 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       // doesn't exist on disk ("file not found" on click). Always build URIs
       // from the git top-level.
       const root = await this.gitService.getRepoRoot();
-      const statusIcons: Record<string, string> = {
-        added: 'diff-added', modified: 'diff-modified', deleted: 'diff-removed', renamed: 'diff-renamed'
-      };
-      const statusColors: Record<string, string> = {
-        added: 'charts.green', modified: 'charts.yellow', deleted: 'charts.red', renamed: 'charts.blue'
-      };
 
       return changes.map(file => {
         const fileName = file.path.split('/').pop() || file.path;
         const item = new BranchItem(undefined, undefined, 'detail', fileName);
         item.iconPath = new vscode.ThemeIcon(
-          statusIcons[file.status] || 'file',
-          new vscode.ThemeColor(statusColors[file.status] || 'foreground')
+          STATUS_ICONS[file.status] || 'file',
+          new vscode.ThemeColor(STATUS_COLORS[file.status] || 'foreground')
         );
         item.description = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
         item.tooltip = `${file.status}: ${file.path}`;
 
-        if (root && file.status !== 'deleted') {
+        if (root) {
           const fileUri = vscode.Uri.file(`${root}/${file.path}`);
-          if (file.status === 'added') {
-            item.command = { command: 'vscode.open', title: 'Open File', arguments: [fileUri] };
-          } else {
-            const diffPath = file.status === 'renamed' && file.oldPath ? file.oldPath : file.path;
-            const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${diffPath}`);
-            item.command = { command: 'vscode.diff', title: 'Show Diff', arguments: [baseUri, fileUri, `${file.path} (${parentName} ↔ branch)`] };
-          }
+          const cmd = buildFileDiffCommand(file, fileUri, { labelSuffix: `(${parentName} ↔ branch)`, deleted: 'none' });
+          if (cmd) { item.command = cmd; }
         }
 
         return item;

@@ -3,6 +3,8 @@ import { SchemaScmProvider } from './schemaScmProvider';
 import { GitService, PullRequestInfo, PullRequestCheck, PullRequestReview, PullRequestFile } from '../services/gitService';
 import { GitHubService } from '../services/githubService';
 import { STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
+import { CI_STATUS, CHECK_CONCLUSION, REVIEW_DECISION, REVIEW_STATE, resolveStatusStyle } from '../utils/statusPresentation';
+import { buildFileDiffCommand } from '../utils/fileRow';
 
 type PrItemType = 'status' | 'checks' | 'check' | 'files' | 'file' | 'reviews' | 'review' | 'ciBranch';
 
@@ -92,12 +94,10 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       const label = `${draftPrefix}PR #${pr.number} – ${pr.title}`;
       const statusItem = new PrTreeItem(label, vscode.TreeItemCollapsibleState.None, 'status');
 
-      const ciIcons: Record<string, string> = { pending: 'loading~spin', success: 'pass-filled', failure: 'error', unknown: 'question' };
-      const ciColors: Record<string, string> = { pending: 'charts.yellow', success: 'charts.green', failure: 'charts.red', unknown: 'foreground' };
-
+      const ci = resolveStatusStyle(CI_STATUS, pr.ciStatus, CI_STATUS.unknown);
       statusItem.iconPath = new vscode.ThemeIcon(
-        pr.isDraft ? 'git-pull-request-draft' : ciIcons[pr.ciStatus] || 'question',
-        new vscode.ThemeColor(pr.isDraft ? 'disabledForeground' : (ciColors[pr.ciStatus] || 'foreground'))
+        pr.isDraft ? 'git-pull-request-draft' : ci.icon,
+        new vscode.ThemeColor(pr.isDraft ? 'disabledForeground' : (ci.color || 'foreground'))
       );
 
       const reviewLabel = pr.reviewDecision === 'APPROVED' ? '✓ Approved'
@@ -155,19 +155,10 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
         vscode.TreeItemCollapsibleState.Collapsed,
         'reviews'
       );
-      const reviewIcons: Record<string, string> = {
-        APPROVED: 'pass-filled',
-        CHANGES_REQUESTED: 'error',
-        REVIEW_REQUIRED: 'request-changes',
-      };
-      const reviewColors: Record<string, string> = {
-        APPROVED: 'charts.green',
-        CHANGES_REQUESTED: 'charts.red',
-        REVIEW_REQUIRED: 'charts.yellow',
-      };
+      const rd = pr.reviewDecision ? resolveStatusStyle(REVIEW_DECISION, pr.reviewDecision, { icon: 'comment-discussion' }) : undefined;
       reviewsItem.iconPath = new vscode.ThemeIcon(
-        reviewIcons[pr.reviewDecision || ''] || 'comment-discussion',
-        pr.reviewDecision ? new vscode.ThemeColor(reviewColors[pr.reviewDecision] || 'foreground') : undefined
+        rd?.icon || 'comment-discussion',
+        rd?.color ? new vscode.ThemeColor(rd.color) : undefined
       );
       reviewsItem.description = pr.reviewDecision
         ? pr.reviewDecision.replace(/_/g, ' ').toLowerCase()
@@ -196,20 +187,9 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
     return pr.checks.map(check => {
       const item = new PrTreeItem(check.name, vscode.TreeItemCollapsibleState.None, 'check');
 
-      const conclusionIcons: Record<string, string> = {
-        SUCCESS: 'pass-filled', NEUTRAL: 'pass', SKIPPED: 'debug-step-over',
-        FAILURE: 'error', ERROR: 'error', ACTION_REQUIRED: 'warning',
-      };
-      const conclusionColors: Record<string, string> = {
-        SUCCESS: 'charts.green', NEUTRAL: 'foreground', SKIPPED: 'disabledForeground',
-        FAILURE: 'charts.red', ERROR: 'charts.red', ACTION_REQUIRED: 'charts.yellow',
-      };
-
       const conclusion = check.conclusion || check.status;
-      item.iconPath = new vscode.ThemeIcon(
-        conclusionIcons[conclusion] || 'loading~spin',
-        new vscode.ThemeColor(conclusionColors[conclusion] || 'charts.yellow')
-      );
+      const cc = resolveStatusStyle(CHECK_CONCLUSION, conclusion, { icon: 'loading~spin', color: 'charts.yellow' });
+      item.iconPath = new vscode.ThemeIcon(cc.icon, new vscode.ThemeColor(cc.color || 'charts.yellow'));
       item.description = (conclusion || 'pending').toLowerCase();
       item.tooltip = `${check.name}: ${(conclusion || 'pending').toLowerCase()}`;
 
@@ -243,19 +223,12 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
         item.description = dir;
         item.tooltip = `${file.status}: ${file.path}\n+${file.additions} −${file.deletions}`;
 
-        // Open diff for the file
-        if (root && file.status !== 'deleted') {
-          const fileUri = vscode.Uri.file(`${root}/${file.path}`);
-          if (file.status === 'added') {
-            item.command = { command: 'vscode.open', title: 'Open File', arguments: [fileUri] };
-          } else {
-            const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${file.path}`);
-            item.command = { command: 'vscode.diff', title: 'Show Diff', arguments: [baseUri, fileUri, `${file.path} (base ↔ PR)`] };
-          }
-        } else if (file.status === 'deleted') {
-          const baseUri = vscode.Uri.parse(`lakebase-git-base://merge-base/${file.path}`);
-          item.command = { command: 'vscode.open', title: 'View Deleted', arguments: [baseUri] };
-        }
+        // Open diff for the file (shared open/diff dispatch). Added /
+        // modified need a real workspace path, so only set their command
+        // when root is known; deleted opens the merge-base regardless.
+        const fileUri = vscode.Uri.file(`${root}/${file.path}`);
+        const cmd = buildFileDiffCommand(file, fileUri, { labelSuffix: '(base ↔ PR)', deletedTitle: 'View Deleted' });
+        if (cmd && (file.status === 'deleted' || root)) { item.command = cmd; }
 
         return item;
       });
@@ -279,26 +252,11 @@ export class PullRequestTreeProvider implements vscode.TreeDataProvider<PrTreeIt
       }
 
       return reviews.map(review => {
-        const stateLabels: Record<string, string> = {
-          APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested',
-          COMMENTED: 'commented', PENDING: 'pending', DISMISSED: 'dismissed',
-        };
-        const stateIcons: Record<string, string> = {
-          APPROVED: 'pass-filled', CHANGES_REQUESTED: 'error',
-          COMMENTED: 'comment', PENDING: 'loading~spin', DISMISSED: 'circle-slash',
-        };
-        const stateColors: Record<string, string> = {
-          APPROVED: 'charts.green', CHANGES_REQUESTED: 'charts.red',
-          COMMENTED: 'foreground', PENDING: 'charts.yellow', DISMISSED: 'disabledForeground',
-        };
-
+        const rs = resolveStatusStyle(REVIEW_STATE, review.state, { icon: 'comment', color: 'foreground' });
         const label = `${review.author}`;
         const item = new PrTreeItem(label, vscode.TreeItemCollapsibleState.None, 'review');
-        item.iconPath = new vscode.ThemeIcon(
-          stateIcons[review.state] || 'comment',
-          new vscode.ThemeColor(stateColors[review.state] || 'foreground')
-        );
-        item.description = stateLabels[review.state] || review.state.toLowerCase();
+        item.iconPath = new vscode.ThemeIcon(rs.icon, new vscode.ThemeColor(rs.color || 'foreground'));
+        item.description = rs.label || review.state.toLowerCase();
         if (review.body) {
           item.tooltip = `${review.author} (${item.description}):\n${review.body}`;
         } else {

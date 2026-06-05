@@ -33,10 +33,26 @@ Line numbers are as of the audit commit; reverify before editing.
   workspace-root guard prelude is uniform boilerplate, not divergent
   logic (no latent bug). High-churn, low-value; deliberately left
   as-is. Do not re-open without a reason.
-- **Tier 3 (L-O) + cluster J: NOT STARTED.** Provider status-map /
-  placeholder-tree / file-row / html-escape utils, and DiffService
-  adopting its own `utils/diffBuilder.ts`. Plus misc: auth-error
-  signature corpus, `KNOWN_TIERS` const. All still open.
+- **Cluster J: DONE.** `DiffService.sortMigrations` now delegates to
+  `diffBuilder.sortMigrationsToEnd` (was a divergent basename-substring
+  copy); `diffBuilder` stays live (graphWebview consumes it).
+- **Tier 3 (L, M, N): DONE.** L -> `utils/statusPresentation.ts`
+  (vscode-free status -> icon/color/label maps by domain: CI_STATUS,
+  CHECK_CONCLUSION, REVIEW_DECISION, REVIEW_STATE, SYNC_STATE +
+  `workflowRunStyle` + `resolveStatusStyle`), adopted by
+  pullRequestTree, schemaScmProvider, runnerTreeProvider,
+  statusBarProvider, branchTreeProvider (the last also dropped its dead
+  local status maps for theme.ts `STATUS_ICONS`/`STATUS_COLORS`).
+  M -> `providers/scmStateTree.ts` (`ScmStateTreeProvider` base +
+  `scmStateToTreeItem`); mergesTree/migrationsTree/lakebaseSchemaTree are
+  now thin subclasses. N -> `utils/fileRow.ts` `buildFileDiffCommand`,
+  adopted by pullRequestTree, schemaScmProvider, branchTreeProvider.
+  Each new util has hermetic coverage written first (statusPresentation,
+  fileRow, scmStateTree test suites).
+- **Tier 3 (O): SKIPPED by decision.** `escapeHtml` in schemaDiffProvider
+  + graphWebview (server-side) is low-value churn; the in-page JS copy
+  must stay inline regardless. Do not re-open without a reason.
+- **Misc (auth-error signature corpus, `KNOWN_TIERS` const): still open.**
 - **Greenfield GitHub creation: intentionally NOT unified** onto
   `setUpGitHubRemoteForFolder` (it targets a not-yet-opened folder via
   the kit's `createProject`; the helper targets the open workspace).

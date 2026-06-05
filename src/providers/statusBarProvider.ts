@@ -4,6 +4,7 @@ import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { isMainBranch, isTierBranch } from '../utils/theme';
 import { getConfig } from '../utils/config';
+import { SYNC_STATE } from '../utils/statusPresentation';
 
 type SyncState = 'synced' | 'pending' | 'error' | 'loading' | 'unavailable' | 'auth_error';
 
@@ -91,28 +92,10 @@ export class StatusBarProvider {
   }
 
   private setState(state: SyncState, branchLabel: string, version?: string, tooltip?: string): void {
-    const icons: Record<SyncState, string> = {
-      synced: '$(database)',
-      pending: '$(loading~spin)',
-      error: '$(warning)',
-      loading: '$(loading~spin)',
-      unavailable: '$(circle-slash)',
-      auth_error: '$(key)',
-    };
-
-    const stateLabels: Record<SyncState, string> = {
-      synced: 'Synced',
-      pending: 'Pending',
-      error: 'No DB Branch',
-      loading: 'Loading...',
-      unavailable: 'N/A',
-      auth_error: 'Login Required',
-    };
-
-    const icon = icons[state];
+    const style = SYNC_STATE[state];
     const versionSuffix = version ? ` | ${version}` : '';
-    this.dbItem.text = `${icon} ${branchLabel}${versionSuffix} | ${stateLabels[state]}`;
-    this.dbItem.tooltip = tooltip || `Lakebase: ${branchLabel} (${stateLabels[state]})`;
+    this.dbItem.text = `${style.icon} ${branchLabel}${versionSuffix} | ${style.label}`;
+    this.dbItem.tooltip = tooltip || `Lakebase: ${branchLabel} (${style.label})`;
 
     this.dbItem.command = state === 'auth_error' ? 'lakebaseSync.connectWorkspace' : 'lakebaseSync.showBranchStatus';
 
