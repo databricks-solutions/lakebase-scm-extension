@@ -15,6 +15,7 @@ import * as path from "path";
 import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
+import { withDatabricksHostEnv } from "../utils/databricksEnv";
 
 const KNOWN_TIERS = new Set(["main", "master", "staging", "uat", "perf"]);
 
@@ -235,26 +236,21 @@ export class SchemaDiffService {
       if (cached) { return cached; }
     }
 
-    // Mutate DATABRICKS_HOST to the effective extension host around the call –
-    // substrate's CLI invocations read it from env.
-    const host = this.lakebaseService.getEffectiveHost();
-    const prior = process.env.DATABRICKS_HOST;
-    if (host) { process.env.DATABRICKS_HOST = host; }
-
+    // Run the substrate diff with DATABRICKS_HOST set to the effective
+    // extension host (the kit's CLI invocations read it from env).
     let result: SchemaDiffResult;
     try {
-      const comparisonBranch = await this.resolveComparisonBranch(branchId);
-      const sub = await substrateGetSchemaDiff({
-        instance: this.projectInstance(),
-        branch: branchId,
-        ...(comparisonBranch ? { comparisonBranch } : {}),
+      result = await withDatabricksHostEnv(this.lakebaseService.getEffectiveHost(), async () => {
+        const comparisonBranch = await this.resolveComparisonBranch(branchId);
+        const sub = await substrateGetSchemaDiff({
+          instance: this.projectInstance(),
+          branch: branchId,
+          ...(comparisonBranch ? { comparisonBranch } : {}),
+        });
+        return { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
       });
-      result = { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
     } catch (err: any) {
       result = this.emptyResult(`Schema diff failed: ${err?.message || err}`);
-    } finally {
-      if (prior === undefined) { delete process.env.DATABRICKS_HOST; }
-      else { process.env.DATABRICKS_HOST = prior; }
     }
 
     if (!result.error) {

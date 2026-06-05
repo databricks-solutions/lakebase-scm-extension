@@ -39,6 +39,7 @@ import {
   type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
 import { setKnownTierNames, isMainBranch } from "../utils/theme";
+import { withDatabricksHostEnv } from "../utils/databricksEnv";
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -301,27 +302,10 @@ export class LakebaseService {
   private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
     if (!host) { return fn(); }
-    const priorHost = process.env.DATABRICKS_HOST;
-    const priorProfile = process.env.DATABRICKS_CONFIG_PROFILE;
-    process.env.DATABRICKS_HOST = host;
-    const profile = await this.resolveProfileForHost(host);
-    if (profile) {
-      process.env.DATABRICKS_CONFIG_PROFILE = profile;
-    }
-    try {
-      return await fn();
-    } finally {
-      if (priorHost === undefined) {
-        delete process.env.DATABRICKS_HOST;
-      } else {
-        process.env.DATABRICKS_HOST = priorHost;
-      }
-      if (priorProfile === undefined) {
-        delete process.env.DATABRICKS_CONFIG_PROFILE;
-      } else {
-        process.env.DATABRICKS_CONFIG_PROFILE = priorProfile;
-      }
-    }
+    // Resolve the matching profile (host-match against ~/.databrickscfg)
+    // so CLI auth uses the right profile instead of a broken DEFAULT.
+    const profile = (await this.resolveProfileForHost(host)) ?? undefined;
+    return withDatabricksHostEnv(host, fn, profile ? { profile } : {});
   }
 
   /**

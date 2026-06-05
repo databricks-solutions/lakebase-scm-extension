@@ -14,6 +14,7 @@ import {
   type RollbackSchemaMigrationResult,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { LakebaseService } from './lakebaseService';
+import { withDatabricksHostEnv } from '../utils/databricksEnv';
 
 export interface SchemaMigrationFile {
   version: string;
@@ -60,19 +61,10 @@ export class SchemaMigrationService {
     return { instance, branch, projectDir };
   }
 
-  /** Mutate DATABRICKS_HOST to the extension's effective host around a
-   *  substrate call. The substrate's databricks-CLI shellouts read it
-   *  from env. Restore the prior value (including unset) afterwards. */
-  private async withEffectiveHost<T>(fn: () => Promise<T>): Promise<T> {
-    const host = this.lakebaseService?.getEffectiveHost();
-    const prior = process.env.DATABRICKS_HOST;
-    if (host) process.env.DATABRICKS_HOST = host;
-    try {
-      return await fn();
-    } finally {
-      if (prior === undefined) delete process.env.DATABRICKS_HOST;
-      else process.env.DATABRICKS_HOST = prior;
-    }
+  /** Run a substrate call with DATABRICKS_HOST set to the extension's
+   *  effective host. Delegates to the shared env wrapper. */
+  private withEffectiveHost<T>(fn: () => Promise<T>): Promise<T> {
+    return withDatabricksHostEnv(this.lakebaseService?.getEffectiveHost(), fn);
   }
 
   /** Substrate proxy: enumerate pending + applied migrations against the
