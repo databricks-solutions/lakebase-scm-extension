@@ -55,6 +55,11 @@ Eight TreeDataProviders in the `lakebase-synced-scm` activity bar container:
 
 ## Command IDs (for agents acting via `executeCommand`)
 
+Onboarding / setup:
+- `lakebaseSync.createProject` – new-project wizard (name + location, Lakebase project id, optional GitHub repo, language, runner, workspace; scaffolds and pushes)
+- `lakebaseSync.createLakebaseProject` – set up Lakebase in the open folder (adopt): creates/adopts the database project, scaffolds, wires `.env` + hooks + workflows, optional GitHub step
+- `lakebaseSync.attachGitHubRepo` – create or connect a GitHub remote for the current folder (also offered from the Lakebase Branches title bar when no remote exists)
+
 Paired-branch + Lakebase ops:
 - `lakebaseSync.showBranchStatus` – open the branch status panel
 - `lakebaseSync.connectWorkspace` – interactive workspace selector

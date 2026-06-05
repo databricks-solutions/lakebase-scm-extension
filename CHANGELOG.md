@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.5.16 (2026-06-04)
+
+The headline theme is **the new-project / set-up wizard and Databricks auth now work end to end**, plus a large DRY / service-layer consolidation (FEIP-7507). First changelog entry since 0.5.11; the intervening 0.5.12 to 0.5.15 tags shipped the day-zero defect fixes, the FEIP-7494 shell-thinning kit pin, the full-`node_modules` VSIX bundling fix, and the git-init prompt. 372/372 mocha tests pass; tsc clean. Kit pin unchanged at `v0.3.0-alpha.55`.
+
+### Fixed: setup + auth wizard
+
+- **`databricks auth login` runs in the background, no terminal pane.** All three auth entry points (connect-workspace, the create + adopt wizards, and the refresh-token recovery) spawn the CLI as a hidden child process; the user just sees a progress notification and the browser tab. A pre-check skips login entirely when the target profile is already authenticated.
+- **`localhost:8020` callback survives the browser redirect.** The previous flow polled `current-user me` and killed the login process the instant a (cached) token check passed, tearing down the OAuth callback server before the browser redirected back ("localhost:8020 cannot be reached"). The process now runs to its own exit; cancel and a 5-minute deadline are the only early-termination paths.
+- **CLI calls receive `DATABRICKS_CONFIG_PROFILE`.** Project create/adopt/scaffold shelled out with only `DATABRICKS_HOST` set, so the CLI could not resolve OAuth config ("Unable to load OAuth Config") even though the wizard's own auth check passed. A public `LakebaseService.withHostEnv` now wraps the kit primitives with the resolved host + profile.
+- **`templates/project` resolves at runtime.** Webpack was inlining the kit, so its `import.meta.url`-based template locator pointed at the extension's `dist` instead of `node_modules/.../templates/project` ("Could not locate templates/project tree"). The kit is now a webpack external, loaded from the vsix-shipped `node_modules`, where its `__filename` is correct. VSIX drops ~0.65 MB (no duplicated kit code).
+- **No-folder setup routes forward.** Running setup with no folder open offers **Create New Project** (picks a name + location) or **Open Folder**, instead of a dead-end "Open a project folder first" error.
+- **Adopt path is idempotent + GitHub-aware.** If the Lakebase project already exists server-side (a prior partial run), the adopt path recovers (resolves the default branch, writes `.env`, scaffolds) instead of failing on "project with such id already exists". It now also scaffolds the language tree and runs a GitHub step.
+- **Connect-to-workspace no longer dead-ends on an unbound folder.** After connecting, if the folder has no `LAKEBASE_PROJECT_ID` it offers to set one up rather than silently showing nothing.
+- **Same-version VSIX reinstalls prompt to reload.** The install watcher now fires on a same-version rebuild (mtime + size fingerprint), not only on a higher version.
+
+### Fixed: GitHub flow
+
+- **Unified GitHub selection.** The adopt setup and a new tree affordance share one `setUpGitHubRemoteForFolder` helper (Create repo / Connect existing / Skip); no more split "popup early, wizard-level prompt later".
+- **Connect requires a real repository.** A bare account URL (`github.com/owner`) is rejected; the repo's existence is verified before `origin` is wired, and a missing repo offers to create one (so the folder is never left with a dangling remote and "no project").
+- **Tree-view "Attach GitHub Repository".** Shown in the Lakebase Branches title bar when the folder has no remote, so a skipped/interrupted GitHub step can be completed any time.
+- **URL inputs tolerate pasted invisible characters** (NBSP, zero-width space, BOM).
+
+### Changed: create wizard
+
+- **Separate, editable Lakebase project id** collected at step 2 of 9 (defaults to the project name), so the folder name and the Lakebase project id can differ. The redundant trailing "Lakebase project name" prompt is gone; wizard steps renumbered to /9.
+
+### Changed: DRY / service-layer consolidation (FEIP-7507)
+
+Business logic that invokes a CLI, parses output, resolves config, or mutates remote/db state was moved out of the UI layer into services, and duplicated blocks collapsed to a single source of truth. Two latent bugs fixed in passing: three divergent `github.com` owner/repo regexes (now one `GitService.getOwnerRepo`), and a migrate-command map that dropped the `refresh-token.sh` wrapper in one copy (now `SchemaMigrationService.buildMigrateCommand`, always wrapped).
+
+- One workspace-select+auth path (`selectAndAuthenticateWorkspace`), one GitHub helper, shared `pickLakebaseLanguage` / `pickLakebaseRunner`, shared `src/utils/text.ts` (`stripInvisibles` / `validateDatabricksHostInput`).
+- `LakebaseService.resolveBranchForGitBranch` (trunk vs named); intra-service helpers `parseCliJsonList`, `fetchCurrentUser`, `branchCall` (lakebase), `parseNameStatus` + `parentCandidates` reuse (git), `latestDiagLog` (runner), `parseColumnLines` (schema diff), `loadCommitFiles` (diff).
+- One `src/utils/databricksEnv.ts` `withDatabricksHostEnv` util replacing three hand-rolled host-mutation copies.
+- `runnerService` reads `.env` via the shared `parseEnvFile` (which now strips surrounding quotes for every reader).
+
+### Substrate
+
+- **Kit pin unchanged: `v0.3.0-alpha.55`.** No kit changes this release; the extension stays pinned to alpha.55.
+
 ## 0.5.11 (2026-06-02)
 
 The headline theme is **`git checkout -b feature/x` now works on workspaces with short branch-expiration policies**, plus a structural cleanup that eliminates the extension's substrate-template duplication.

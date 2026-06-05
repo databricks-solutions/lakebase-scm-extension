@@ -42,20 +42,21 @@ The fastest way to start a brand-new project is the **Create New Project** wizar
 1. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** (Windows/Linux) to open the VS Code Command Palette.
 2. Type **`Lakebase: Create New Project`** and hit return.
 
-The wizard walks through 10 steps:
+The wizard walks through up to 9 steps (the GitHub auth/name/visibility steps are skipped for local-only projects):
 
 | Step | What | Detail |
 |------|------|--------|
-| 1 | Project name | Lowercase, letters/numbers/hyphens |
-| 2 | Parent directory | Where the project folder will be created |
-| 3 | GitHub authentication | Sign in via browser, or use existing auth |
-| 4 | GitHub repo name | Defaults to project name |
-| 5 | Visibility | Private (default) or Public |
-| 6 | Language | Java/Spring Boot, Kotlin/Spring Boot, Python/FastAPI, or Node.js/Express |
-| 7 | Runner type | Self-hosted (default) or GitHub-hosted |
-| 8 | Databricks workspace | Select or connect to a workspace with Lakebase |
-| 9 | Lakebase project name | Defaults to repo name |
-| 10 | Execute | Creates everything with progress notification |
+| 1 | Project name + location | Lowercase name (letters/numbers/hyphens), then pick the parent directory |
+| 2 | Lakebase project id | Defaults to the project name; editable, so the folder `my-app` can pair with a Lakebase project `my-app-db` |
+| 3 | GitHub | Create a GitHub repository, or stay local-only |
+| 4 | GitHub authentication | Sign in via browser, or use existing auth (only when creating a repo) |
+| 5 | GitHub repo name | Defaults to project name (only when creating a repo) |
+| 6 | Visibility | Private (default) or Public (only when creating a repo) |
+| 7 | Language | Java/Spring Boot, Kotlin/Spring Boot, Python/FastAPI, or Node.js/Express |
+| 8 | Runner type | Self-hosted (default) or GitHub-hosted |
+| 9 | Databricks workspace | Select or connect to a workspace with Lakebase (browser sign-in runs in the background, no terminal) |
+
+The Databricks sign-in is skipped automatically when you are already authenticated. There is no end-of-wizard prompt for the project id: it is collected once at step 2.
 
 **What gets created:**
 - GitHub repository with CI/CD workflows (`pr.yml`, `merge.yml`)
@@ -94,8 +95,11 @@ For an existing git repo that has no Lakebase database project yet:
 
 1. Open the project folder in VS Code.
 2. Press **`Cmd-Shift-P`** (macOS) or **`Ctrl-Shift-P`** and run **`Lakebase: Set Up Existing Project`**.
-3. The command prompts for project name, Databricks host, and language (auto-detected from `pom.xml` / `pyproject.toml` / `package.json`), then composes the kit's brownfield onboarding: creates the Lakebase database project, drops `.env`, the git hooks under `.githooks/`, the GitHub Actions workflows under `.github/workflows/`, and (when applicable) the `.tdd/` and `.claude/commands/` scaffolds. Existing files are detected as drift and preserved by default; pass an explicit overwrite when the kit's templates should win.
-4. Run **Health Check** to verify the wiring.
+3. The command prompts for the project id, language, and CI runner, makes sure you are authenticated to a workspace (background browser sign-in, no terminal), then composes the kit's brownfield onboarding: creates the Lakebase database project, scaffolds the language tree, drops `.env`, the git hooks, and the GitHub Actions workflows under `.github/workflows/`. If the workspace already has the project server-side (a prior partial run), it adopts it instead of failing.
+4. **GitHub step.** If the folder has no remote, it offers to create a GitHub repository or connect an existing one, then sets `origin` and pushes. Connecting requires a real `owner/repo` URL (a bare account URL is rejected, and a non-existent repo offers to create it). You can skip and attach later.
+5. Run **Health Check** to verify the wiring.
+
+If no folder is open when you run setup, it routes you into **Create New Project** (which picks a location) or **Open Folder**, instead of erroring. If a folder has no GitHub remote, the **Lakebase Branches** view shows an **Attach GitHub Repository** button so you can add one at any time.
 
 If you skip step 2 and just open the project, the sidebar's Lakebase view shows a "Set Up Lakebase for This Workspace" welcome button instead of silently dropping the row. Click it to run the same command.
 
