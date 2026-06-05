@@ -675,6 +675,20 @@ export class LakebaseService {
   }
 
   /**
+   * True when .env already carries a synced connection for `branchId`,
+   * i.e. the post-checkout hook (fired by the git checkout) already minted
+   * credentials and rewrote .env. Lets the extension skip a redundant
+   * credential mint + .env rewrite on switch (and avoids the extra
+   * concurrent host-scoped CLI calls that widen the auth-env race window).
+   */
+  envReflectsBranch(branchId: string): boolean {
+    const env = getEnvConfig();
+    const sanitized = substrateSanitizeBranchName(branchId);
+    return (env.LAKEBASE_BRANCH_ID || "").trim() === sanitized
+      && /^postgresql:\/\//.test((env.DATABASE_URL || "").trim());
+  }
+
+  /**
    * Sync .env with the current credentials for a branch. Stays inline because
    * it writes to the VS Code workspace .env and uses VS Code's window
    * notifications for retry UX.

@@ -2847,10 +2847,18 @@ export async function activate(context: vscode.ExtensionContext) {
               return;
             }
 
-            // 3-5. Sync connection (endpoint + credential + .env)
-            progress.report({ message: 'Syncing connection...' });
-            const conn = await lakebaseService.syncConnection(lb.branchId);
-            if (!conn) {
+            // 3-5. Sync connection (endpoint + credential + .env).
+            // The git checkout above fires the post-checkout hook, which may
+            // have already synced .env to this branch. If so, skip the
+            // redundant credential mint (it also removes the concurrent
+            // host-scoped CLI call that can race the env profile). Fall back
+            // to syncConnection only when the hook was absent or did not run.
+            let synced = lakebaseService.envReflectsBranch(lb.branchId);
+            if (!synced) {
+              progress.report({ message: 'Syncing connection...' });
+              synced = !!(await lakebaseService.syncConnection(lb.branchId));
+            }
+            if (!synced) {
               vscode.window.showWarningMessage(
                 `Switched to ${targetGitBranch}. DB branch exists but no endpoint available.`
               );

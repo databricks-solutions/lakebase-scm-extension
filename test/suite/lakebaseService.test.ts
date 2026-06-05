@@ -168,6 +168,45 @@ describe('LakebaseService', () => {
     });
   });
 
+  describe('envReflectsBranch (skip redundant sync when the hook already wrote .env)', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const pathMod = require('path');
+    let dir: string;
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'env-reflects-'));
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: dir } }];
+    });
+    afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+    const writeEnv = (s: string) => fs.writeFileSync(pathMod.join(dir, '.env'), s);
+
+    it('true when LAKEBASE_BRANCH_ID matches and DATABASE_URL is populated', () => {
+      writeEnv('LAKEBASE_BRANCH_ID=feature-x\nDATABASE_URL=postgresql://u:p@h:5432/db?sslmode=require\n');
+      assert.equal(service.envReflectsBranch('feature-x'), true);
+    });
+
+    it('sanitizes the branch before comparing (git slash -> hyphen)', () => {
+      writeEnv('LAKEBASE_BRANCH_ID=feature-x\nDATABASE_URL=postgresql://u:p@h/db\n');
+      assert.equal(service.envReflectsBranch('feature/x'), true);
+    });
+
+    it('false when the branch does not match', () => {
+      writeEnv('LAKEBASE_BRANCH_ID=other\nDATABASE_URL=postgresql://u:p@h/db\n');
+      assert.equal(service.envReflectsBranch('feature-x'), false);
+    });
+
+    it('false when DATABASE_URL is empty/pending', () => {
+      writeEnv('LAKEBASE_BRANCH_ID=feature-x\nDATABASE_URL=\n');
+      assert.equal(service.envReflectsBranch('feature-x'), false);
+    });
+
+    it('false when .env is absent', () => {
+      assert.equal(service.envReflectsBranch('feature-x'), false);
+    });
+  });
+
   describe('getConsoleUrl', () => {
     it('builds URL with host and project ID', async () => {
       service.setHostOverride('https://workspace.databricks.com');
