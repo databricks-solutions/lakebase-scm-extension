@@ -1473,7 +1473,7 @@ export async function activate(context: vscode.ExtensionContext) {
         prompt: PROJECT_CREATION_PROMPTS.projectName.prompt,
         placeHolder: PROJECT_CREATION_PROMPTS.projectName.placeHolder,
         validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
-        title: 'Lakebase: Create New Project (1/8)',
+        title: 'Lakebase: Create New Project (1/9)',
       });
       if (!projectName) { return; }
 
@@ -1487,11 +1487,24 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!folderUri || folderUri.length === 0) { return; }
       const parentDir = folderUri[0].fsPath;
 
-      // ── Step 2: GitHub (optional) ────────────────────────────────
+      // Lakebase project id: defaults to the project name but can differ
+      // (e.g. folder "my-app", Lakebase project "my-app-db"). Asked here,
+      // right next to the name + folder, not as a trailing surprise at
+      // the end of the wizard.
+      const lakebaseProjectName = await vscode.window.showInputBox({
+        prompt: 'Lakebase project id (defaults to the project name)',
+        value: projectName,
+        placeHolder: projectName,
+        title: 'Lakebase: Project Id (2/9)',
+        validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
+      });
+      if (!lakebaseProjectName) { return; }
+
+      // ── Step 3: GitHub (optional) ────────────────────────────────
       const githubPick = await vscode.window.showQuickPick([
         { label: '$(github) Create GitHub repository', description: 'Create repo, push scaffold, and set up CI', value: true },
         { label: '$(folder) Local project only', description: 'Scaffold locally – add GitHub later', value: false },
-      ], { title: 'Lakebase: GitHub Repository (2/8)', placeHolder: 'Create a GitHub repo or work locally?' });
+      ], { title: 'Lakebase: GitHub Repository (3/9)', placeHolder: 'Create a GitHub repo or work locally?' });
       if (!githubPick) { return; }
       const createGithubRepo = githubPick.value;
 
@@ -1508,7 +1521,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const authPick = await vscode.window.showQuickPick([
             { label: `$(check) Authenticated as ${ghUser}`, description: 'Continue with this account', action: 'continue' },
             { label: '$(sign-in) Switch GitHub account...', description: 'Sign in with a different account', action: 'login' },
-          ], { title: 'Lakebase: GitHub Authentication (3/8)', placeHolder: `GitHub: ${ghUser}` });
+          ], { title: 'Lakebase: GitHub Authentication (4/9)', placeHolder: `GitHub: ${ghUser}` });
           if (!authPick) { return; }
           if (authPick.action === 'login') { ghUser = undefined; }
         }
@@ -1516,7 +1529,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!ghUser) {
           const loginPick = await vscode.window.showQuickPick([
             { label: '$(sign-in) Sign in to GitHub', description: 'Uses VS Code GitHub authentication' },
-          ], { title: 'Lakebase: GitHub Authentication (3/8)', placeHolder: 'GitHub authentication required' });
+          ], { title: 'Lakebase: GitHub Authentication (4/9)', placeHolder: 'GitHub authentication required' });
           if (!loginPick) { return; }
 
           try {
@@ -1532,7 +1545,7 @@ export async function activate(context: vscode.ExtensionContext) {
           prompt: 'GitHub repository name',
           value: projectName,
           placeHolder: projectName,
-          title: 'Lakebase: GitHub Repository Name (4/8)',
+          title: 'Lakebase: GitHub Repository Name (5/9)',
           validateInput: (val) => {
             if (!val.trim()) { return 'Repository name is required'; }
             if (!/^[a-zA-Z0-9._-]+$/.test(val)) { return 'Invalid characters in repo name'; }
@@ -1545,17 +1558,17 @@ export async function activate(context: vscode.ExtensionContext) {
         const visibilityPick = await vscode.window.showQuickPick([
           { label: '$(lock) Private', description: 'Only you and collaborators can see this repository', value: true },
           { label: '$(globe) Public', description: 'Anyone on the internet can see this repository', value: false },
-        ], { title: 'Lakebase: Repository Visibility (5/8)', placeHolder: 'Choose repository visibility' });
+        ], { title: 'Lakebase: Repository Visibility (6/9)', placeHolder: 'Choose repository visibility' });
         if (!visibilityPick) { return; }
         privateRepo = visibilityPick.value;
       }
 
       // ── Language stack ───────────────────────────────────────────
-      const languageValue = await pickLakebaseLanguage('Lakebase: Project Language (6/8)');
+      const languageValue = await pickLakebaseLanguage('Lakebase: Project Language (7/9)');
       if (!languageValue) { return; }
 
       // ── Step 2c: Runner type ─────────────────────────────────────
-      const runnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type (7/8)');
+      const runnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type (8/9)');
       if (!runnerValue) { return; }
 
       // ── Step 3: Databricks / Lakebase auth ───────────────────────
@@ -1569,25 +1582,18 @@ export async function activate(context: vscode.ExtensionContext) {
         const dbPick = await vscode.window.showQuickPick([
           { label: `$(check) Connected to ${current.replace(/^https?:\/\//, '')}`, description: 'Use this workspace', action: 'continue' },
           { label: '$(plug) Connect to a different workspace...', description: 'Choose another Databricks workspace', action: 'switch' },
-        ], { title: 'Lakebase: Databricks Workspace (8/8)', placeHolder: 'Databricks workspace' });
+        ], { title: 'Lakebase: Databricks Workspace (9/9)', placeHolder: 'Databricks workspace' });
         if (!dbPick) { return; }
         if (dbPick.action === 'continue') { dbHost = current; }
       }
 
       if (!dbHost) {
         const selection = await selectAndAuthenticateWorkspace(lakebaseService, {
-          title: 'Lakebase: Select Workspace (8/8)',
+          title: 'Lakebase: Select Workspace (9/9)',
         });
         if (!selection) { return; }
         dbHost = selection.host;
       }
-
-      // Lakebase project name: reuse the project name already collected
-      // at step 1 (it is validated to the Lakebase id rule). Asking for
-      // it again at the end was redundant. The GitHub repo can still
-      // carry its own name (repoName); the Lakebase project id does not
-      // have to match it.
-      const lakebaseProjectName = projectName;
 
       // ── Step 4: Execute ──────────────────────────────────────────
       const scaffoldSvc = new ScaffoldService();
