@@ -2305,11 +2305,13 @@ export async function activate(context: vscode.ExtensionContext) {
     ),
 
     vscode.commands.registerCommand('lakebaseSync.connectWorkspace', async () => {
+      log('=== connectWorkspace START ===');
       const selection = await selectAndAuthenticateWorkspace(lakebaseService, {
         title: 'Lakebase: Connect to Workspace',
         includeCurrentWorkspace: true,
       });
-      if (!selection) { return; }
+      if (!selection) { log('=== ABORT: workspace selection cancelled/failed ==='); return; }
+      log(`connected host=${selection.host} alreadyConnected=${selection.alreadyConnected}`);
       vscode.window.showInformationMessage(
         selection.alreadyConnected
           ? `Already connected to ${selection.host}`
@@ -2317,6 +2319,31 @@ export async function activate(context: vscode.ExtensionContext) {
       );
       statusBarProvider.refresh();
       branchTreeProvider.refresh();
+
+      // Connecting a WORKSPACE only sets host + auth. The current folder
+      // is bound to a Lakebase project separately, via .env's
+      // LAKEBASE_PROJECT_ID. If this folder has no project yet, the
+      // connect succeeds but the user sees nothing change ("connected
+      // and nothing"). Nudge them straight into project setup rather
+      // than dead-ending. If the folder IS already bound, flip the
+      // welcome context so the tree surfaces.
+      const boundProject = getConfig().lakebaseProjectId;
+      log(`folder bound project: ${boundProject || '<none>'}`);
+      if (boundProject) {
+        await vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', true);
+        schemaScmProvider.refresh();
+        log('=== connectWorkspace DONE (folder already bound) ===');
+        return;
+      }
+      const next = await vscode.window.showInformationMessage(
+        `Connected to ${selection.host}, but this folder is not yet linked to a Lakebase project. Set one up now?`,
+        'Set Up Lakebase', 'Later',
+      );
+      log(`post-connect setup prompt -> "${next ?? 'dismissed'}"`);
+      if (next === 'Set Up Lakebase') {
+        await vscode.commands.executeCommand('lakebaseSync.createLakebaseProject');
+      }
+      log('=== connectWorkspace DONE ===');
     }),
 
     vscode.commands.registerCommand('lakebaseSync.runMigrate', async () => {
