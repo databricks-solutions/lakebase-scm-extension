@@ -292,31 +292,44 @@ export class LakebaseService {
    * ~/.databrickscfg without authenticating, so this is safe even when
    * the underlying tokens are expired.
    */
-  private profileByHost: Record<string, string> | undefined;
+  // Normalized host -> distinct VALID profile names matching it. A host
+  // can legitimately appear under several profiles (e.g. DEFAULT plus a
+  // named alias), and ~/.databrickscfg also carries stale/invalid entries.
+  private validProfilesByHost: Record<string, string[]> | undefined;
 
   /**
-   * Look up the profile in ~/.databrickscfg whose host matches the
-   * given workspace host. Returns the profile name on match, or null
-   * if no profile matches (caller must decide whether to surface an
-   * error or fall back to the CLI's auto-resolution).
+   * Look up the profile in ~/.databrickscfg whose host matches the given
+   * workspace host. Returns the profile name only when EXACTLY ONE valid
+   * profile matches; returns null when none match OR the match is
+   * ambiguous (more than one valid profile for the same host), so the
+   * caller falls back to the CLI's own resolution rather than pinning a
+   * guess. Invalid profiles are excluded entirely.
+   *
+   * Mirrors the kit's selectProfileForHost (databricks-profile.ts): valid +
+   * exactly-one-match. Kept in sync by rule, not import, until the kit
+   * alpha exposing that selector is pinned here.
    */
   async resolveProfileForHost(host: string): Promise<string | null> {
     if (!host) { return null; }
     const normalize = (h: string) => h.replace(/\/+$/, "").toLowerCase();
     const want = normalize(host);
-    if (this.profileByHost === undefined) {
-      this.profileByHost = {};
+    if (this.validProfilesByHost === undefined) {
+      this.validProfilesByHost = {};
       try {
         const profiles = await this.listProfiles();
         for (const p of profiles) {
-          if (p.host) { this.profileByHost[normalize(p.host)] = p.name; }
+          if (!p.valid || !p.host) { continue; }
+          const key = normalize(p.host);
+          const names = (this.validProfilesByHost[key] ??= []);
+          if (!names.includes(p.name)) { names.push(p.name); }
         }
       } catch {
         // listProfiles failure is non-fatal here; we just return null
         // and let the CLI fall back to its own resolution.
       }
     }
-    return this.profileByHost[want] ?? null;
+    const matches = this.validProfilesByHost[want] ?? [];
+    return matches.length === 1 ? matches[0] : null;
   }
 
   /**
@@ -325,7 +338,7 @@ export class LakebaseService {
    * the first time we cached).
    */
   invalidateProfileCache(): void {
-    this.profileByHost = undefined;
+    this.validProfilesByHost = undefined;
   }
 
   // ── Inline: auth / profile (no substrate equivalent yet) ────────

@@ -120,6 +120,54 @@ describe('LakebaseService', () => {
     });
   });
 
+  describe('resolveProfileForHost (valid + exactly-one-match, mirrors kit selectProfileForHost)', () => {
+    const HOST = 'https://fevm-serverless-stable-ecparr.cloud.databricks.com';
+    const profiles = (arr: Array<Record<string, unknown>>) => mockExec(JSON.stringify({ profiles: arr }));
+
+    it('returns the unique valid profile matching the host', async () => {
+      profiles([
+        { name: 'DEFAULT', host: 'https://adb-123.azuredatabricks.net', valid: true },
+        { name: 'ecparr', host: HOST, valid: true },
+      ]);
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+    });
+
+    it('returns null when only a different-host profile is valid (the original bug)', async () => {
+      profiles([{ name: 'DEFAULT', host: 'https://adb-123.azuredatabricks.net', valid: true }]);
+      assert.strictEqual(await service.resolveProfileForHost(HOST), null);
+    });
+
+    it('excludes invalid profiles even when their host matches', async () => {
+      profiles([
+        { name: 'stale', host: HOST, valid: false },
+        { name: 'good', host: HOST, valid: true },
+      ]);
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'good');
+    });
+
+    it('returns null when the only host match is invalid', async () => {
+      profiles([{ name: 'stale', host: HOST, valid: false }]);
+      assert.strictEqual(await service.resolveProfileForHost(HOST), null);
+    });
+
+    it('returns null on ambiguous match (>1 distinct valid profile for the host)', async () => {
+      profiles([
+        { name: 'ecparr-a', host: HOST, valid: true },
+        { name: 'ecparr-b', host: HOST, valid: true },
+      ]);
+      assert.strictEqual(await service.resolveProfileForHost(HOST), null);
+    });
+
+    it('normalizes trailing slashes on both sides', async () => {
+      profiles([{ name: 'ecparr', host: `${HOST}/`, valid: true }]);
+      assert.strictEqual(await service.resolveProfileForHost(`${HOST}///`), 'ecparr');
+    });
+
+    it('returns null for an empty host', async () => {
+      assert.strictEqual(await service.resolveProfileForHost(''), null);
+    });
+  });
+
   describe('getConsoleUrl', () => {
     it('builds URL with host and project ID', async () => {
       service.setHostOverride('https://workspace.databricks.com');
