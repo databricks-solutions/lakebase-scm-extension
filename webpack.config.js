@@ -14,6 +14,17 @@ const config = {
   },
   externals: {
     vscode: 'commonjs vscode',
+    // The substrate kit must NOT be bundled. When webpack inlines it,
+    // the kit's template self-location (tsup's import.meta.url shim,
+    // which resolves to __filename) points at the EXTENSION's dist
+    // instead of node_modules/.../templates/project, so scaffold /
+    // adopt / createProject fail with "Could not locate templates/
+    // project tree relative to <ext>/dist". Externalizing makes it a
+    // runtime require() of the kit's .cjs build from the vsix-shipped
+    // node_modules, where __filename is correct and templates resolve.
+    // (We already ship full node_modules per .vscodeignore.)
+    '@databricks-solutions/lakebase-app-dev-kit':
+      'commonjs @databricks-solutions/lakebase-app-dev-kit',
     // pg has an optional native binding (via 'pg-native') that needs a
     // compiled C library. The extension only uses the pure-JS driver, so
     // the native path is never hit – but webpack still tries to resolve it.
