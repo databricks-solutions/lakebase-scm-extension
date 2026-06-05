@@ -102,6 +102,14 @@ async function runDatabricksLoginInBackground(
 
   lakebaseService.invalidateProfileCache();
 
+  // Pre-check: if the resolved profile ALREADY has a valid token, do not
+  // launch a login at all. Spawning `databricks auth login` and then
+  // killing it the moment a (cached) token check passes was the cause
+  // of "localhost:8020 cannot be reached": we tore down the CLI's OAuth
+  // callback server before the browser redirected back to it.
+  const pre = await lakebaseService.checkAuth();
+  if (pre.authenticated) { return { authenticated: true }; }
+
   return await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -109,7 +117,7 @@ async function runDatabricksLoginInBackground(
       cancellable: true,
     },
     async (progress, token) => {
-      progress.report({ message: 'opening browser...' });
+      progress.report({ message: 'opening browser, complete sign-in there...' });
       const { spawn } = await import('child_process');
       const child = spawn(
         'databricks',
@@ -119,56 +127,65 @@ async function runDatabricksLoginInBackground(
       let stderr = '';
       child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
       child.stdout?.on('data', () => { /* drain */ });
-      token.onCancellationRequested(() => {
-        try { child.kill('SIGTERM'); } catch { /* best-effort */ }
-      });
-      let childExited = false;
-      let childExitCode: number | null = null;
-      child.on('exit', (code) => {
-        childExited = true;
-        childExitCode = code;
+
+      // Wait for the CLI to exit ON ITS OWN. The OAuth U2M flow runs a
+      // local callback server (http://localhost:8020) that must stay
+      // alive until the browser redirects back with the code. We must
+      // NOT kill the process while it is running (that breaks the
+      // redirect). The CLI exits 0 after a successful callback, non-zero
+      // on failure. Cancel and a 5-minute deadline are the only paths
+      // that terminate it early.
+      const exitCode: number | null = await new Promise<number | null>((resolve) => {
+        let settled = false;
+        const done = (code: number | null) => { if (!settled) { settled = true; resolve(code); } };
+        child.on('exit', (code) => done(code));
+        child.on('error', () => done(-1));
+        const timer = setTimeout(() => {
+          try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+          done(-2); // timeout sentinel
+        }, 5 * 60 * 1000);
+        token.onCancellationRequested(() => {
+          try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+          done(-3); // cancel sentinel
+        });
+        // clear the timer once settled
+        child.on('exit', () => clearTimeout(timer));
+        child.on('error', () => clearTimeout(timer));
       });
 
-      const deadline = Date.now() + 5 * 60 * 1000;
-      let last = await lakebaseService.checkAuth();
-      while (!token.isCancellationRequested && Date.now() < deadline) {
-        if (last.authenticated) {
-          try { child.kill('SIGTERM'); } catch { /* best-effort */ }
+      if (token.isCancellationRequested || exitCode === -3) {
+        return { authenticated: false, error: 'sign-in cancelled' };
+      }
+      if (exitCode === -2) {
+        return { authenticated: false, error: 'sign-in timed out' };
+      }
+
+      // Login process finished; now verify the session reads back.
+      progress.report({ message: 'verifying...' });
+      let after = await lakebaseService.checkAuth();
+      if (after.authenticated) { return { authenticated: true }; }
+
+      // Auth-storage mismatch autocorrect: login may have written to a
+      // different store than the runtime override forces reads from.
+      if (storageOverride) {
+        setAuthStorageRuntime('');
+        after = await lakebaseService.checkAuth();
+        if (after.authenticated) {
+          if (extensionContext) {
+            await extensionContext.globalState.update(AUTH_STORAGE_STATE_KEY, undefined);
+          }
           return { authenticated: true };
         }
-        if (childExited) {
-          // Child exited but read still failing. If we have a runtime
-          // storage override, try clearing it once: login may have
-          // saved to a different store than the override forces reads
-          // from.
-          if (storageOverride) {
-            setAuthStorageRuntime('');
-            const probe = await lakebaseService.checkAuth();
-            if (probe.authenticated) {
-              if (extensionContext) {
-                await extensionContext.globalState.update(
-                  AUTH_STORAGE_STATE_KEY,
-                  undefined,
-                );
-              }
-              return { authenticated: true };
-            }
-            setAuthStorageRuntime(storageOverride);
-          }
-          return {
-            authenticated: false,
-            error:
-              childExitCode === 0
-                ? `databricks CLI exited but the session is not authenticated yet. ` +
-                  `Last check: ${last.error || 'unknown'}`
-                : `databricks auth login failed: ${stderr.trim() || `exit ${childExitCode}`}`,
-          };
-        }
-        await new Promise<void>((r) => setTimeout(r, 2000));
-        last = await lakebaseService.checkAuth();
+        setAuthStorageRuntime(storageOverride);
       }
-      try { child.kill('SIGTERM'); } catch { /* best-effort */ }
-      return { authenticated: false, error: last.error || 'sign-in timed out' };
+
+      return {
+        authenticated: false,
+        error:
+          exitCode === 0
+            ? `sign-in completed but the session does not read back as authenticated (${after.error || 'unknown'})`
+            : `databricks auth login failed: ${stderr.trim() || `exit ${exitCode}`}`,
+      };
     },
   );
 }
