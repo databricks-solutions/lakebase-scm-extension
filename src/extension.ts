@@ -1677,7 +1677,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // location), or let them open an existing folder to set up here.
         log('no workspace folder open; offering create/open routing');
         const choice = await vscode.window.showInformationMessage(
-          'No folder is open. Create a new Lakebase project (you pick the name and location), or open an existing folder to set up here.',
+          'No folder is open. Create a new Lakebase project (you pick the name and location), or open an existing folder to set up there.',
           'Create New Project', 'Open Folder', 'Cancel',
         );
         log(`no-folder routing -> "${choice ?? 'dismissed'}"`);
