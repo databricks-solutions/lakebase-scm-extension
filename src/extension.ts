@@ -1582,14 +1582,12 @@ export async function activate(context: vscode.ExtensionContext) {
         dbHost = selection.host;
       }
 
-      const lakebaseProjectName = await vscode.window.showInputBox({
-        prompt: 'Lakebase project name',
-        value: repoName,
-        placeHolder: repoName,
-        title: 'Lakebase: Project Name (9/10)',
-        validateInput: PROJECT_CREATION_PROMPTS.projectName.validateInput,
-      });
-      if (!lakebaseProjectName) { return; }
+      // Lakebase project name: reuse the project name already collected
+      // at step 1 (it is validated to the Lakebase id rule). Asking for
+      // it again at the end was redundant. The GitHub repo can still
+      // carry its own name (repoName); the Lakebase project id does not
+      // have to match it.
+      const lakebaseProjectName = projectName;
 
       // ── Step 4: Execute ──────────────────────────────────────────
       const scaffoldSvc = new ScaffoldService();
