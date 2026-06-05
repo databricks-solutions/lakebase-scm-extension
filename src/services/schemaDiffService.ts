@@ -177,11 +177,20 @@ export class SchemaDiffService {
     return result;
   }
 
-  private parseColumns(text: string, startPos: number): Array<{ name: string; dataType: string }> {
+  /**
+   * Scan column lines under a table header in the markdown diff. Single
+   * source of truth for parseColumns / parseAddedColumns, which differed
+   * only in the line marker regex (`L ` for existing vs `+ ` for added).
+   */
+  private parseColumnLines(
+    text: string,
+    startPos: number,
+    lineRe: RegExp,
+  ): Array<{ name: string; dataType: string }> {
     const columns: Array<{ name: string; dataType: string }> = [];
     const lines = text.substring(startPos).split("\n");
     for (const line of lines) {
-      const colMatch = line.match(/^\s+L (\S+) (.+)$/);
+      const colMatch = line.match(lineRe);
       if (colMatch) {
         columns.push({ name: colMatch[1], dataType: colMatch[2] });
       } else if (line.trim() && !line.startsWith("  ")) { break; }
@@ -189,16 +198,12 @@ export class SchemaDiffService {
     return columns;
   }
 
+  private parseColumns(text: string, startPos: number): Array<{ name: string; dataType: string }> {
+    return this.parseColumnLines(text, startPos, /^\s+L (\S+) (.+)$/);
+  }
+
   private parseAddedColumns(text: string, startPos: number): Array<{ name: string; dataType: string }> {
-    const columns: Array<{ name: string; dataType: string }> = [];
-    const lines = text.substring(startPos).split("\n");
-    for (const line of lines) {
-      const colMatch = line.match(/^\s+\+ (\S+) (.+)$/);
-      if (colMatch) {
-        columns.push({ name: colMatch[1], dataType: colMatch[2] });
-      } else if (line.trim() && !line.startsWith("  ")) { break; }
-    }
-    return columns;
+    return this.parseColumnLines(text, startPos, /^\s+\+ (\S+) (.+)$/);
   }
 
   private emptyResult(error: string): SchemaDiffResult {

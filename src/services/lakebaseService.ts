@@ -376,11 +376,31 @@ export class LakebaseService {
     }
   }
 
+  /**
+   * Parse a `databricks ... -o json` payload that may come back as a
+   * bare array OR as an object with a named collection field. Single
+   * source of truth for the array-or-`.key` unwrap that listProfiles /
+   * listLakebaseProfiles each hand-rolled.
+   */
+  private parseCliJsonList<T = any>(raw: string, key: string): T[] {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : parsed[key] || [];
+  }
+
+  /**
+   * Fetch the authenticated user via `current-user me`, with the
+   * effective host + profile env applied. Shared by checkAuth and
+   * getCurrentUserEmail (both issued the identical call + parse).
+   */
+  private async fetchCurrentUser(): Promise<any> {
+    const raw = await this.withHost(() => lakebaseExec("databricks current-user me -o json"));
+    return JSON.parse(raw);
+  }
+
   async listProfiles(): Promise<DatabricksProfile[]> {
     try {
       const raw = await lakebaseExec("databricks auth profiles -o json");
-      const parsed = JSON.parse(raw);
-      const profiles: any[] = Array.isArray(parsed) ? parsed : parsed.profiles || [];
+      const profiles = this.parseCliJsonList<any>(raw, "profiles");
       return profiles.map((p: any) => ({
         name: p.name || "",
         host: p.host || "",
@@ -402,8 +422,7 @@ export class LakebaseService {
         const raw = await lakebaseExec("databricks postgres list-projects -o json", undefined, {
           DATABRICKS_CONFIG_PROFILE: p.name,
         });
-        const parsed = JSON.parse(raw);
-        const projects = Array.isArray(parsed) ? parsed : parsed.projects || [];
+        const projects = this.parseCliJsonList<any>(raw, "projects");
         enriched.push({
           ...p,
           hasLakebase: projects.length > 0,
@@ -434,8 +453,7 @@ export class LakebaseService {
       };
     }
     try {
-      const raw = await this.withHost(() => lakebaseExec("databricks current-user me -o json"));
-      const user = JSON.parse(raw);
+      const user = await this.fetchCurrentUser();
       const userHost = user?.host?.replace(/\/+$/, "") || expectedHost;
       return {
         authenticated: true,
@@ -462,8 +480,7 @@ export class LakebaseService {
 
   async getCurrentUserEmail(): Promise<string> {
     try {
-      const raw = await this.withHost(() => lakebaseExec("databricks current-user me -o json"));
-      const user = JSON.parse(raw);
+      const user = await this.fetchCurrentUser();
       return user.userName || user.emails?.[0]?.value || "";
     } catch {
       return "";
@@ -631,33 +648,37 @@ export class LakebaseService {
     }
   }
 
+  /**
+   * Single source of truth for the per-branch substrate call skeleton:
+   * apply the effective host/profile env (withHost), resolve the project
+   * instance, and sanitize the branch name (substrate's subresource
+   * paths take the friendly branch_id, not a uid or a slashed git name).
+   * Error handling stays at the call site, since some callers rethrow
+   * (endpoint/credential) and others swallow + return a fallback (the
+   * query methods).
+   */
+  private branchCall<T>(
+    branchNameOrUid: string,
+    fn: (args: { instance: string; branch: string }) => Promise<T>,
+  ): Promise<T> {
+    return this.withHost(() => fn({
+      instance: this.requireProjectInstance(),
+      branch: substrateSanitizeBranchName(branchNameOrUid),
+    }));
+  }
+
   async deleteBranch(branchNameOrUid: string): Promise<void> {
-    await this.withHost(() =>
-      substrateDeleteBranch({
-        instance: this.requireProjectInstance(),
-        branch: substrateSanitizeBranchName(branchNameOrUid),
-      })
-    );
+    await this.branchCall(branchNameOrUid, (a) => substrateDeleteBranch(a));
   }
 
   // ── Substrate-routed: endpoint + credential + schema ───────────
 
   async getEndpoint(branchNameOrUid: string): Promise<{ host: string; state: string } | undefined> {
-    return this.withHost(() =>
-      substrateGetEndpoint({
-        instance: this.requireProjectInstance(),
-        branch: substrateSanitizeBranchName(branchNameOrUid),
-      })
-    );
+    return this.branchCall(branchNameOrUid, (a) => substrateGetEndpoint(a));
   }
 
   async getCredential(branchNameOrUid: string): Promise<LakebaseCredential> {
-    return this.withHost(() =>
-      substrateGetCredential({
-        instance: this.requireProjectInstance(),
-        branch: substrateSanitizeBranchName(branchNameOrUid),
-      })
-    );
+    return this.branchCall(branchNameOrUid, (a) => substrateGetCredential(a));
   }
 
   async enrichWithEndpoints(branches: LakebaseBranch[]): Promise<LakebaseBranch[]> {
@@ -716,12 +737,8 @@ export class LakebaseService {
 
   async queryBranchTables(branchNameOrUid: string): Promise<string[]> {
     try {
-      return await this.withHost(() =>
-        substrateQueryBranchTables({
-          instance: this.requireProjectInstance(),
-          branch: substrateSanitizeBranchName(branchNameOrUid),
-          database: getProjectDatabase(),
-        })
+      return await this.branchCall(branchNameOrUid, (a) =>
+        substrateQueryBranchTables({ ...a, database: getProjectDatabase() }),
       );
     } catch (err: any) {
       console.error(`[lakebase-scm] queryBranchTables failed: ${err?.message || err}`);
@@ -740,12 +757,8 @@ export class LakebaseService {
     branchNameOrUid: string,
   ): Promise<{ tables: Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>; error?: string }> {
     try {
-      const tables = await this.withHost(() =>
-        substrateQueryBranchSchema({
-          instance: this.requireProjectInstance(),
-          branch: substrateSanitizeBranchName(branchNameOrUid),
-          database: getProjectDatabase(),
-        })
+      const tables = await this.branchCall(branchNameOrUid, (a) =>
+        substrateQueryBranchSchema({ ...a, database: getProjectDatabase() }),
       );
       return { tables };
     } catch (err: any) {
@@ -756,18 +769,9 @@ export class LakebaseService {
   }
 
   async queryBranchSchema(branchNameOrUid: string): Promise<Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>> {
-    try {
-      return await this.withHost(() =>
-        substrateQueryBranchSchema({
-          instance: this.requireProjectInstance(),
-          branch: substrateSanitizeBranchName(branchNameOrUid),
-          database: getProjectDatabase(),
-        })
-      );
-    } catch (err: any) {
-      console.error(`[lakebase-scm] queryBranchSchema failed: ${err?.message || err}`);
-      return [];
-    }
+    // Same query as queryBranchSchemaWithError; this variant just drops
+    // the error (returns [] on failure). One source of truth.
+    return (await this.queryBranchSchemaWithError(branchNameOrUid)).tables;
   }
 
   // ── Substrate-routed: project CRUD + metadata ──────────────────

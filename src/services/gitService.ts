@@ -215,6 +215,27 @@ export class GitService {
     ));
   }
 
+  /**
+   * Parse `git ... --name-status` output into GitFileChange[]. Single
+   * source of truth for the status-code + rename-aware line parse that
+   * getChangedFiles / getStagedChanges / getUnstagedChanges each
+   * hand-rolled. Tolerant: unknown codes fall back to 'modified'.
+   */
+  private parseNameStatus(raw: string): GitFileChange[] {
+    if (!raw) { return []; }
+    const statusMap: Record<string, GitFileChange['status']> = {
+      A: 'added', M: 'modified', D: 'deleted',
+    };
+    return raw.split('\n').filter(Boolean).map((line) => {
+      const parts = line.split('\t');
+      const code = parts[0][0];
+      if (code === 'R') {
+        return { status: 'renamed' as const, path: parts[2], oldPath: parts[1] };
+      }
+      return { status: statusMap[code] || 'modified', path: parts[1] };
+    });
+  }
+
   async listLocalBranches(): Promise<GitBranchInfo[]> {
     const root = getWorkspaceRoot();
     if (!root) { return []; }
@@ -347,9 +368,7 @@ export class GitService {
       let currentBranchName = '';
       try { currentBranchName = (await exec('git rev-parse --abbrev-ref HEAD', root)).trim(); } catch { /* ignore */ }
       const tipBranch = (branch && branch.length > 0) ? branch : currentBranchName;
-      const candidates = Array.from(new Set(
-        [cfgGcf.trunkBranch, 'main', 'master', cfgGcf.stagingBranch, 'staging'].filter(Boolean) as string[]
-      ));
+      const candidates = this.parentCandidates();
       let bestTs = 0;
       for (const c of candidates) {
         if (c === tipBranch) { continue; }
@@ -395,20 +414,7 @@ export class GitService {
       // which works whether tip is HEAD or a named branch.
       const raw = await exec(`git diff --name-status ${baseBranch}...${tip}`, root);
 
-      const statusMap: Record<string, GitFileChange['status']> = {
-        'A': 'added', 'M': 'modified', 'D': 'deleted',
-      };
-
-      const changes: GitFileChange[] = raw
-        ? raw.split('\n').filter(Boolean).map(line => {
-            const parts = line.split('\t');
-            const code = parts[0][0];
-            if (code === 'R') {
-              return { status: 'renamed' as const, path: parts[2], oldPath: parts[1] };
-            }
-            return { status: statusMap[code] || 'modified', path: parts[1] };
-          })
-        : [];
+      const changes: GitFileChange[] = this.parseNameStatus(raw);
 
       // Also include untracked files (new files not yet staged) -- only when
       // looking at the working tree (HEAD). For named-branch diffs, untracked
@@ -467,18 +473,7 @@ export class GitService {
     if (!root) { return []; }
     try {
       const raw = await exec('git diff --cached --name-status', root);
-      if (!raw) { return []; }
-      const statusMap: Record<string, GitFileChange['status']> = {
-        'A': 'added', 'M': 'modified', 'D': 'deleted',
-      };
-      return raw.split('\n').filter(Boolean).map(line => {
-        const parts = line.split('\t');
-        const code = parts[0][0];
-        if (code === 'R') {
-          return { status: 'renamed' as const, path: parts[2], oldPath: parts[1] };
-        }
-        return { status: statusMap[code] || 'modified', path: parts[1] };
-      });
+      return this.parseNameStatus(raw);
     } catch {
       return [];
     }
@@ -490,19 +485,10 @@ export class GitService {
     if (!root) { return []; }
     try {
       const changes: GitFileChange[] = [];
-      const statusMap: Record<string, GitFileChange['status']> = {
-        'M': 'modified', 'D': 'deleted',
-      };
 
       // Modified/deleted tracked files not yet staged
       const raw = await exec('git diff --name-status', root);
-      if (raw) {
-        for (const line of raw.split('\n').filter(Boolean)) {
-          const parts = line.split('\t');
-          const code = parts[0][0];
-          changes.push({ status: statusMap[code] || 'modified', path: parts[1] });
-        }
-      }
+      changes.push(...this.parseNameStatus(raw));
 
       // Untracked files
       try {

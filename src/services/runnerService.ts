@@ -103,26 +103,23 @@ export class RunnerService {
     }
   }
 
-  getLatestLogFile(projectName: string): string | undefined {
-    const dir = this.runnerDir(projectName);
-    const diagDir = path.join(dir, "_diag");
+  /** Newest `<prefix>*.log` under the runner's _diag dir, or undefined. */
+  private latestDiagLog(projectName: string, prefix: string): string | undefined {
+    const diagDir = path.join(this.runnerDir(projectName), "_diag");
     if (!fs.existsSync(diagDir)) { return undefined; }
     const logs = fs.readdirSync(diagDir)
-      .filter(f => f.startsWith("Runner_") && f.endsWith(".log"))
+      .filter(f => f.startsWith(prefix) && f.endsWith(".log"))
       .sort()
       .reverse();
     return logs.length > 0 ? path.join(diagDir, logs[0]) : undefined;
   }
 
+  getLatestLogFile(projectName: string): string | undefined {
+    return this.latestDiagLog(projectName, "Runner_");
+  }
+
   getLatestWorkerLog(projectName: string): string | undefined {
-    const dir = this.runnerDir(projectName);
-    const diagDir = path.join(dir, "_diag");
-    if (!fs.existsSync(diagDir)) { return undefined; }
-    const logs = fs.readdirSync(diagDir)
-      .filter(f => f.startsWith("Worker_") && f.endsWith(".log"))
-      .sort()
-      .reverse();
-    return logs.length > 0 ? path.join(diagDir, logs[0]) : undefined;
+    return this.latestDiagLog(projectName, "Worker_");
   }
 
   // ── Composition over GitHubService ─────────────────────────────

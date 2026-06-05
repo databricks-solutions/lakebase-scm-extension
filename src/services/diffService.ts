@@ -29,11 +29,9 @@ export class DiffService {
    * Migration SQL files sorted to end, with schema-content DDL diffs appended.
    */
   async reviewCommitTwoPane(sha: string): Promise<{ title: string; changes: DiffTuple[] } | undefined> {
-    const root = getWorkspaceRoot();
-    if (!root) { return undefined; }
-
-    const commitFiles = await this.gitService.getCommitFiles(sha);
-    if (!commitFiles.length) { return undefined; }
+    const loaded = await this.loadCommitFiles(sha);
+    if (!loaded) { return undefined; }
+    const { root, commitFiles } = loaded;
 
     const allTuples = this.buildCommitTuples(root, sha, commitFiles, 'two');
     const { code, migrations, migPaths } = this.sortMigrations(allTuples, commitFiles);
@@ -52,16 +50,27 @@ export class DiffService {
    * Single-pane: added files show as new (no diff), deleted as removed.
    */
   async reviewCommitSinglePane(sha: string): Promise<{ title: string; changes: DiffTuple[] } | undefined> {
-    const root = getWorkspaceRoot();
-    if (!root) { return undefined; }
-
-    const commitFiles = await this.gitService.getCommitFiles(sha);
-    if (!commitFiles.length) { return undefined; }
-
+    const loaded = await this.loadCommitFiles(sha);
+    if (!loaded) { return undefined; }
     return {
       title: `${sha.substring(0, 7)}`,
-      changes: this.buildCommitTuples(root, sha, commitFiles, 'single'),
+      changes: this.buildCommitTuples(loaded.root, sha, loaded.commitFiles, 'single'),
     };
+  }
+
+  /**
+   * Shared head for the commit-review methods: resolve the workspace
+   * root and the commit's changed files, returning undefined when there
+   * is no root or the commit touched nothing.
+   */
+  private async loadCommitFiles(
+    sha: string,
+  ): Promise<{ root: string; commitFiles: Awaited<ReturnType<GitService['getCommitFiles']>> } | undefined> {
+    const root = getWorkspaceRoot();
+    if (!root) { return undefined; }
+    const commitFiles = await this.gitService.getCommitFiles(sha);
+    if (!commitFiles.length) { return undefined; }
+    return { root, commitFiles };
   }
 
   /**
