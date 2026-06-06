@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 (2026-06-05)
+
+A hotfix on top of 0.5.17 that ships the **Schema Diff command activation fix** and moves the substrate onto the **first kit beta**, `v0.3.0-beta.0`.
+
+### Fixed
+
+- **`lakebaseSync.showTableDiff` no longer raises "command not found".** The command was registered late in activation (after the tree views were created), so clicking Schema Diff before activation finished hit an unregistered command. It is now registered as soon as its provider is constructed, before any `await` or `createTreeView`, closing the activation race.
+
+### Substrate
+
+- **Kit pin bumped to `v0.3.0-beta.0`** (graduating from the alpha series). This is the first beta on the 0.3.0 line: it ships the artifact-conformance gate, structured agent logging, the per-role-agent contracts, NFRs on `architecture.json`, explicit artifact authorship (`feature-request.md` / `feature-spec.{md,json}` / `product-overview.md`), and canonical SCM feature-branch naming.
+
 ## 0.5.17 (2026-06-05)
 
 The headline theme is **Databricks auth is reliable on multi-workspace machines**: the extension and the substrate now resolve and pin the right CLI profile for a project's host, so branch switches and credential mints stop failing with "Unable to load OAuth Config" when a developer has several `~/.databrickscfg` profiles. Plus the Tier-3 leg of the DRY consolidation (FEIP-7507) and a kit bump to `v0.3.0-alpha.57`. 442/442 mocha tests pass; tsc clean.
