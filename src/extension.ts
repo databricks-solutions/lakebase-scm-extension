@@ -95,6 +95,12 @@ async function runDatabricksLoginInBackground(
   const resolvedProfile =
     profile ||
     (await lakebaseService.resolveProfileForHost(host).catch(() => null)) ||
+    // Reuse ANY existing profile for this host (even a currently-invalid one):
+    // re-authenticating it refreshes the existing entry in place. Without this,
+    // the host-mangled fallback below mints a NEW profile whenever the valid one
+    // is momentarily unresolvable (e.g. an expired token at connect time),
+    // leaving two entries for one host , which then confuses host resolution.
+    (await lakebaseService.anyProfileNameForHost(host).catch(() => null)) ||
     (() => {
       try { return new URL(host).hostname.replace(/\./g, '_'); }
       catch { return 'default'; }

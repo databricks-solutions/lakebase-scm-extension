@@ -8,6 +8,7 @@ Connect-flow reliability: two fixes so the IDE recovers connection without a win
 
 - **Connect no longer aborts with "workspace selection cancelled/failed" on focus loss.** The workspace QuickPick is shown after a slow "Discovering Lakebase workspaces..." step; without `ignoreFocusOut` it auto-dismissed the moment window focus shifted (alt-tab, a browser/notification stealing focus during discovery), returning no selection. The picker and the "new workspace" host input now set `ignoreFocusOut: true`.
 - **Stale profile cache self-heals after an external re-login.** `resolveProfileForHost` cached the host->valid-profile map once and only the extension's own login invalidated it. When a profile's OAuth refresh token expired and was fixed via an external `databricks auth login` in a terminal, the extension kept the stale "no valid profile" entry until a full window reload. It now rebuilds the map once on a miss (a cheap, no-auth config read), so the next call after any re-auth recovers.
+- **Login no longer mints a duplicate host-mangled profile.** When connect couldn't resolve a profile (e.g. the valid one's token was momentarily expired), the login fallback created a brand-new profile named after the host (`host_with_underscores`), leaving two `~/.databrickscfg` entries for one host , which then confused host-based resolution. The fallback now reuses any existing profile for the host (valid or not, re-authenticating it in place via `anyProfileNameForHost`) and only mints a new name for a genuinely new workspace.
 
 ## 0.6.0 (2026-06-05)
 

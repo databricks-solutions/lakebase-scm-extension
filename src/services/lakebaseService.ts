@@ -366,6 +366,28 @@ export class LakebaseService {
   }
 
   /**
+   * Name of ANY existing ~/.databrickscfg profile whose host matches, valid
+   * OR invalid (prefer a valid one; otherwise the first invalid match). Unlike
+   * resolveProfileForHost (valid + exactly-one), this is for the login fallback:
+   * re-authenticate an EXISTING profile (even an expired one, in place) rather
+   * than minting a brand-new host-mangled profile and leaving two entries for
+   * one host. Returns null only when no profile references the host at all.
+   */
+  async anyProfileNameForHost(host: string): Promise<string | null> {
+    if (!host) { return null; }
+    const want = normalizeHost(host);
+    let profiles: DatabricksProfile[];
+    try {
+      profiles = await this.listProfiles();
+    } catch {
+      return null;
+    }
+    const matches = profiles.filter((p) => p.host && normalizeHost(p.host) === want);
+    if (matches.length === 0) { return null; }
+    return (matches.find((p) => p.valid) ?? matches[0]).name;
+  }
+
+  /**
    * Force a refresh of the profile cache. Called after a re-auth flow
    * completes (the user may have added a new profile that didn't exist
    * the first time we cached).

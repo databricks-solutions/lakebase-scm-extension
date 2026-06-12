@@ -204,6 +204,25 @@ describe('LakebaseService', () => {
       assert.strictEqual(calls, 1, 'a cache hit must not rebuild the profile map');
     });
 
+    it('anyProfileNameForHost prefers a valid profile but returns an invalid one rather than null', async () => {
+      // Two profiles for the same host: one valid, one invalid -> prefer valid.
+      profiles([
+        { name: 'ecparr-stale', host: HOST, valid: false },
+        { name: 'ecparr', host: HOST, valid: true },
+      ]);
+      assert.strictEqual(await service.anyProfileNameForHost(HOST), 'ecparr');
+    });
+
+    it('anyProfileNameForHost returns an invalid profile when that is the only host match (so login refreshes it in place)', async () => {
+      profiles([{ name: 'ecparr-stale', host: HOST, valid: false }]);
+      assert.strictEqual(await service.anyProfileNameForHost(HOST), 'ecparr-stale');
+    });
+
+    it('anyProfileNameForHost returns null when no profile references the host (genuine new workspace)', async () => {
+      profiles([{ name: 'DEFAULT', host: 'https://adb-123.azuredatabricks.net', valid: true }]);
+      assert.strictEqual(await service.anyProfileNameForHost(HOST), null);
+    });
+
     it('invalidateProfileCache forces a fresh listProfiles on the next resolve', async () => {
       let calls = 0;
       cpModule.exec = (_cmd: string, _opts: any, cb: Function) => {
