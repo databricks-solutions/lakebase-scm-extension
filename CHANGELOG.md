@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 (2026-06-11)
+
+Connect-flow reliability: two fixes so the IDE recovers connection without a window reload and the workspace picker stops aborting on focus loss.
+
+### Fixed
+
+- **Connect no longer aborts with "workspace selection cancelled/failed" on focus loss.** The workspace QuickPick is shown after a slow "Discovering Lakebase workspaces..." step; without `ignoreFocusOut` it auto-dismissed the moment window focus shifted (alt-tab, a browser/notification stealing focus during discovery), returning no selection. The picker and the "new workspace" host input now set `ignoreFocusOut: true`.
+- **Stale profile cache self-heals after an external re-login.** `resolveProfileForHost` cached the host->valid-profile map once and only the extension's own login invalidated it. When a profile's OAuth refresh token expired and was fixed via an external `databricks auth login` in a terminal, the extension kept the stale "no valid profile" entry until a full window reload. It now rebuilds the map once on a miss (a cheap, no-auth config read), so the next call after any re-auth recovers.
+
 ## 0.6.0 (2026-06-05)
 
 A hotfix on top of 0.5.17 that ships the **Schema Diff command activation fix** and moves the substrate onto the **first kit beta**, `v0.3.0-beta.0`.
