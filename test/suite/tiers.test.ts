@@ -80,6 +80,21 @@ describe('utils/tiers (extension consumes the kit; overrides are extension-owned
       assert.equal(isLongRunningTier('scratch'), false);  // off-convention -> ordinary
     });
 
+    it('the trunk (main) is a tier even though it is NOT in the cache (it pairs with the default/production branch)', () => {
+      sinon.stub(config, 'getConfig').returns(cfg());
+      // The kit excludes the default branch from the tier cache, so `main`
+      // is never cached. It must still classify as a tier (the production tier).
+      setKnownTierNames(['staging']); // populated cache, but `main` not in it
+      assert.equal(isLongRunningTier('main'), true);
+      assert.equal(isLongRunningTier('master'), true);
+    });
+
+    it('a configured trunkBranch alias is the trunk tier', () => {
+      sinon.stub(config, 'getConfig').returns(cfg({ trunkBranch: 'release/v3' }));
+      setKnownTierNames(['staging']);
+      assert.equal(isLongRunningTier('release/v3'), true);
+    });
+
     it('returns false for an empty name', () => {
       sinon.stub(config, 'getConfig').returns(cfg());
       assert.equal(isLongRunningTier(''), false);

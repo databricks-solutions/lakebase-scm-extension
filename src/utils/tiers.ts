@@ -13,7 +13,7 @@ import {
   normalizeTierName,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { getConfig } from './config';
-import { isTierBranch, getKnownTierNames } from './theme';
+import { isTierBranch, getKnownTierNames, isMainBranch } from './theme';
 
 /**
  * This project's protected tier-name set: the kit's default UNION this project's
@@ -38,6 +38,12 @@ export function projectProtectedTierNames(): Set<string> {
  */
 export function isLongRunningTier(branchName: string): boolean {
   if (!branchName) { return false; }
+  // The trunk (main/master, or the configured trunkBranch) pairs with the
+  // Lakebase DEFAULT branch (e.g. `production`) , the production / top tier.
+  // It is ALWAYS a protected tier, and is intentionally NOT in the long-running
+  // tier cache (the kit's tierBranchNames excludes the default branch), so it
+  // must be classified by name here, not by cache membership.
+  if (isMainBranch(branchName, getConfig().trunkBranch)) { return true; }
   if (!projectProtectedTierNames().has(normalizeTierName(branchName))) { return false; }
   return isTierBranch(branchName) || getKnownTierNames().length === 0;
 }
