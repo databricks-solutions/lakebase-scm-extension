@@ -42,6 +42,16 @@ export interface LakebaseConfig {
    */
   baseBranch: string;
   /**
+   * Per-project OVERRIDE: extra protected tier leaf names beyond the kit's
+   * default set (main/master/staging/dev) and the configured trunk/staging/base.
+   * The default set + the named-AND-long-running matching logic are the kit's
+   * (source of truth); this is only the project's deviation data. A branch is a
+   * protected tier when long-running AND its name is in the combined set; an
+   * off-convention long-running branch is an ordinary branch. Source:
+   * `lakebaseSync.tierNames` (array) or `LAKEBASE_TIER_NAMES` (csv in .env).
+   */
+  tierNames: string[];
+  /**
    * String prefix that scopes the branch-tree view to this project's git
    * branches. Only branches whose name starts with this prefix are listed
    * in the sidebar (the current branch is always shown regardless). Useful
@@ -76,6 +86,7 @@ export interface EnvConfig {
   LAKEBASE_TRUNK_BRANCH?: string;
   LAKEBASE_STAGING_BRANCH?: string;
   LAKEBASE_BASE_BRANCH?: string;
+  LAKEBASE_TIER_NAMES?: string;
   LAKEBASE_GIT_BRANCH_PREFIX?: string;
   // Legacy: kept for backward compat with existing Java projects
   SPRING_DATASOURCE_URL?: string;
@@ -176,6 +187,10 @@ export function getConfig(): LakebaseConfig {
     trunkBranch: wsConfig.get('trunkBranch', '') || envConfig.LAKEBASE_TRUNK_BRANCH || '',
     stagingBranch: wsConfig.get('stagingBranch', '') || envConfig.LAKEBASE_STAGING_BRANCH || '',
     baseBranch: wsConfig.get('baseBranch', '') || envConfig.LAKEBASE_BASE_BRANCH || '',
+    tierNames: [
+      ...wsConfig.get<string[]>('tierNames', []),
+      ...(envConfig.LAKEBASE_TIER_NAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    ],
     gitBranchPrefix: wsConfig.get('gitBranchPrefix', '') || envConfig.LAKEBASE_GIT_BRANCH_PREFIX || '',
     databricksAuthStorage:
       wsConfig.get('databricksAuthStorage', '') ||

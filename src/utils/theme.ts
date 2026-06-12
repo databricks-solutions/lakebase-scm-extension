@@ -42,9 +42,11 @@ export const STATUS_COLORS: Record<string, string> = {
  * and `KNOWN_TIER_FALLBACK` in branchTreeProvider, which could drift if
  * one list gained a name the other lacked.
  */
-export const TIER_FALLBACK_NAMES: ReadonlySet<string> = new Set([
-  'main', 'master', 'staging', 'uat', 'perf',
-]);
+// The default protected tier-name set is owned by the kit (source of truth);
+// the extension does NOT keep its own list. Re-exported here under the existing
+// name so importers are unchanged. Per-project overrides (tierNames + configured
+// trunk/staging/base) are unioned in by utils/tiers.projectProtectedTierNames.
+export { DEFAULT_PROTECTED_TIER_NAMES as TIER_FALLBACK_NAMES } from '@databricks-solutions/lakebase-app-dev-kit';
 
 export function isMainBranch(name: string, trunkAlias?: string): boolean {
   if (trunkAlias && trunkAlias.length > 0) {

@@ -16,7 +16,8 @@ import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
-import { TIER_FALLBACK_NAMES } from "../utils/theme";
+import { projectProtectedTierNames } from "../utils/tiers";
+import { normalizeTierName } from "@databricks-solutions/lakebase-app-dev-kit";
 
 export interface SchemaObject {
   type: "TABLE" | "INDEX";
@@ -282,10 +283,11 @@ export class SchemaDiffService {
    *   4. Fall through to substrate's default.
    */
   private async resolveComparisonBranch(branchId: string): Promise<string | undefined> {
-    if (TIER_FALLBACK_NAMES.has(branchId)) { return undefined; }
     const cfg = getConfig();
-    if (cfg.trunkBranch && branchId === cfg.trunkBranch) { return undefined; }
-    if (cfg.stagingBranch && branchId === cfg.stagingBranch) { return undefined; }
+    // A protected tier (default set + this project's overrides, per the
+    // kit-backed resolver) compares against the default branch, not a
+    // per-feature base. Covers trunk/staging/base + lakebaseSync.tierNames.
+    if (projectProtectedTierNames().has(normalizeTierName(branchId))) { return undefined; }
 
     try {
       const target = await this.lakebaseService.getBranchByName(branchId);

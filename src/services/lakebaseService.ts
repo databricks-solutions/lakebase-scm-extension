@@ -33,12 +33,12 @@ import {
   queryBranchTables as substrateQueryBranchTables,
   sanitizeBranchName as substrateSanitizeBranchName,
   createLongRunningBranch as substrateCreateLongRunningBranch,
-  createFeatureBranch as substrateCreateFeatureBranch,
   tierBranchNames as substrateTierBranchNames,
   type LakebaseBranchInfo,
   type CreateLongRunningBranchResult,
 } from "@databricks-solutions/lakebase-app-dev-kit";
 import { setKnownTierNames, isMainBranch } from "../utils/theme";
+import { projectProtectedTierNames } from "../utils/tiers";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
 import { isAuthStorageCacheError } from "../utils/databricksAuth";
 
@@ -547,12 +547,13 @@ export class LakebaseService {
     const branches = await this.withHost(() =>
       substrateListBranches({ instance: this.requireProjectInstance() })
     );
-    // FEIP-7098: refresh the theme.ts tier cache from substrate's
-    // auto-discovery. Sync helpers like isTierBranch() (used by VS Code
-    // input validators + status bar refresh) read this cache. Every
-    // listBranches call is the natural refresh point: it's frequent
-    // enough to stay current and cheap enough not to need its own RPC.
-    setKnownTierNames(substrateTierBranchNames(branches));
+    // Refresh the theme.ts tier cache from the kit's name-AND-long-running
+    // filter. The protected name set = the kit default UNION this project's
+    // overrides (configured trunk/staging/base + lakebaseSync.tierNames),
+    // computed by the kit's resolveProtectedTierNames (source of truth). An
+    // off-convention long-running branch is excluded here, so isTierBranch()
+    // (validators + status bar) sees only protected tiers.
+    setKnownTierNames(substrateTierBranchNames(branches, projectProtectedTierNames()));
     return branches.map(adaptBranchInfo);
   }
 
@@ -620,14 +621,14 @@ export class LakebaseService {
       warn: (msg) => console.warn(msg),
     });
 
-    // Use substrate's createFeatureBranch convention helper (FEIP-7095)
-    // so feature branches get the methodology's default TTL (30d) rather
-    // than substrate's raw `no_expiry: true` default. The parent is the
-    // resolved parent above, not the convention helper's "staging"
-    // default — the extension's parent-resolution honors the user's
-    // current branch / explicit base override.
+    // Create the Lakebase branch only (the extension owns the git branch +
+    // .env sync itself). Use the substrate's raw createBranch primitive: it
+    // defaults to `no_expiry: true` when no ttl is given, which is the kit's
+    // current feature-branch convention (a non-expiring feature branch can
+    // parent experiments). The convention's "default parent = staging" does
+    // not apply here , the extension passes its own resolved parentBranch.
     const created = await this.withHost(() =>
-      substrateCreateFeatureBranch({
+      substrateCreateBranch({
         instance: this.requireProjectInstance(),
         branch: gitBranch,
         parentBranch,

@@ -3,28 +3,16 @@ import { GitService, GitBranchInfo } from '../services/gitService';
 import { LakebaseService, LakebaseBranch } from '../services/lakebaseService';
 import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { SchemaDiffService } from '../services/schemaDiffService';
-import { isMainBranch, isTierBranch, TIER_FALLBACK_NAMES, STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
+import { isMainBranch, STATUS_ICONS, STATUS_COLORS } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { isMigrationMetadataTable } from '../utils/migrationMetadata';
 import { buildFileDiffCommand } from '../utils/fileRow';
 
-/**
- * Long-running tier detection. After FEIP-7098 the authoritative source
- * is the Lakebase project's own non-default branch list (auto-discovered
- * via LakebaseService.listBranches into the theme.ts cache). The static
- * methodology names + configured trunkBranch are kept as a fallback so
- * status checks before the first listBranches call still classify the
- * obvious tiers correctly.
- */
-export function isLongRunningTier(branchName: string): boolean {
-  if (!branchName) return false;
-  if (isTierBranch(branchName)) return true;
-  if (TIER_FALLBACK_NAMES.has(branchName)) return true;
-  const cfg = getConfig();
-  if (cfg.trunkBranch && branchName === cfg.trunkBranch) return true;
-  if (cfg.stagingBranch && branchName === cfg.stagingBranch) return true;
-  return false;
-}
+// Long-running tier detection lives in utils/tiers (kit-owned default set +
+// logic, extension-owned overrides). Imported for this module's own use AND
+// re-exported so existing importers (extension.ts) are unchanged.
+import { isLongRunningTier } from '../utils/tiers';
+export { isLongRunningTier };
 export const TIER_THEME_COLOR = new vscode.ThemeColor('charts.purple');
 export const TIER_THEME_ICON = new vscode.ThemeIcon('versions', TIER_THEME_COLOR);
 

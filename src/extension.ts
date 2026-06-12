@@ -3375,15 +3375,9 @@ export async function activate(context: vscode.ExtensionContext) {
         // (color + text) so colorblind / screen-reader users get the
         // signal too.
         const tierIcon = new vscode.ThemeIcon('versions', new vscode.ThemeColor('charts.purple'));
-        // FEIP-7098 tier-aware: the auto-discovered cache wins; static
-        // methodology names + configured trunkBranch are a fallback for
-        // sessions where listBranches hasn't run yet.
-        const fallbackTiers = new Set(['staging', 'uat', 'perf']);
-        const cfgFallbackTier = getConfig().stagingBranch;
-        const isLongRunningTier = (name: string): boolean =>
-          isTierBranch(name) ||
-          fallbackTiers.has(name) ||
-          (!!cfgFallbackTier && name === cfgFallbackTier);
+        // Tier classification is the module-level isLongRunningTier (imported
+        // from the provider -> utils/tiers): kit-owned default set + logic,
+        // this project's overrides. No local re-implementation.
 
         items.push({
           label: 'Cut Long-Running Tier...',

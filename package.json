@@ -1545,6 +1545,12 @@
           "default": "",
           "description": "String prefix that scopes the branch-tree view to this project's git branches. Only branches whose name starts with this prefix are listed (the current branch is always shown regardless). Useful in monorepos with branches from other projects/users. Overrides LAKEBASE_GIT_BRANCH_PREFIX from .env if both are set."
         },
+        "lakebaseSync.tierNames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra protected tier branch names for this project, beyond the substrate default (main/master/staging/dev) and the configured trunk/staging/base. A branch is a protected tier only when it is long-running AND its name is in this combined set; an off-convention long-running branch is an ordinary branch. The default set + matching logic come from the kit (source of truth); this is your per-project override. Unioned with LAKEBASE_TIER_NAMES (comma-separated) from .env."
+        },
         "lakebaseSync.springInitializrUrl": {
           "type": "string",
           "default": "https://start.spring.io",
@@ -1587,7 +1593,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-beta.0",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#feat/named-tier-protection",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

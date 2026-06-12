@@ -80,7 +80,7 @@ export function restoreSubstrate(): void {
 // ---- Canonical fixtures -------------------------------------------------
 
 export function sampleBranchInfo(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
+  const merged = {
     uid: "br-red-thunder-d24muck6",
     name: "projects/proj-x/branches/customer-entity",
     state: "READY",
@@ -88,6 +88,13 @@ export function sampleBranchInfo(overrides: Partial<Record<string, unknown>> = {
     sourceBranchName: "projects/proj-x/branches/main",
     createTime: "2026-05-01T12:00:00Z",
     ...overrides,
+  };
+  // nameLeaf is a REQUIRED field on the substrate's LakebaseBranchInfo, always
+  // derived from `name`. Provide it (derived, unless explicitly overridden) so
+  // fixtures match the real contract , kit helpers like tierBranchNames read it.
+  return {
+    nameLeaf: String(merged.name).split("/branches/").pop() ?? "",
+    ...merged,
   };
 }
 
