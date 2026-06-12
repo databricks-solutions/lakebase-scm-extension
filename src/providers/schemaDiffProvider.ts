@@ -62,6 +62,15 @@ export class SchemaDiffProvider {
 
     const branchName = diff.branchName || 'current branch';
 
+    // Exclude hidden (dotfile) paths from the code-changes compare: .tdd/,
+    // .lakebase/, .gitignore, .env, .vscode/, .github/, .claude/ ... are
+    // scaffolding/config noise, not the reviewable source + migrations a branch
+    // diff summary is about. Scoped to THIS panel; getChangedFiles() stays
+    // unfiltered for the Branch Review + SCM panels.
+    const visibleChanges = fileChanges.filter(
+      f => !isHiddenPath(f.path) && !(f.oldPath && isHiddenPath(f.oldPath)),
+    );
+
     if (this.panel) {
       this.panel.reveal();
     } else {
@@ -75,7 +84,7 @@ export class SchemaDiffProvider {
     }
 
     this.panel.title = `Branch Diff Summary: ${branchName}`;
-    this.panel.webview.html = this.renderHtml(diff, fileChanges);
+    this.panel.webview.html = this.renderHtml(diff, visibleChanges);
   }
 
   private renderHtml(diff: SchemaDiffResult, fileChanges: GitFileChange[]): string {
@@ -693,4 +702,15 @@ export class SchemaDiffProvider {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * A path is "hidden" when ANY of its segments begins with a dot, so a top-level
+ * dotfile (`.gitignore`, `.env`), a dot-directory (`.tdd/...`, `.lakebase/...`,
+ * `.vscode/...`, `.github/...`, `.claude/...`), and a nested dotfile
+ * (`app/.secret`) are all excluded. Paths are repo-root-relative with `/`
+ * separators (git's `--name-status` output), so splitting on `/` is sufficient.
+ */
+export function isHiddenPath(p: string): boolean {
+  return p.split('/').some(seg => seg.startsWith('.'));
 }

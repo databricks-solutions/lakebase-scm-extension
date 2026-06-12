@@ -1,7 +1,7 @@
 import { strict as assert } from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
-import { SchemaDiffProvider } from '../../src/providers/schemaDiffProvider';
+import { SchemaDiffProvider, isHiddenPath } from '../../src/providers/schemaDiffProvider';
 import { SchemaDiffService, SchemaDiffResult } from '../../src/services/schemaDiffService';
 import { GitService } from '../../src/services/gitService';
 
@@ -162,6 +162,37 @@ describe('SchemaDiffProvider', () => {
       assert.strictEqual(schemaDiffStub.compareBranchSchemas.called, false);
       // But code changes should be freshly fetched
       assert.ok(gitStub.getChangedFiles.called);
+    });
+  });
+
+  describe('isHiddenPath (Branch Diff Summary excludes dotfiles from the compare)', () => {
+    it('flags top-level dotfiles + dot-directories', () => {
+      for (const p of ['.gitignore', '.env', '.tdd/features/F1/spec.json', '.lakebase/kit-ref', '.vscode/settings.json', '.github/workflows/pr.yml', '.claude/agents/driver.md']) {
+        assert.strictEqual(isHiddenPath(p), true, `expected hidden: ${p}`);
+      }
+    });
+
+    it('flags a dotfile nested under a visible directory', () => {
+      assert.strictEqual(isHiddenPath('app/.secret'), true);
+      assert.strictEqual(isHiddenPath('src/config/.keep'), true);
+    });
+
+    it('does NOT flag normal source + migration paths', () => {
+      for (const p of ['src/new-file.ts', 'app/models/bug.py', 'alembic/versions/0001_init.py', 'src/main/resources/db/migration/V6__create_orders.sql', 'README.md']) {
+        assert.strictEqual(isHiddenPath(p), false, `expected visible: ${p}`);
+      }
+    });
+
+    it('does not treat a dot inside a filename (extension) as hidden', () => {
+      assert.strictEqual(isHiddenPath('app/main.py'), false);
+      assert.strictEqual(isHiddenPath('docs/v1.2.notes.md'), false);
+    });
+
+    it('drives the showDiff filter: a renamed dotfile is excluded by either side', async () => {
+      // showDiff filters on path AND oldPath, so a rename into/out of a hidden
+      // path is excluded. Exercised here at the predicate level.
+      assert.strictEqual(isHiddenPath('.env.local'), true);   // new path hidden
+      assert.strictEqual(isHiddenPath('config/app.yml'), false); // visible side
     });
   });
 
