@@ -53,7 +53,11 @@ describe('ScaffoldService – Spring Initializr', () => {
       assert.ok(fs.existsSync(path.join(dir, 'pom.xml')));
       assert.match(fs.readFileSync(path.join(dir, 'pom.xml'), 'utf-8'), /flyway-maven-plugin/);
       assert.ok(fs.existsSync(path.join(dir, 'src/main/resources/application.properties')));
-      assert.ok(fs.existsSync(path.join(dir, 'src/main/resources/db/migration/V1__init_placeholder.sql')));
+      // The substrate no longer seeds an empty V1__init_placeholder.sql: the
+      // first feature migration is the base (kit dbdf1c6 / FEIP-7566). Flyway is
+      // still wired (plugin + spring.flyway.enabled below); there is just no
+      // placeholder migration at scaffold time.
+      assert.ok(!fs.existsSync(path.join(dir, 'src/main/resources/db/migration/V1__init_placeholder.sql')));
       assert.match(
         fs.readFileSync(path.join(dir, 'src/main/resources/application.properties'), 'utf-8'),
         /spring\.flyway\.enabled=true/,
