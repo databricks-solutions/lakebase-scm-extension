@@ -297,6 +297,12 @@ async function selectAndAuthenticateWorkspace(
     placeHolder: authStatus.authenticated && effectiveHost
       ? `Connected to ${effectiveHost}`
       : 'Choose a Databricks workspace with Lakebase',
+    // The "Discovering Lakebase workspaces..." step above can take tens of
+    // seconds (it probes each profile's projects), during which focus easily
+    // shifts (alt-tab, a browser/notification steals focus). Without this the
+    // QuickPick auto-dismisses on focus loss and connect aborts with
+    // "workspace selection cancelled/failed" though the user never cancelled.
+    ignoreFocusOut: true,
   });
   if (!pick) { return undefined; }
 
@@ -306,6 +312,8 @@ async function selectAndAuthenticateWorkspace(
       prompt: PROJECT_CREATION_PROMPTS.databricksHost.prompt,
       placeHolder: PROJECT_CREATION_PROMPTS.databricksHost.placeHolder,
       validateInput: PROJECT_CREATION_PROMPTS.databricksHost.validateInput,
+      // Don't vanish if focus shifts while the user pastes a workspace URL.
+      ignoreFocusOut: true,
     });
     if (!input) { return undefined; }
     targetHost = stripInvisibles(input).replace(/\/+$/, '');
