@@ -88,6 +88,12 @@ export interface DatabricksProfile {
 // of this file for internal use (lakebaseExec).
 export { isAuthStorageCacheError, isRefreshTokenInvalidError } from "../utils/databricksAuth";
 
+/** Canonical host key for profile matching: drop trailing slashes + lowercase
+ *  so "https://X.databricks.com/" and "https://x.databricks.com" compare equal. */
+function normalizeHost(host: string): string {
+  return host.replace(/\/+$/, "").toLowerCase();
+}
+
 /**
  * Module-level cache of the auth-storage mode the extension switched
  * to after a successful retry. Once we discover that `plaintext` works
@@ -311,25 +317,52 @@ export class LakebaseService {
    */
   async resolveProfileForHost(host: string): Promise<string | null> {
     if (!host) { return null; }
-    const normalize = (h: string) => h.replace(/\/+$/, "").toLowerCase();
-    const want = normalize(host);
+    const want = normalizeHost(host);
+
+    let builtThisCall = false;
     if (this.validProfilesByHost === undefined) {
-      this.validProfilesByHost = {};
-      try {
-        const profiles = await this.listProfiles();
-        for (const p of profiles) {
-          if (!p.valid || !p.host) { continue; }
-          const key = normalize(p.host);
-          const names = (this.validProfilesByHost[key] ??= []);
-          if (!names.includes(p.name)) { names.push(p.name); }
-        }
-      } catch {
-        // listProfiles failure is non-fatal here; we just return null
-        // and let the CLI fall back to its own resolution.
-      }
+      await this.buildValidProfilesByHost();
+      builtThisCall = true;
     }
-    const matches = this.validProfilesByHost[want] ?? [];
+    let matches = this.validProfilesByHost![want] ?? [];
+
+    // Self-heal a stale "no valid profile" cache. A profile that was
+    // invalid when we first cached (e.g. an expired OAuth refresh token)
+    // can become valid again after an EXTERNAL `databricks auth login` the
+    // extension never observed (the user fixed it in a terminal). Our cache
+    // would still say "no profile for this host" and the connection stays
+    // broken until a full window reload. `databricks auth profiles` is a
+    // cheap config read (no network / no auth), so on a MISS rebuild once
+    // before concluding there is no profile, so the next call after any
+    // re-auth picks up the now-valid profile without a reload.
+    if (matches.length === 0 && !builtThisCall) {
+      await this.buildValidProfilesByHost();
+      matches = this.validProfilesByHost![want] ?? [];
+    }
     return matches.length === 1 ? matches[0] : null;
+  }
+
+  /**
+   * (Re)build the validProfilesByHost map from `databricks auth profiles`.
+   * Only VALID profiles with a host are recorded; a host can map to several
+   * (DEFAULT + a named alias). A listProfiles failure is non-fatal: the map
+   * is left empty so resolveProfileForHost returns null and the CLI falls
+   * back to its own resolution.
+   */
+  private async buildValidProfilesByHost(): Promise<void> {
+    const map: Record<string, string[]> = {};
+    try {
+      const profiles = await this.listProfiles();
+      for (const p of profiles) {
+        if (!p.valid || !p.host) { continue; }
+        const key = normalizeHost(p.host);
+        const names = (map[key] ??= []);
+        if (!names.includes(p.name)) { names.push(p.name); }
+      }
+    } catch {
+      // non-fatal: leave the map empty; caller returns null + CLI falls back.
+    }
+    this.validProfilesByHost = map;
   }
 
   /**

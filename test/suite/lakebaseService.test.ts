@@ -166,6 +166,56 @@ describe('LakebaseService', () => {
     it('returns null for an empty host', async () => {
       assert.strictEqual(await service.resolveProfileForHost(''), null);
     });
+
+    // Self-heal: a profile invalid at first-cache time (e.g. an expired OAuth
+    // refresh token) can become valid after an EXTERNAL `databricks auth login`
+    // the extension never saw. A stale "no profile for this host" cache then
+    // kept the IDE broken until a full window reload. resolveProfileForHost
+    // now rebuilds once on a MISS, so the next call after any re-auth recovers.
+    it('rebuilds on a miss so a profile that became valid is picked up (no reload needed)', async () => {
+      // Per-call exec outputs: first build sees the profile INVALID, a later
+      // rebuild sees it VALID (the external re-login landed in between).
+      const outputs = [
+        JSON.stringify({ profiles: [{ name: 'ecparr', host: HOST, valid: false }] }),
+        JSON.stringify({ profiles: [{ name: 'ecparr', host: HOST, valid: true }] }),
+      ];
+      let calls = 0;
+      cpModule.exec = (_cmd: string, _opts: any, cb: Function) => {
+        if (typeof _opts === 'function') { cb = _opts; }
+        cb(null, outputs[Math.min(calls++, outputs.length - 1)], '');
+      };
+
+      // Call 1: profile is invalid -> miss -> caches host->[] (no rebuild on the
+      // very first build) -> null.
+      assert.strictEqual(await service.resolveProfileForHost(HOST), null);
+      // Call 2: cache present + miss -> rebuild picks up the now-valid profile.
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+    });
+
+    it('does NOT re-exec on a cache HIT (resolves from the cached map)', async () => {
+      let calls = 0;
+      cpModule.exec = (_cmd: string, _opts: any, cb: Function) => {
+        if (typeof _opts === 'function') { cb = _opts; }
+        calls++;
+        cb(null, JSON.stringify({ profiles: [{ name: 'ecparr', host: HOST, valid: true }] }), '');
+      };
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+      assert.strictEqual(calls, 1, 'a cache hit must not rebuild the profile map');
+    });
+
+    it('invalidateProfileCache forces a fresh listProfiles on the next resolve', async () => {
+      let calls = 0;
+      cpModule.exec = (_cmd: string, _opts: any, cb: Function) => {
+        if (typeof _opts === 'function') { cb = _opts; }
+        calls++;
+        cb(null, JSON.stringify({ profiles: [{ name: 'ecparr', host: HOST, valid: true }] }), '');
+      };
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+      service.invalidateProfileCache();
+      assert.strictEqual(await service.resolveProfileForHost(HOST), 'ecparr');
+      assert.strictEqual(calls, 2, 'invalidateProfileCache must drop the cache so the next resolve rebuilds');
+    });
   });
 
   describe('envReflectsBranch (skip redundant sync when the hook already wrote .env)', () => {
