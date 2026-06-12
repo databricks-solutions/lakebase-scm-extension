@@ -1547,7 +1547,9 @@
         },
         "lakebaseSync.tierNames": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Extra protected tier branch names for this project, beyond the substrate default (main/master/staging/dev) and the configured trunk/staging/base. A branch is a protected tier only when it is long-running AND its name is in this combined set; an off-convention long-running branch is an ordinary branch. The default set + matching logic come from the kit (source of truth); this is your per-project override. Unioned with LAKEBASE_TIER_NAMES (comma-separated) from .env."
         },
@@ -1593,7 +1595,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#feat/named-tier-protection",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-beta.2",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",
