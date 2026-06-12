@@ -2,7 +2,11 @@
 
 ## 0.6.1 (2026-06-11)
 
-Connect-flow reliability: two fixes so the IDE recovers connection without a window reload and the workspace picker stops aborting on focus loss.
+Connect-flow reliability + named-tier protection.
+
+### Changed
+
+- **Protected tier = named AND long-running.** A long-running (no-expiry) Lakebase branch is now treated as a protected tier only when its name is in the protected set: the substrate default (`main`/`master`/`staging`/`dev`) UNION this project's overrides (configured trunk/staging/base + the new `lakebaseSync.tierNames` / `LAKEBASE_TIER_NAMES`). A long-running branch with an off-convention name (e.g. a `scratch` spike) is now an ordinary branch (deletable/renamable/auto-paired), as before tiers existed. The default set + matching logic live in the kit (source of truth); the extension only supplies the per-project overrides. Adds the `lakebaseSync.tierNames` setting.
 
 ### Fixed
 
