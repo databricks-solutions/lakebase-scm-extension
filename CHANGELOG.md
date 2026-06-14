@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.2 (2026-06-14)
+
+Branch + database resolution fixes for the schema diff and on checkout; moves the substrate to kit `v0.3.0-beta.3`.
+
+### Fixed
+
+- **Branch diff + table views target the project's database, not the Lakebase default.** The schema-diff call omitted the database, so it queried `databricks_postgres` (the Lakebase default) instead of the project's app database, returning an empty / in-sync diff for any project whose data lives in a non-default database. It now passes the resolved project database (`DB_NAME` / `PGDATABASE` / parsed `DATABASE_URL`).
+- **`.env` re-syncs to the checked-out branch on every external checkout, tiers included.** The branch-change handler returned early for trunk/tier branches and only synced feature branches, so switching to (or through) a tier left `.env` , and therefore the running dev server and tests , pinned to the previous branch's database. It now re-points `.env` at whatever branch is checked out (trunk maps to the default branch; tier/feature by name); auto-create stays feature-only.
+
+### Substrate
+
+- Bumped to `@databricks-solutions/lakebase-app-dev-kit` `v0.3.0-beta.3`: `scm-prepare-pr` surfaces wrong-account guidance on a push 404; layering-clean gains a declaration-independent duplicate-class invariant + stale-flat-module-shadow detection; navigator->driver regression-diagnosis handoff; context-budget guard on warm-resume.
+
 ## 0.6.1 (2026-06-11)
 
 Connect-flow reliability + named-tier protection.
