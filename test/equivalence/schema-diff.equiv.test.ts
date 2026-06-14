@@ -33,7 +33,7 @@ describe("equivalence: schema diff", () => {
     restoreConfig();
   });
 
-  it("compareBranchSchemas – forwards { instance, branch } and preserves substrate result + timestamp", async () => {
+  it("compareBranchSchemas – forwards { instance, branch, database } and preserves substrate result + timestamp", async () => {
     const tracker = stubSubstrate("getSchemaDiff", {
       branchName: "br-feature",
       timestamp: "2026-05-01T00:00:00Z",
@@ -45,9 +45,14 @@ describe("equivalence: schema diff", () => {
     const result = await schemaDiff.compareBranchSchemas("br-feature", true);
 
     assert.strictEqual(tracker.callCount, 1);
+    // database is now forwarded too (resolved via getProjectDatabase; with no
+    // .env at the planted workspace it defaults to "databricks_postgres"). This
+    // is the fix: omitting it made the diff query the default db instead of the
+    // project's app database.
     assert.deepStrictEqual(tracker.firstCall!.args[0], {
       instance: "proj-x",
       branch: "br-feature",
+      database: "databricks_postgres",
     });
     assert.strictEqual(result.branchName, "br-feature");
     assert.strictEqual(result.timestamp, "2026-05-01T00:00:00Z");

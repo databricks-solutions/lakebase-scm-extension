@@ -1238,13 +1238,12 @@ export async function activate(context: vscode.ExtensionContext) {
   // Sync .env connection on git branch change, optionally auto-create Lakebase branch
   const autoBranchDisposable = gitService.onBranchChanged(async (newBranch: string) => {
     const trunkAlias = getConfig().trunkBranch;
-    const onFeature = !!newBranch
-      && !isMainBranch(newBranch, trunkAlias)
-      && !isTierBranch(newBranch);
+    const isTrunkOrTier = isMainBranch(newBranch, trunkAlias) || isTierBranch(newBranch);
+    const onFeature = !!newBranch && !isTrunkOrTier;
     vscode.commands.executeCommand('setContext', 'lakebaseSync.onFeatureBranch', onFeature);
     vscode.commands.executeCommand('setContext', 'lakebaseSync.isRebasing', await gitService.isRebasing());
 
-    if (!newBranch || isMainBranch(newBranch, trunkAlias) || isTierBranch(newBranch)) { return; }
+    if (!newBranch) { return; }
 
     // Clear schema cache – new branch may have different schema
     schemaDiffService.clearCache();
@@ -1252,8 +1251,16 @@ export async function activate(context: vscode.ExtensionContext) {
     const cfg = getConfig();
 
     try {
-      // Always check if Lakebase branch exists and sync .env connection
-      const existing = await lakebaseService.getBranchByName(newBranch);
+      // Re-point .env at the checked-out branch's DB on EVERY switch, trunk and
+      // tier branches included. An external `git checkout` (terminal / Source
+      // Control UI) does not run the post-checkout hook in every repo - e.g. a
+      // monorepo that drives branch ops via the scm bins - so the extension is
+      // the only thing that re-syncs .env. Previously this returned early for
+      // trunk/tier, leaving .env (and therefore the dev server + tests) pinned
+      // to the PREVIOUS branch's database, which surfaced as "relation ... does
+      // not exist" when the app ran against the wrong branch. resolveBranchForGitBranch
+      // maps trunk -> default (production) and tier/feature -> name match.
+      const existing = await lakebaseService.resolveBranchForGitBranch(newBranch, trunkAlias);
       if (existing) {
         // Branch exists – just refresh credentials and update .env
         const conn = await lakebaseService.syncConnection(existing.branchId);
@@ -1265,8 +1272,10 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // No existing branch – only create if autoCreateBranch is enabled
-      if (!cfg.autoCreateBranch) { return; }
+      // No paired Lakebase branch yet. Only AUTO-CREATE for feature branches –
+      // never trunk/tier (those are long-running branches that must already
+      // exist; we sync to them above but never fork them here).
+      if (isTrunkOrTier || !cfg.autoCreateBranch) { return; }
 
       // Create new Lakebase branch
       const sanitized = lakebaseService.sanitizeBranchName(newBranch);

@@ -10,6 +10,7 @@ import type { LakebaseConfig } from '../../src/utils/config';
 function cfg(overrides: Partial<LakebaseConfig> = {}): LakebaseConfig {
   return {
     databricksHost: '', lakebaseProjectId: '', autoCreateBranch: true,
+    autoCreateLocalBranchesFromOrigin: true,
     autoRefreshCredentials: true, migrationPath: '', migrationPattern: /x/,
     migrationGlob: '*', language: 'python', showUnifiedRepo: true,
     productionReadOnly: true, trunkBranch: '', stagingBranch: '', baseBranch: '',

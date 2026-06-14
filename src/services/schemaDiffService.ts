@@ -12,7 +12,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { getWorkspaceRoot, getEnvConfig, getConfig } from "../utils/config";
+import { getWorkspaceRoot, getEnvConfig, getConfig, getProjectDatabase } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
 import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
@@ -248,6 +248,7 @@ export class SchemaDiffService {
         const sub = await substrateGetSchemaDiff({
           instance: this.projectInstance(),
           branch: branchId,
+          database: getProjectDatabase(),
           ...(comparisonBranch ? { comparisonBranch } : {}),
         });
         return { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
