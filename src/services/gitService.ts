@@ -397,6 +397,18 @@ export class GitService {
     //   5. main / master
     const cfgGcf = getConfig();
     let baseBranch = baseOverride || cfgGcf.baseBranch || '';
+    // A configured/override base that does NOT exist locally (e.g. a project pins
+    // LAKEBASE_BASE_BRANCH=staging but this checkout's tiers are production/release,
+    // so there is no local `staging`) must not be used blindly: `git diff
+    // staging...<branch>` then errors and the diff silently comes back empty.
+    // Drop it so the nearest-parent resolution below picks the real parent.
+    if (baseBranch) {
+      try {
+        await exec(`git rev-parse --verify ${baseBranch}`, root);
+      } catch {
+        baseBranch = '';
+      }
+    }
     if (!baseBranch) {
       const tipForMb = branch && branch.length > 0 ? branch : 'HEAD';
       let currentBranchName = '';

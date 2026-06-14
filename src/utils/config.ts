@@ -84,6 +84,8 @@ export interface EnvConfig {
   LAKEBASE_HOST?: string;
   LAKEBASE_BRANCH_ID?: string;
   DATABASE_URL?: string;
+  DB_NAME?: string;
+  PGDATABASE?: string;
   DB_USERNAME?: string;
   DB_PASSWORD?: string;
   LAKEBASE_TRUNK_BRANCH?: string;
@@ -220,7 +222,15 @@ export function getEnvConfig(): EnvConfig {
  * connecting to a different branch's endpoint.
  */
 export function getProjectDatabase(env?: EnvConfig): string {
-  const url = (env ?? getEnvConfig()).DATABASE_URL;
+  const e = env ?? getEnvConfig();
+  // An explicit project database name wins , it is what the app itself connects
+  // to (its getPool uses DB_NAME), and it survives the post-checkout hook writing
+  // DATABASE_URL with the Lakebase DEFAULT db (databricks_postgres) even when the
+  // app's data lives elsewhere (e.g. a `recipe` database). Without this the schema
+  // diff queried the empty default db and silently showed no tables.
+  if (e.DB_NAME) { return e.DB_NAME; }
+  if (e.PGDATABASE) { return e.PGDATABASE; }
+  const url = e.DATABASE_URL;
   if (url) {
     const m = url.match(/^[a-z]+:\/\/[^/]+\/([^/?#]+)/i);
     if (m && m[1]) { return decodeURIComponent(m[1]); }
