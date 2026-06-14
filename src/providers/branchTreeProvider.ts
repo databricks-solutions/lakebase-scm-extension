@@ -105,6 +105,22 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   private async getRootItems(): Promise<BranchItem[]> {
     const items: BranchItem[] = [];
 
+    // Pairing is computed from LOCAL git branches, so a freshly cloned project
+    // shows its tiers (release/staging/...) as "db only" until they are checked
+    // out. Reconcile first: create a local tracking branch for every origin
+    // branch that has no local counterpart (no checkout, no fetch). Idempotent,
+    // best-effort, and never allowed to break the tree.
+    if (getConfig().autoCreateLocalBranchesFromOrigin) {
+      try {
+        const created = await this.gitService.ensureLocalBranchesForRemotes();
+        if (created.length > 0) {
+          vscode.window.showInformationMessage(
+            `Lakebase: created ${created.length} local branch${created.length === 1 ? '' : 'es'} from origin (${created.join(', ')}) so they pair with Lakebase.`,
+          );
+        }
+      } catch { /* reconcile is best-effort; fall through to listing what exists */ }
+    }
+
     // Derive repo name from git remote for the root label
     let repoName = 'my-project';
     try {

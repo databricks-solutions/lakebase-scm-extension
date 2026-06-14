@@ -1510,6 +1510,11 @@
           "default": true,
           "description": "Automatically refresh database credentials in background"
         },
+        "lakebaseSync.autoCreateLocalBranchesFromOrigin": {
+          "type": "boolean",
+          "default": true,
+          "description": "On connect/refresh, create a local tracking branch for every origin branch that has no local counterpart, so the branch tree pairs them with their Lakebase branch (no checkout, no fetch). Disable to only show branches you have checked out locally."
+        },
         "lakebaseSync.migrationPath": {
           "type": "string",
           "default": "",

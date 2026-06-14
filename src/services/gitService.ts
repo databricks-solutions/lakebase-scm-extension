@@ -249,6 +249,40 @@ export class GitService {
     return substrateListRemoteBranches({ cwd: root });
   }
 
+  /**
+   * Ensure every origin branch has a local counterpart so the branch/tier tree
+   * can pair it with its Lakebase branch. For each remote branch with no local
+   * branch yet, creates a local tracking branch (`git branch --track <name>
+   * <origin/name>`): no checkout, no working-tree change, and no fetch , it
+   * reads the cached remote-tracking refs via {@link listRemoteBranches}, so it
+   * works even when the remote is currently unreachable. Idempotent (a branch
+   * that already exists is skipped). Returns the names actually created.
+   *
+   * This is why a freshly cloned project's tiers (release/staging/...) show as
+   * "db only" until checked out: the tree pairs on LOCAL branches, and a clone
+   * only has the default branch locally. Reconciling here makes the paired view
+   * work on a clean clone without the user hand-creating each branch.
+   */
+  async ensureLocalBranchesForRemotes(): Promise<string[]> {
+    const root = getWorkspaceRoot();
+    if (!root) { return []; }
+    const remotes = await this.listRemoteBranches();
+    const created: string[] = [];
+    for (const rb of remotes) {
+      // Branch names cannot contain whitespace or double-quotes in git, so
+      // double-quoting is sufficient quoting here.
+      const tracking = rb.tracking ?? `origin/${rb.name}`;
+      try {
+        await exec(`git branch --track "${rb.name}" "${tracking}"`, root);
+        created.push(rb.name);
+      } catch {
+        // Already exists / ambiguous ref / race , skip; the tree still renders
+        // whatever locals do exist. Never let reconcile break branch listing.
+      }
+    }
+    return created;
+  }
+
   /** Get file contents at a given git ref (e.g. 'main', a commit sha) */
   async getFileAtRef(ref: string, filePath: string): Promise<string> {
     const root = getWorkspaceRoot();

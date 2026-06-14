@@ -9,6 +9,9 @@ export interface LakebaseConfig {
   lakebaseProjectId: string;
   autoCreateBranch: boolean;
   autoRefreshCredentials: boolean;
+  /** On connect/refresh, create a local tracking branch for every origin branch
+   *  that has no local counterpart, so the tree pairs them with Lakebase. */
+  autoCreateLocalBranchesFromOrigin: boolean;
   migrationPath: string;
   /** Regex pattern for migration filenames (auto-detected from project language) */
   migrationPattern: RegExp;
@@ -178,6 +181,7 @@ export function getConfig(): LakebaseConfig {
     lakebaseProjectId: wsConfig.get('lakebaseProjectId', '') || envConfig.LAKEBASE_PROJECT_ID || '',
     autoCreateBranch: wsConfig.get('autoCreateBranch', true),
     autoRefreshCredentials: wsConfig.get('autoRefreshCredentials', true),
+    autoCreateLocalBranchesFromOrigin: wsConfig.get('autoCreateLocalBranchesFromOrigin', true),
     migrationPath,
     migrationPattern: defaults.pattern,
     migrationGlob: defaults.glob,
