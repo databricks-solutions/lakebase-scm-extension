@@ -104,7 +104,14 @@ export class SchemaDiffProvider {
 
     let codeHtml = '';
     if (totalCodeChanges === 0) {
-      codeHtml = '<p class="sync-msg">No code changes vs main.</p>';
+      // Name the ACTUAL resolved base (the same one the Schema panel compares
+      // against), never a hardcoded "main". When the base could not be resolved,
+      // surface that instead of implying a clean "no changes" against the wrong
+      // base (which silently hid base-resolution failures).
+      const codeBase = diff.comparisonBranchName;
+      codeHtml = codeBase
+        ? `<p class="sync-msg">No code changes vs ${esc(codeBase)}.</p>`
+        : `<p class="sync-msg">Comparison base could not be resolved${diff.error ? `: ${esc(diff.error)}` : ''}; code changes were not computed.</p>`;
     } else {
       if (added.length > 0) {
         codeHtml += this.renderFileGroup('Added', 'created', '+', added.map(f => f.path));
@@ -348,7 +355,7 @@ export class SchemaDiffProvider {
    *
    * @param branchName  Lakebase branchId the diff should target (matches the
    *   tree row the user clicked). When omitted, falls back to the branch in
-   *   `.env` (LAKEBASE_BRANCH_ID) — only correct when the tree row is the
+   *   `.env` (LAKEBASE_BRANCH_ID) – only correct when the tree row is the
    *   active branch. Without this arg, expanding a non-active branch in the
    *   tree shows a diff for whatever branch is checked out, not the row's
    *   branch.
@@ -361,7 +368,7 @@ export class SchemaDiffProvider {
   ): Promise<void> {
     // Always refresh the diff against the resolved parent before rendering.
     // A passed-in `diff` from upstream may predate a recent migration or have
-    // been built against a stale parent — symptom: tree marks a table amber
+    // been built against a stale parent – symptom: tree marks a table amber
     // but the panel renders empty rows because diff.modified hasn't caught up.
     diff = await vscode.window.withProgress(
       {

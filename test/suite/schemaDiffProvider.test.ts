@@ -33,6 +33,27 @@ describe('SchemaDiffProvider', () => {
     };
   }
 
+  describe('renderHtml empty code-changes message names the resolved base', () => {
+    it('names the resolved comparison base, not a hardcoded "main"', () => {
+      const diff = makeDiff({ branchName: 'feature-x', comparisonBranchName: 'release' });
+      const html = (provider as any).renderHtml(diff, []) as string;
+      assert.ok(html.includes('No code changes vs release.'), 'should name the resolved base "release"');
+      assert.ok(!html.includes('No code changes vs main.'), 'must not hardcode "main"');
+    });
+
+    it('surfaces an unresolved base instead of a false "no changes"', () => {
+      const diff = makeDiff({
+        branchName: 'feature-x',
+        comparisonBranchName: undefined,
+        error: 'base "staging" not found',
+      });
+      const html = (provider as any).renderHtml(diff, []) as string;
+      assert.ok(html.includes('Comparison base could not be resolved'), 'should surface the resolution failure');
+      assert.ok(html.includes('base &quot;staging&quot; not found') || html.includes('base "staging" not found'), 'should include the error detail');
+      assert.ok(!html.includes('No code changes vs main.'), 'must not claim a clean diff against "main"');
+    });
+  });
+
   describe('showDiff', () => {
     it('uses cached diff when forceRefresh=false and cache exists', async () => {
       const diff = makeDiff({ branchName: 'cached-branch' });
