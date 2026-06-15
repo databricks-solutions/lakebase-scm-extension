@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.4 (2026-06-15)
+
+Schema-diff cache invalidation for non-Flyway migration tools.
+
+### Fixed
+
+- **Schema Changes panel no longer shows a stale "In Sync" for knex / Alembic / Rails projects.** The per-branch diff cache only invalidated when a new Flyway `V*.sql` file appeared (a hardcoded glob), so for projects using other migration tools the "a migration was applied" fast-path never fired and the panel served the pre-migration diff until the 10-minute age TTL or a manual refresh. It now invalidates against the project's detected migration filename pattern (Flyway `V*.sql`, knex/Node `<timestamp>_*.js|ts`, Alembic `versions/*.py`, ...), and falls back to the newest file in the migration directory when none match.
+
 ## 0.6.3 (2026-06-15)
 
 Branch Diff + connection-resilience fixes.
