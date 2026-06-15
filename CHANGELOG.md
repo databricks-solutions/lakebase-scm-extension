@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 (2026-06-15)
+
+Branch Diff + connection-resilience fixes.
+
+### Fixed
+
+- **`.env` stays source-able when a branch endpoint is not ready.** On a checkout/re-sync that raced a not-ready Lakebase endpoint, the connection writer emitted `DATABASE_URL=# ENDPOINT_NOT_READY ...` , a `#...` string on the right-hand side of the assignment, which is NOT a comment to a shell that sources `.env`. Any `set -e; source .env` consumer (shells, git hooks, tooling) aborted with `ENDPOINT_NOT_READY: command not found`. The not-ready path now writes empty, source-able values (`DATABASE_URL=`), keeping the human breadcrumb in a real comment line; same fix for the JDBC `application-local.properties` url.
+- **Branch Diff Summary names the actual comparison base, not a hardcoded "main".** The empty code-changes message always read "No code changes vs main" regardless of the resolved base (while the Schema panel correctly showed e.g. "vs release"), which masked base-resolution failures. It now names the resolved base, and when the base cannot be resolved it says so instead of implying a clean diff.
+
 ## 0.6.2 (2026-06-14)
 
 Branch + database resolution fixes for the schema diff and on checkout; moves the substrate to kit `v0.3.0-beta.3`.
