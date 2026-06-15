@@ -1,4 +1,5 @@
 import { strict as assert } from 'assert';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as sinon from 'sinon';
@@ -177,6 +178,56 @@ describe('Config Utilities', () => {
         assert.ok(!content.includes('old-branch'));
         assert.ok(content.includes('LAKEBASE_HOST=new-host'));
         assert.ok(content.includes('OTHER=keep'));
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+
+    it('writes a source-able .env when the endpoint is not ready (no host)', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}`);
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, '.env'), 'LAKEBASE_PROJECT_ID=proj123\n');
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: tmp } }];
+
+      try {
+        // The not-ready re-sync path (lakebaseService): empty host/username/password.
+        updateEnvConnection({
+          host: '', branchId: 'production', username: '', password: '',
+          comment: '# Connection pending at 2026-01-01T00:00:00.000Z. If this persists, run: git checkout - && git checkout <branch>',
+        });
+
+        const envPath = path.join(tmp, '.env');
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+
+        // No assignment may carry a "#..." right-hand side: a sourced shell treats
+        // the word after "KEY=#" as a command, which aborts `set -e` callers.
+        for (const line of envContent.split('\n')) {
+          assert.ok(!/^[A-Za-z_][A-Za-z0-9_]*=\s*#/.test(line), `unsourceable line in .env: ${line}`);
+        }
+        // The keys are emitted EMPTY (valid to source), not as a #-string.
+        assert.ok(/^DATABASE_URL=\s*$/m.test(envContent), 'DATABASE_URL should be empty, not a #-string');
+        assert.ok(!/DATABASE_URL=#/.test(envContent), 'DATABASE_URL must never be a "#..." value');
+
+        // The exact reported failure mode: the file must source cleanly under set -e.
+        execSync(`bash -c 'set -e; set -a; source "${envPath}"'`, { stdio: 'pipe' });
+      } finally {
+        fs.rmSync(tmp, { recursive: true });
+      }
+    });
+
+    it('writes a valid application-local.properties when not ready (Java)', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}`);
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, '.env'), '');
+      fs.writeFileSync(path.join(tmp, 'pom.xml'), '<project/>');
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: tmp } }];
+
+      try {
+        updateEnvConnection({ host: '', branchId: 'production', username: '', password: '' });
+        const propsContent = fs.readFileSync(path.join(tmp, 'application-local.properties'), 'utf-8');
+        // Empty value is a valid property; a "#..." value is the bug we fixed.
+        assert.ok(/^spring\.datasource\.url=\s*$/m.test(propsContent), 'datasource.url should be empty when not ready');
+        assert.ok(!/spring\.datasource\.url=#/.test(propsContent), 'datasource.url must never be a "#..." value');
       } finally {
         fs.rmSync(tmp, { recursive: true });
       }

@@ -254,13 +254,19 @@ export function updateEnvConnection(opts: {
   const envPath = path.join(root, '.env');
   const dbName = getProjectDatabase(parseEnvFile(envPath));
 
-  // Build both URL formats
+  // Build both URL formats. When the endpoint is not ready (no host) the value
+  // MUST stay an empty, source-able assignment ("KEY="), never a "#..." string.
+  // A "#..." on the right-hand side is NOT a comment to a shell that sources
+  // .env: bash parses `DATABASE_URL=#` as an assignment and then runs the next
+  // word as a command (e.g. `ENDPOINT_NOT_READY: command not found`), which
+  // aborts any `set -e; source .env` caller (shells, git hooks, tooling). The
+  // human breadcrumb lives in the `opts.comment` line above the block instead.
   const pgUrl = opts.host
     ? `postgresql://${encodeURIComponent(opts.username)}:${encodeURIComponent(opts.password)}@${opts.host}:5432/${dbName}?sslmode=require`
-    : '# ENDPOINT_NOT_READY – run Refresh Credentials';
+    : '';
   const jdbcUrl = opts.host
     ? `jdbc:postgresql://${opts.host}:5432/${dbName}?sslmode=require`
-    : '# ENDPOINT_NOT_READY – run Refresh Credentials';
+    : '';
 
   const keysToReplace = new Set([
     'LAKEBASE_HOST', 'LAKEBASE_BRANCH_ID',
