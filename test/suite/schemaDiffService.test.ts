@@ -96,6 +96,40 @@ describe('SchemaDiffService', () => {
     });
   });
 
+  describe('cache invalidation honors the detected migration pattern (Bug 5: not Flyway-only)', () => {
+    function makeNodeProject(): string {
+      // package.json + no pom.xml -> detectLanguage = nodejs -> migrationPath
+      // 'migrations', migrationPattern /^\d+.*\.(js|ts)$/i (knex timestamped files).
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"x"}');
+      const migDir = path.join(tmpDir, 'migrations');
+      fs.mkdirSync(migDir, { recursive: true });
+      return migDir;
+    }
+
+    it('detects a knex migration (returned 0 under the hardcoded Flyway glob)', () => {
+      const migDir = makeNodeProject();
+      fs.writeFileSync(path.join(migDir, '20260614230048_create_meal_types.js'), '// knex');
+      assert.ok((service as any).getLatestMigrationMtime() > 0, 'knex <ts>_*.js must count');
+    });
+
+    it('invalidates a cached "In Sync" when a newer knex migration is applied out-of-band', () => {
+      const migDir = makeNodeProject();
+      (service as any).cache.set('feature-x', {
+        result: { branchName: 'feature-x', created: [], modified: [], removed: [], inSync: true, timestamp: '', migrations: [] },
+        migrationMtime: 1000, // cached before the migration
+        createdAt: Date.now(),
+      });
+      fs.writeFileSync(path.join(migDir, '20260614230048_create_meal_types.js'), '// knex');
+      assert.strictEqual(service.getCachedDiff('feature-x'), undefined, 'newer knex migration must invalidate');
+    });
+
+    it('falls back to the newest file when no file matches the pattern (never silently 0)', () => {
+      const migDir = makeNodeProject();
+      fs.writeFileSync(path.join(migDir, 'V1__legacy.sql'), 'create table t;'); // unmatched by the node pattern
+      assert.ok((service as any).getLatestMigrationMtime() > 0, 'unmatched-but-present files still invalidate');
+    });
+  });
+
   describe('cache invalidation by max age', () => {
     it('invalidates entries older than CACHE_MAX_AGE_MS', () => {
       const maxAge = (SchemaDiffService as any).CACHE_MAX_AGE_MS;

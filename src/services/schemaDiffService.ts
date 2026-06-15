@@ -71,13 +71,32 @@ export class SchemaDiffService {
     const migrationDir = path.join(root, config.migrationPath);
     if (!fs.existsSync(migrationDir)) { return 0; }
 
+    // Invalidate against the project's ACTUAL migration filename pattern, not a
+    // hardcoded Flyway glob. config.migrationPattern is auto-detected per language
+    // (Flyway V*.sql, knex/Node <timestamp>_*.js|ts, Alembic versions/*.py, ...).
+    // The old `/^V\d+.*\.sql$/i` returned 0 for every non-Flyway project, so the
+    // "a migration appeared" cache fast-path never fired and the Schema Changes
+    // panel served a stale "In Sync" until the 10-minute age TTL.
     let latest = 0;
+    let matched = 0;
+    let newestAny = 0;
     for (const f of fs.readdirSync(migrationDir)) {
-      if (!/^V\d+.*\.sql$/i.test(f)) { continue; }
-      const mtime = fs.statSync(path.join(migrationDir, f)).mtimeMs;
-      if (mtime > latest) { latest = mtime; }
+      let mtime: number;
+      try {
+        const st = fs.statSync(path.join(migrationDir, f));
+        if (!st.isFile()) { continue; }
+        mtime = st.mtimeMs;
+      } catch { continue; }
+      if (mtime > newestAny) { newestAny = mtime; }
+      if (config.migrationPattern.test(f)) {
+        matched++;
+        if (mtime > latest) { latest = mtime; }
+      }
     }
-    return latest;
+    // If the detected pattern matched nothing but the directory has files, fall
+    // back to the newest file's mtime rather than silently reporting "no migration
+    // ever changed" (which would pin the cache to the TTL for an unrecognized layout).
+    return matched > 0 ? latest : newestAny;
   }
 
   getCachedDiff(branchId?: string): SchemaDiffResult | undefined {
