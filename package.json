@@ -2,7 +2,7 @@
   "name": "lakebase-scm-extension",
   "displayName": "Lakebase SCM Extension",
   "description": "Unified visibility into code and database branch changes for Databricks Lakebase",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "publisher": "kevin-hartman",
   "icon": "resources/icons/extension-icon.png",
   "repository": {
@@ -23,6 +23,16 @@
     "onCommand:lakebaseSync.createLakebaseProject",
     "onCommand:lakebaseSync.connectWorkspace",
     "onCommand:lakebaseSync.setupCiSecrets",
+    "onCommand:lakebaseSync.showTableDiff",
+    "onCommand:lakebaseSync.showBranchStatus",
+    "onCommand:lakebaseSync.publishBranch",
+    "onCommand:lakebaseSync.switchBranchPicker",
+    "onCommand:lakebaseSync.commit",
+    "onCommand:lakebaseSync.sync",
+    "onCommand:lakebaseSync.openInConsole",
+    "onCommand:lakebaseSync.startRunner",
+    "onCommand:lakebaseSync.stopRunner",
+    "onCommand:lakebaseSync.removeRunner",
     "workspaceContains:.env",
     "workspaceContains:.env.example"
   ],
@@ -1543,7 +1553,7 @@
         "lakebaseSync.baseBranch": {
           "type": "string",
           "default": "",
-          "description": "Lakebase branch id that new feature branches ALWAYS fork from. When empty (default), new branches fork from whichever Lakebase branch you were just on — git-like semantics. Set this to pin a fixed fork source (e.g. `staging` for a 3-tier promotion flow). Overrides LAKEBASE_BASE_BRANCH from .env if both are set."
+          "description": "Lakebase branch id that new feature branches ALWAYS fork from. When empty (default), new branches fork from whichever Lakebase branch you were just on – git-like semantics. Set this to pin a fixed fork source (e.g. `staging` for a 3-tier promotion flow). Overrides LAKEBASE_BASE_BRANCH from .env if both are set."
         },
         "lakebaseSync.gitBranchPrefix": {
           "type": "string",

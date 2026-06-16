@@ -1178,10 +1178,33 @@ export async function activate(context: vscode.ExtensionContext) {
     const envWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(wsRoot, '.env'),
     );
-    envWatcher.onDidCreate(() => runnerTreeProvider.refresh());
-    envWatcher.onDidChange(() => runnerTreeProvider.refresh());
+    // A .env create/change means the active Lakebase branch / connection moved
+    // (e.g. a branch switch resynced credentials), so the cached schema diff is
+    // stale. Beyond refreshing the runner pane, drop the diff cache and re-query
+    // the schema tree. This is a FILE trigger (discrete event), not a focus poll,
+    // so it cannot perpetually refresh.
+    //
+    // Deliberately NOT schemaScmProvider.refresh(): its onDidRefresh listener
+    // fans out into extra refreshes (including a 2s-delayed one), which is what
+    // kept the tree perpetually busy. branchTreeProvider.refresh() re-queries
+    // live on its own. The refresh path is read-only w.r.t. .env, so this cannot
+    // feed back into the watcher; the debounce just coalesces the create+change
+    // burst editors emit for a single write into one refresh.
+    let envSchemaRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const onEnvChangedRefreshSchema = () => {
+      runnerTreeProvider.refresh();
+      if (envSchemaRefreshTimer) { clearTimeout(envSchemaRefreshTimer); }
+      envSchemaRefreshTimer = setTimeout(() => {
+        schemaDiffService.clearCache();
+        branchTreeProvider.refresh();
+      }, 500);
+    };
+    envWatcher.onDidCreate(onEnvChangedRefreshSchema);
+    envWatcher.onDidChange(onEnvChangedRefreshSchema);
     envWatcher.onDidDelete(() => runnerTreeProvider.refresh());
-    context.subscriptions.push(envWatcher);
+    context.subscriptions.push(envWatcher, {
+      dispose: () => { if (envSchemaRefreshTimer) { clearTimeout(envSchemaRefreshTimer); } },
+    });
   }
   const mergesView = vscode.window.createTreeView('lakebaseMerges', {
     treeDataProvider: mergesTreeProvider,

@@ -37,6 +37,18 @@ function packageCommands(): Set<string> {
   return new Set(cmds.map((c) => c.command));
 }
 
+function onCommandActivationEvents(): Set<string> {
+  const pkg = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf-8"),
+  );
+  const events: string[] = pkg?.activationEvents ?? [];
+  return new Set(
+    events
+      .filter((e) => e.startsWith("onCommand:"))
+      .map((e) => e.slice("onCommand:".length)),
+  );
+}
+
 function makeBranch(id: string, isDefault = false): LakebaseBranch {
   return {
     uid: `br-${id}`,
@@ -135,6 +147,30 @@ describe("BranchTreeProvider command registration", () => {
     );
   });
 
+  it("every tree-item command has an onCommand activation event (no pre-activation 'command not found')", async () => {
+    // Declaring a command in contributes.commands is not enough. When VS Code
+    // restores a tree view's persisted rows after a reload, a click can land
+    // BEFORE onStartupFinished/onView activates the extension. Without an
+    // onCommand:<id> activation event VS Code reports "command not found"
+    // instead of activating-then-dispatching. Every command a tree row can
+    // fire must therefore have an onCommand activation event.
+    const referenced = await collectCommands(provider);
+    const onCommand = onCommandActivationEvents();
+
+    const uncovered = referenced.filter(
+      (cmd) => !onCommand.has(cmd) && !BUILTIN_COMMANDS.has(cmd),
+    );
+
+    assert.deepStrictEqual(
+      uncovered,
+      [],
+      `Tree items reference commands with no onCommand activation event in ` +
+        `package.json#activationEvents. A click on a restored tree row before ` +
+        `activation will fail with "command not found". Add "onCommand:<id>" ` +
+        `for: ${uncovered.join(", ")}`,
+    );
+  });
+
   it("table-row commands dispatch to the side-by-side webview for new/modified/removed", async () => {
     const referenced = new Set(await collectCommands(provider));
     // Tables with diffs render through the per-table webview
@@ -143,7 +179,7 @@ describe("BranchTreeProvider command registration", () => {
     // side-by-side row rendering – regress against that.
     assert.ok(
       referenced.has("lakebaseSync.showTableDiff"),
-      "Expected lakebaseSync.showTableDiff in tree commands — " +
+      "Expected lakebaseSync.showTableDiff in tree commands – " +
         "table rows under a non-default branch should dispatch the webview. " +
         `Got: ${[...referenced].sort().join(", ")}`,
     );

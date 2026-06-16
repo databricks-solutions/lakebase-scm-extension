@@ -167,4 +167,48 @@ describe('BranchTreeProvider', () => {
       assert.doesNotThrow(() => provider.dispose());
     });
   });
+
+  describe('table change indicators when the parent cannot be resolved', () => {
+    // Regression: a failure to resolve the parent (get-default-branch miss /
+    // throw) left prodSchema undefined, and the classifier defaulted every
+    // table to 'unchanged' (white symbol-class icon), so a freshly-migrated
+    // table looked in-sync. The fix renders an honest indeterminate icon and
+    // never a misleading 'unchanged' white when the parent is unknown.
+    function tableListItem(branch: LakebaseBranch): BranchItem {
+      const item = new BranchItem(undefined, branch, 'tableList', 'Tables');
+      item.branchName = branch.branchId;
+      return item;
+    }
+
+    it('renders an indeterminate icon (not unchanged-white) when the parent is unresolvable', async () => {
+      const feature = makeBranch('feature-x'); // non-default, no sourceBranchId
+      lakebaseStub.queryBranchSchemaWithError.resolves({
+        tables: [{ name: 'orders', columns: [{ name: 'id', dataType: 'int' }, { name: 'note', dataType: 'text' }] }],
+      });
+      lakebaseStub.getDefaultBranch.resolves(undefined); // parent never resolves
+
+      const rows = await provider.getChildren(tableListItem(feature));
+      const orders = rows.find(r => r.label === 'orders');
+      assert.ok(orders, 'orders table row should be present');
+      const iconId = (orders!.iconPath as vscode.ThemeIcon).id;
+      assert.strictEqual(iconId, 'question', `expected indeterminate 'question' icon, got '${iconId}'`);
+      assert.notStrictEqual(iconId, 'symbol-class', 'must not paint a table unchanged-white when the parent is unknown');
+    });
+
+    it('classifies a table modified when the parent resolves and lacks the new column', async () => {
+      const feature = makeBranch('feature-x');
+      lakebaseStub.queryBranchSchemaWithError.resolves({
+        tables: [{ name: 'orders', columns: [{ name: 'id', dataType: 'int' }, { name: 'note', dataType: 'text' }] }],
+      });
+      lakebaseStub.getDefaultBranch.resolves(makeBranch('main', true));
+      lakebaseStub.queryBranchSchema.resolves([
+        { name: 'orders', columns: [{ name: 'id', dataType: 'int' }] }, // parent lacks 'note'
+      ]);
+
+      const rows = await provider.getChildren(tableListItem(feature));
+      const orders = rows.find(r => r.label === 'orders');
+      assert.ok(orders, 'orders table row should be present');
+      assert.strictEqual((orders!.iconPath as vscode.ThemeIcon).id, 'diff-modified');
+    });
+  });
 });

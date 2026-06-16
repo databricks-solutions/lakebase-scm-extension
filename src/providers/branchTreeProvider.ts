@@ -206,7 +206,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     // current branch is a long-running tier), then a dedicated "Tiers"
     // collapsible section for staging/uat/perf/etc., then "Other Branches"
     // for everything else (non-tier git branches). Section labels are
-    // load-bearing — getSectionChildren dispatches by label string.
+    // load-bearing – getSectionChildren dispatches by label string.
     const currentBranchName = await this.gitService.getCurrentBranch().catch(() => undefined);
     const currentIsTier = !!currentBranchName && isLongRunningTier(currentBranchName);
 
@@ -512,7 +512,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     // Query actual tables + columns from the Lakebase branch database, diff against production
     if (lakebaseBranch) {
       // Use the error-aware variant so failures surface in the UI instead
-      // of silently returning an empty table list — "no tables" used to
+      // of silently returning an empty table list – "no tables" used to
       // mean either "genuinely empty" or "query exploded" and the user
       // couldn't tell the difference. The diagnostic row below shows the
       // actual error message so they can act on it.
@@ -554,8 +554,17 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       // comparison (matches Branch Diff Summary semantics – for a feature
       // forked from staging, compare against staging, not production).
       // Falls back to the default branch when source can't be resolved.
+      // When the parent CANNOT be resolved (a transient list-branches /
+      // get-default-branch miss, or the parent query throws) prodSchema stays
+      // undefined. The classifier below defaults every table to 'unchanged'
+      // and only changes it INSIDE `if (prodSchema !== undefined ...)`, so an
+      // unresolved parent silently painted every table the white 'unchanged'
+      // icon – indistinguishable from "genuinely in sync", which made a
+      // freshly-migrated table look unchanged. Track that explicitly and render
+      // an honest indeterminate icon instead of a misleading white.
       let prodSchema: Map<string, string[]> | undefined; // tableName → sorted column signatures
       let comparisonName = '';
+      let comparisonUnavailable = false;
       if (!lakebaseBranch.isDefault) {
         try {
           let target: LakebaseBranch | undefined;
@@ -573,8 +582,11 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
               if (isMigrationMetadataTable(t.name)) { continue; }
               prodSchema.set(t.name, t.columns.map(c => `${c.name}:${c.dataType}`).sort());
             }
+          } else {
+            // Couldn't resolve a parent branch to compare against.
+            comparisonUnavailable = true;
           }
-        } catch { /* can't reach parent – skip diff */ }
+        } catch { /* can't reach parent */ comparisonUnavailable = true; }
       }
 
       type TableStatus = 'new' | 'modified' | 'unchanged';
@@ -607,6 +619,12 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
         } else if (status === 'modified') {
           item.iconPath = new vscode.ThemeIcon('diff-modified', new vscode.ThemeColor('charts.yellow'));
           item.description = `modified · ${colCount} columns`;
+        } else if (comparisonUnavailable) {
+          // Parent unresolved: the change state is UNKNOWN, not 'unchanged'.
+          // Render a neutral indeterminate icon so a freshly-migrated table is
+          // never silently painted as in-sync white.
+          item.iconPath = new vscode.ThemeIcon('question', new vscode.ThemeColor('descriptionForeground'));
+          item.description = colCount > 0 ? `${colCount} columns · comparison unavailable` : 'comparison unavailable';
         } else {
           // unchanged – always shown on production; on feature branches included below if no diffs
           item.iconPath = new vscode.ThemeIcon('symbol-class', new vscode.ThemeColor('foreground'));
@@ -618,6 +636,12 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
           `**${table.name}**${status !== 'unchanged' ? ` (${status})` : ''}\n\n` +
           (colList ? `\`\`\`\n${colList}\n\`\`\`` : 'No columns')
         );
+        // Content-derived id: when the columns/status change, the id changes,
+        // so a refresh rebuilds the WHOLE node rather than reusing the old one
+        // and updating only the icon. Without this the "N columns" count and
+        // the hover tooltip kept showing the pre-migration schema after the
+        // icon recolored.
+        item.id = `tbl:${lakebaseBranch.branchId}:${table.name}:${status}:${colCount}:${colList.replace(/\n/g, ',')}`;
         item.command = this.makeTableCommand(table.name, status === 'new' ? 'new' : status === 'modified' ? 'modified' : 'unchanged', lakebaseBranch.branchId);
         return item;
       });
@@ -631,6 +655,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
             const item = new BranchItem(undefined, undefined, 'detail', name);
             item.iconPath = new vscode.ThemeIcon('diff-removed', new vscode.ThemeColor('charts.red'));
             item.description = 'removed';
+            item.id = `tbl:${lakebaseBranch.branchId}:${name}:removed`;
             item.command = this.makeTableCommand(name, 'removed', lakebaseBranch.branchId);
             removedItems.push(item);
           }
