@@ -41,6 +41,41 @@ import { setKnownTierNames, isMainBranch } from "../utils/theme";
 import { projectProtectedTierNames } from "../utils/tiers";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
 import { isAuthStorageCacheError } from "../utils/databricksAuth";
+import { SubstrateWorkerClient } from "./substrateWorkerClient";
+
+// Kit substrate functions the worker dispatches by name. The kit resolves
+// endpoints/credentials/branches via SYNCHRONOUS databricks CLI calls; running
+// them on the host's main thread freezes the UI during a refresh. callSubstrate
+// (below) runs these in a worker thread in production. Under test the kit is an
+// in-process mock, so the same names dispatch in-process (see callSubstrate).
+// Entries call the imported binding LAZILY (inside the arrow) so the in-process
+// (test) dispatch reads the live export each call. Capturing the function value
+// here (e.g. `getEndpoint: substrateGetEndpoint`) would snapshot the real kit
+// fn at module load, before stubSubstrate installs its override, and the test
+// would hit the real `databricks` CLI.
+const WORKER_SUBSTRATE_FNS: Record<string, (...args: any[]) => Promise<any>> = {
+  listBranches: (...a: any[]) => (substrateListBranches as any)(...a),
+  getDefaultBranch: (...a: any[]) => (substrateGetDefaultBranch as any)(...a),
+  getBranchByName: (...a: any[]) => (substrateGetBranchByName as any)(...a),
+  getEndpoint: (...a: any[]) => (substrateGetEndpoint as any)(...a),
+  getCredential: (...a: any[]) => (substrateGetCredential as any)(...a),
+  queryBranchSchema: (...a: any[]) => (substrateQueryBranchSchema as any)(...a),
+  queryBranchTables: (...a: any[]) => (substrateQueryBranchTables as any)(...a),
+};
+
+// In tests the kit is replaced by an in-process mock (test/mocks/substrate.js,
+// which exposes __overrides). Detect it so callSubstrate dispatches in-process
+// (hitting stubSubstrate overrides) instead of spawning a worker that would
+// require the real kit and fail in the test runner.
+function isSubstrateMockLoaded(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("@databricks-solutions/lakebase-app-dev-kit");
+    return !!mod && typeof mod.__overrides === "object";
+  } catch {
+    return false;
+  }
+}
 
 export interface LakebaseBranch {
   /** Internal API uid (e.g. br-red-thunder-d24muck6) */
@@ -291,6 +326,34 @@ export class LakebaseService {
     // so CLI auth uses the right profile instead of a broken DEFAULT.
     const profile = (await this.resolveProfileForHost(host)) ?? undefined;
     return withDatabricksHostEnv(host, fn, profile ? { profile } : {});
+  }
+
+  /** Lazily-spawned worker that runs kit substrate calls off the main thread. */
+  private readonly substrateWorker = new SubstrateWorkerClient();
+
+  /**
+   * Run a kit substrate function (by name) OFF the extension host's main
+   * thread, with the effective host/profile applied. The kit spawns the
+   * `databricks` CLI synchronously (execFileSync); on the main thread that
+   * freezes the UI during a tree refresh (a click mid-refresh then fails with
+   * "command not found"). Routing through the worker keeps the host responsive.
+   *
+   * Under test the kit is an in-process mock (test/mocks/substrate.js), so we
+   * dispatch in-process to hit stubSubstrate overrides instead of spawning a
+   * worker that would require the real kit. Same call shape either way.
+   */
+  private async callSubstrate<T>(fn: string, ...args: unknown[]): Promise<T> {
+    const host = this.getEffectiveHost();
+    const profile = host ? ((await this.resolveProfileForHost(host)) ?? undefined) : undefined;
+    if (isSubstrateMockLoaded()) {
+      return (WORKER_SUBSTRATE_FNS[fn] as (...a: unknown[]) => Promise<T>)(...args);
+    }
+    const env: Record<string, string | undefined> = {};
+    if (host) {
+      env.DATABRICKS_HOST = host;
+      env.DATABRICKS_CONFIG_PROFILE = profile; // undefined => worker clears it
+    }
+    return this.substrateWorker.call<T>(fn, args, env);
   }
 
   /**
@@ -544,9 +607,9 @@ export class LakebaseService {
   // ── Substrate-routed: branch CRUD ──────────────────────────────
 
   async listBranches(): Promise<LakebaseBranch[]> {
-    const branches = await this.withHost(() =>
-      substrateListBranches({ instance: this.requireProjectInstance() })
-    );
+    const branches = await this.callSubstrate<any[]>("listBranches", {
+      instance: this.requireProjectInstance(),
+    });
     // Refresh the theme.ts tier cache from the kit's name-AND-long-running
     // filter. The protected name set = the kit default UNION this project's
     // overrides (configured trunk/staging/base + lakebaseSync.tierNames),
@@ -558,9 +621,9 @@ export class LakebaseService {
   }
 
   async getDefaultBranch(): Promise<LakebaseBranch | undefined> {
-    const b = await this.withHost(() =>
-      substrateGetDefaultBranch({ instance: this.requireProjectInstance() })
-    );
+    const b = await this.callSubstrate<any>("getDefaultBranch", {
+      instance: this.requireProjectInstance(),
+    });
     return b ? adaptBranchInfo(b) : undefined;
   }
 
@@ -599,9 +662,9 @@ export class LakebaseService {
     // sanitized names, hardcoded values like 'staging', and UIDs (which
     // are already in [a-z0-9-]+), so this is safe across all call sites.
     const lookup = substrateSanitizeBranchName(name);
-    const b = await this.withHost(() =>
-      substrateGetBranchByName(lookup, { instance: this.requireProjectInstance() })
-    );
+    const b = await this.callSubstrate<any>("getBranchByName", lookup, {
+      instance: this.requireProjectInstance(),
+    });
     return b ? adaptBranchInfo(b) : undefined;
   }
 
@@ -706,11 +769,17 @@ export class LakebaseService {
   // ── Substrate-routed: endpoint + credential + schema ───────────
 
   async getEndpoint(branchNameOrUid: string): Promise<{ host: string; state: string } | undefined> {
-    return this.branchCall(branchNameOrUid, (a) => substrateGetEndpoint(a));
+    return this.callSubstrate("getEndpoint", {
+      instance: this.requireProjectInstance(),
+      branch: substrateSanitizeBranchName(branchNameOrUid),
+    });
   }
 
   async getCredential(branchNameOrUid: string): Promise<LakebaseCredential> {
-    return this.branchCall(branchNameOrUid, (a) => substrateGetCredential(a));
+    return this.callSubstrate("getCredential", {
+      instance: this.requireProjectInstance(),
+      branch: substrateSanitizeBranchName(branchNameOrUid),
+    });
   }
 
   async enrichWithEndpoints(branches: LakebaseBranch[]): Promise<LakebaseBranch[]> {
@@ -796,15 +865,20 @@ export class LakebaseService {
    * Same query as `queryBranchSchema` but surfaces failures so callers can
    * render a visible diagnostic instead of a silent empty list. Used by
    * the branch tree to differentiate "branch genuinely has no tables" from
-   * "schema query failed" — the silent-catch variant below masks the
+   * "schema query failed" – the silent-catch variant below masks the
    * second case.
    */
   async queryBranchSchemaWithError(
     branchNameOrUid: string,
   ): Promise<{ tables: Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>; error?: string }> {
     try {
-      const tables = await this.branchCall(branchNameOrUid, (a) =>
-        substrateQueryBranchSchema({ ...a, database: getProjectDatabase() }),
+      const tables = await this.callSubstrate<Array<{ name: string; columns: Array<{ name: string; dataType: string }> }>>(
+        "queryBranchSchema",
+        {
+          instance: this.requireProjectInstance(),
+          branch: substrateSanitizeBranchName(branchNameOrUid),
+          database: getProjectDatabase(),
+        },
       );
       return { tables };
     } catch (err: any) {
