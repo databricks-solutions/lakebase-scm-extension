@@ -1036,70 +1036,13 @@ export async function activate(context: vscode.ExtensionContext) {
   schemaDiffService = new SchemaDiffService(lakebaseService);
   schemaDiffProvider = new SchemaDiffProvider(schemaDiffService, gitService, migrationService);
 
-  // Register the table-diff command HERE, before the awaits below and before
-  // the tree views are created (createTreeView), so a click on a table row can
-  // never hit "command 'lakebaseSync.showTableDiff' not found" during the
-  // activation window. The auth check + git init below are async (the auth
-  // path can even surface a blocking dialog), and the schema/branch views
-  // become visible+clickable while they run; registering this command late
-  // (it used to sit ~1600 lines down with the rest) left a race where an
-  // early click failed until activation finished. All deps it needs
-  // (schemaDiffProvider, lakebaseService, handleAuthError) exist at this point.
-  // [DIAG] File sink (~/.lakebase-diag.log): extension console.log is NOT captured
-  // to Cursor's exthost log, so we write diagnostics to a file we can read.
-  // Investigating "command not found" on an IDLE host long after a successful
-  // activation. pid is logged to catch a multi-host scenario.
-  const diagFile = path.join(os.homedir(), '.lakebase-diag.log');
-  const diagLog = (m: string): void => {
-    try { fs.appendFileSync(diagFile, `${new Date().toISOString()} [pid ${process.pid}] ${m}\n`); } catch { /* best effort */ }
-  };
-  diagLog('activate: about to register showTableDiff');
-  context.subscriptions.push(
-    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
-      // [DIAG] Proves a click actually dispatched to OUR handler. If a click
-      // reports "command not found" but this never logs, the command was not in
-      // the registry / not routed to us at that moment.
-      diagLog(`showTableDiff INVOKED table=${String(tableName)} type=${String(diffType)} branch=${String(branchName)}`);
-      if (!tableName || !diffType) {
-        return;
-      }
-      try {
-        // Pass branchName so the diff is computed for the tree row's branch
-        // rather than whichever branch happens to be active in .env; falls
-        // through to .env's LAKEBASE_BRANCH_ID when undefined.
-        await schemaDiffProvider.showTableDiff(
-          tableName,
-          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
-          undefined,
-          branchName,
-        );
-      } catch (err: any) {
-        if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
-        }
-      }
-    }),
-  );
-  // [DIAG] Confirm the registration ran, then probe the global command registry
-  // over time. At the moment a click fails we can tell whether showTableDiff is
-  // still registered (-> something disposed it) or present-but-not-dispatched.
-  diagLog('activate: showTableDiff registerCommand returned');
-  // getCommands(true) returns DECLARED commands (contributes.commands), so it is
-  // always present and tells us nothing about the runtime HANDLER. Instead probe
-  // handler liveness by actually executing it with no args (the handler returns
-  // early on !tableName). If it throws "command not found", the handler is gone.
-  const diagProbe = (label: string): void => {
-    void Promise.resolve(vscode.commands.executeCommand('lakebaseSync.showTableDiff')).then(
-      () => diagLog(`probe ${label}: handler LIVE`),
-      (e: any) => diagLog(`probe ${label}: handler MISSING (${e?.message || e})`),
-    );
-  };
-  // Continuous probe so we always have a present= reading within 5s of any
-  // failing click (the timed probes could miss the exact moment).
-  const diagStart = Date.now();
-  diagProbe('t+0s');
-  const diagInterval = setInterval(() => diagProbe(`t+${Math.round((Date.now() - diagStart) / 1000)}s`), 5000);
-  context.subscriptions.push({ dispose: () => clearInterval(diagInterval) });
+  // NOTE: lakebaseSync.showTableDiff is registered LATER, with the rest of the
+  // commands (see the table-diff command block below). It used to be registered
+  // HERE in the activation prologue to dodge an early-click race, but that early
+  // slot is the only structural difference from every other (working) command,
+  // and a registered-and-executable handler was still failing to dispatch from a
+  // tree/SCM click. The onCommand:lakebaseSync.showTableDiff activation event now
+  // covers the pre-activation race, so register it the same way as the others.
 
   await gitService.initialize();
 
@@ -2750,10 +2693,28 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('vscode.diff', prodUri, branchUri, labels[changeType]);
     }),
 
-    // NOTE: lakebaseSync.showTableDiff is registered EARLY (right after
-    // schemaDiffProvider is constructed, above) to avoid an activation race
-    // where a table-row click fired before this block ran. Do not re-add it
-    // here.
+    // Table-diff command. Registered here with the other commands (it used to
+    // be registered early in the activation prologue, the only command that was;
+    // the onCommand:lakebaseSync.showTableDiff activation event now covers a
+    // pre-activation click). Opens the per-table side-by-side schema diff webview.
+    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
+      if (!tableName || !diffType) { return; }
+      try {
+        // Pass branchName so the diff is computed for the tree row's branch
+        // rather than whichever branch is active in .env (falls through to
+        // .env's LAKEBASE_BRANCH_ID when undefined).
+        await schemaDiffProvider.showTableDiff(
+          tableName,
+          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
+          undefined,
+          branchName,
+        );
+      } catch (err: any) {
+        if (!await handleAuthError(lakebaseService, err)) {
+          vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
+        }
+      }
+    }),
 
     vscode.commands.registerCommand('lakebaseSync.moreActions', async () => {
       interface ActionItem extends vscode.QuickPickItem { command: string }
