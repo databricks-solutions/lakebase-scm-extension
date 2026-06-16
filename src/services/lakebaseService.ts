@@ -31,6 +31,7 @@ import {
   getCredential as substrateGetCredential,
   queryBranchSchema as substrateQueryBranchSchema,
   queryBranchTables as substrateQueryBranchTables,
+  getSchemaDiff as substrateGetSchemaDiff,
   sanitizeBranchName as substrateSanitizeBranchName,
   createLongRunningBranch as substrateCreateLongRunningBranch,
   tierBranchNames as substrateTierBranchNames,
@@ -61,6 +62,8 @@ const WORKER_SUBSTRATE_FNS: Record<string, (...args: any[]) => Promise<any>> = {
   getCredential: (...a: any[]) => (substrateGetCredential as any)(...a),
   queryBranchSchema: (...a: any[]) => (substrateQueryBranchSchema as any)(...a),
   queryBranchTables: (...a: any[]) => (substrateQueryBranchTables as any)(...a),
+  getSchemaDiff: (...a: any[]) => (substrateGetSchemaDiff as any)(...a),
+  getProjectInfo: (...a: any[]) => (substrateGetProjectInfo as any)(...a),
 };
 
 // In tests the kit is replaced by an in-process mock (test/mocks/substrate.js,
@@ -782,6 +785,21 @@ export class LakebaseService {
     });
   }
 
+  /**
+   * Schema diff (branch vs comparison) via the kit's getSchemaDiff, routed
+   * through the worker so its synchronous endpoint/credential CLI resolution
+   * doesn't freeze the host. Used by SchemaDiffService (SCM view + per-table
+   * panel), which previously ran getSchemaDiff in-process.
+   */
+  async getSchemaDiff(args: {
+    instance: string;
+    branch: string;
+    database?: string;
+    comparisonBranch?: string;
+  }): Promise<any> {
+    return this.callSubstrate("getSchemaDiff", args);
+  }
+
   async enrichWithEndpoints(branches: LakebaseBranch[]): Promise<LakebaseBranch[]> {
     return Promise.all(
       branches.map(async (b) => {
@@ -852,9 +870,11 @@ export class LakebaseService {
 
   async queryBranchTables(branchNameOrUid: string): Promise<string[]> {
     try {
-      return await this.branchCall(branchNameOrUid, (a) =>
-        substrateQueryBranchTables({ ...a, database: getProjectDatabase() }),
-      );
+      return await this.callSubstrate<string[]>("queryBranchTables", {
+        instance: this.requireProjectInstance(),
+        branch: substrateSanitizeBranchName(branchNameOrUid),
+        database: getProjectDatabase(),
+      });
     } catch (err: any) {
       console.error(`[lakebase-scm] queryBranchTables failed: ${err?.message || err}`);
       return [];
@@ -909,15 +929,17 @@ export class LakebaseService {
   }
 
   async getProjectDisplayName(): Promise<string | undefined> {
-    const info = await this.withHost(() =>
-      substrateGetProjectInfo({ projectId: this.requireProjectInstance(), host: this.hostOverride })
+    const info = await this.callSubstrate<{ displayName?: string } | undefined>(
+      "getProjectInfo",
+      { projectId: this.requireProjectInstance(), host: this.hostOverride },
     );
     return info?.displayName;
   }
 
   async getProjectUid(): Promise<string | undefined> {
-    const info = await this.withHost(() =>
-      substrateGetProjectInfo({ projectId: this.requireProjectInstance(), host: this.hostOverride })
+    const info = await this.callSubstrate<{ uid?: string } | undefined>(
+      "getProjectInfo",
+      { projectId: this.requireProjectInstance(), host: this.hostOverride },
     );
     return info?.uid;
   }

@@ -14,8 +14,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { getWorkspaceRoot, getEnvConfig, getConfig, getProjectDatabase } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
-import { getSchemaDiff as substrateGetSchemaDiff } from "@databricks-solutions/lakebase-app-dev-kit";
-import { withDatabricksHostEnv } from "../utils/databricksEnv";
 import { projectProtectedTierNames } from "../utils/tiers";
 import { normalizeTierName } from "@databricks-solutions/lakebase-app-dev-kit";
 
@@ -255,23 +253,22 @@ export class SchemaDiffService {
       if (cached) { return cached; }
     }
 
-    // Run the substrate diff with DATABRICKS_HOST *and the resolved
-    // DATABRICKS_CONFIG_PROFILE* set, via the profile-attaching wrapper.
-    // A host-only wrapper would race concurrent host+profile calls on the
-    // shared process.env and strip the profile (see withEffectiveHost note
-    // in schemaMigrationService); routing through withHostEnv avoids that.
+    // Route the substrate diff through LakebaseService.getSchemaDiff, which
+    // runs the kit call in a WORKER thread. The kit resolves the endpoint /
+    // credential via synchronous databricks CLI calls; in-process they froze
+    // the host event loop during an SCM-view refresh (a click mid-refresh then
+    // failed with "command not found"). The worker applies host + profile env
+    // per call, so the old withHostEnv wrapper is no longer needed here.
     let result: SchemaDiffResult;
     try {
-      result = await this.lakebaseService.withHostEnv(async () => {
-        const comparisonBranch = await this.resolveComparisonBranch(branchId);
-        const sub = await substrateGetSchemaDiff({
-          instance: this.projectInstance(),
-          branch: branchId,
-          database: getProjectDatabase(),
-          ...(comparisonBranch ? { comparisonBranch } : {}),
-        });
-        return { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
+      const comparisonBranch = await this.resolveComparisonBranch(branchId);
+      const sub = await this.lakebaseService.getSchemaDiff({
+        instance: this.projectInstance(),
+        branch: branchId,
+        database: getProjectDatabase(),
+        ...(comparisonBranch ? { comparisonBranch } : {}),
       });
+      result = { ...sub, timestamp: sub.timestamp || new Date().toISOString() };
     } catch (err: any) {
       result = this.emptyResult(`Schema diff failed: ${err?.message || err}`);
     }
