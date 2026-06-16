@@ -1084,10 +1084,15 @@ export async function activate(context: vscode.ExtensionContext) {
   // over time. At the moment a click fails we can tell whether showTableDiff is
   // still registered (-> something disposed it) or present-but-not-dispatched.
   diagLog('activate: showTableDiff registerCommand returned');
+  // getCommands(true) returns DECLARED commands (contributes.commands), so it is
+  // always present and tells us nothing about the runtime HANDLER. Instead probe
+  // handler liveness by actually executing it with no args (the handler returns
+  // early on !tableName). If it throws "command not found", the handler is gone.
   const diagProbe = (label: string): void => {
-    void vscode.commands.getCommands(true).then((cmds) => {
-      diagLog(`registry probe ${label}: showTableDiff present=${cmds.includes('lakebaseSync.showTableDiff')}`);
-    }, () => { /* ignore */ });
+    void Promise.resolve(vscode.commands.executeCommand('lakebaseSync.showTableDiff')).then(
+      () => diagLog(`probe ${label}: handler LIVE`),
+      (e: any) => diagLog(`probe ${label}: handler MISSING (${e?.message || e})`),
+    );
   };
   // Continuous probe so we always have a present= reading within 5s of any
   // failing click (the timed probes could miss the exact moment).
