@@ -1045,12 +1045,21 @@ export async function activate(context: vscode.ExtensionContext) {
   // (it used to sit ~1600 lines down with the rest) left a race where an
   // early click failed until activation finished. All deps it needs
   // (schemaDiffProvider, lakebaseService, handleAuthError) exist at this point.
+  // [DIAG] File sink (~/.lakebase-diag.log): extension console.log is NOT captured
+  // to Cursor's exthost log, so we write diagnostics to a file we can read.
+  // Investigating "command not found" on an IDLE host long after a successful
+  // activation. pid is logged to catch a multi-host scenario.
+  const diagFile = path.join(os.homedir(), '.lakebase-diag.log');
+  const diagLog = (m: string): void => {
+    try { fs.appendFileSync(diagFile, `${new Date().toISOString()} [pid ${process.pid}] ${m}\n`); } catch { /* best effort */ }
+  };
+  diagLog('activate: about to register showTableDiff');
   context.subscriptions.push(
     vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
       // [DIAG] Proves a click actually dispatched to OUR handler. If a click
-      // reports "command not found" but this line never logs, the command was
-      // not in the registry / not routed to us at that moment.
-      console.log(`[lakebase-diag] showTableDiff INVOKED table=${String(tableName)} type=${String(diffType)} branch=${String(branchName)}`);
+      // reports "command not found" but this never logs, the command was not in
+      // the registry / not routed to us at that moment.
+      diagLog(`showTableDiff INVOKED table=${String(tableName)} type=${String(diffType)} branch=${String(branchName)}`);
       if (!tableName || !diffType) {
         return;
       }
@@ -1071,15 +1080,13 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
-  // [DIAG] Investigating "command not found" on an idle host long after a
-  // successful activation. Confirm the registration ran, then probe the global
-  // command registry over time so we can tell, at the moment a click fails,
-  // whether showTableDiff is still registered (-> something disposed it) or is
-  // present but the click never reached our handler (-> dispatch/host issue).
-  console.log('[lakebase-diag] showTableDiff registerCommand returned at activation');
+  // [DIAG] Confirm the registration ran, then probe the global command registry
+  // over time. At the moment a click fails we can tell whether showTableDiff is
+  // still registered (-> something disposed it) or present-but-not-dispatched.
+  diagLog('activate: showTableDiff registerCommand returned');
   const diagProbe = (label: string): void => {
     void vscode.commands.getCommands(true).then((cmds) => {
-      console.log(`[lakebase-diag] registry probe ${label}: showTableDiff present=${cmds.includes('lakebaseSync.showTableDiff')}`);
+      diagLog(`registry probe ${label}: showTableDiff present=${cmds.includes('lakebaseSync.showTableDiff')}`);
     }, () => { /* ignore */ });
   };
   diagProbe('t+0s');
