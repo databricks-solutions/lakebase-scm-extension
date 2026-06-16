@@ -1047,6 +1047,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // (schemaDiffProvider, lakebaseService, handleAuthError) exist at this point.
   context.subscriptions.push(
     vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
+      // [DIAG] Proves a click actually dispatched to OUR handler. If a click
+      // reports "command not found" but this line never logs, the command was
+      // not in the registry / not routed to us at that moment.
+      console.log(`[lakebase-diag] showTableDiff INVOKED table=${String(tableName)} type=${String(diffType)} branch=${String(branchName)}`);
       if (!tableName || !diffType) {
         return;
       }
@@ -1067,6 +1071,21 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
+  // [DIAG] Investigating "command not found" on an idle host long after a
+  // successful activation. Confirm the registration ran, then probe the global
+  // command registry over time so we can tell, at the moment a click fails,
+  // whether showTableDiff is still registered (-> something disposed it) or is
+  // present but the click never reached our handler (-> dispatch/host issue).
+  console.log('[lakebase-diag] showTableDiff registerCommand returned at activation');
+  const diagProbe = (label: string): void => {
+    void vscode.commands.getCommands(true).then((cmds) => {
+      console.log(`[lakebase-diag] registry probe ${label}: showTableDiff present=${cmds.includes('lakebaseSync.showTableDiff')}`);
+    }, () => { /* ignore */ });
+  };
+  diagProbe('t+0s');
+  for (const s of [15, 30, 60, 90, 120, 180]) {
+    setTimeout(() => diagProbe(`t+${s}s`), s * 1000);
+  }
 
   await gitService.initialize();
 
