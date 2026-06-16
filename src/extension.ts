@@ -1089,10 +1089,12 @@ export async function activate(context: vscode.ExtensionContext) {
       diagLog(`registry probe ${label}: showTableDiff present=${cmds.includes('lakebaseSync.showTableDiff')}`);
     }, () => { /* ignore */ });
   };
+  // Continuous probe so we always have a present= reading within 5s of any
+  // failing click (the timed probes could miss the exact moment).
+  const diagStart = Date.now();
   diagProbe('t+0s');
-  for (const s of [15, 30, 60, 90, 120, 180]) {
-    setTimeout(() => diagProbe(`t+${s}s`), s * 1000);
-  }
+  const diagInterval = setInterval(() => diagProbe(`t+${Math.round((Date.now() - diagStart) / 1000)}s`), 5000);
+  context.subscriptions.push({ dispose: () => clearInterval(diagInterval) });
 
   await gitService.initialize();
 
