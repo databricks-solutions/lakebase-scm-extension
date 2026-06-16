@@ -6,10 +6,16 @@ const path = require('path');
 const config = {
   target: 'node',
   mode: 'none',
-  entry: './src/extension.ts',
+  entry: {
+    // Main extension bundle -> dist/extension.js (package.json "main").
+    extension: './src/extension.ts',
+    // Substrate worker thread -> dist/substrateWorker.js. Runs the kit's
+    // synchronous-CLI substrate calls off the host's main thread.
+    substrateWorker: './src/services/substrateWorker.ts',
+  },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'extension.js',
+    filename: '[name].js',
     libraryTarget: 'commonjs2',
   },
   externals: {
