@@ -1036,37 +1036,13 @@ export async function activate(context: vscode.ExtensionContext) {
   schemaDiffService = new SchemaDiffService(lakebaseService);
   schemaDiffProvider = new SchemaDiffProvider(schemaDiffService, gitService, migrationService);
 
-  // Register the table-diff command HERE, before the awaits below and before
-  // the tree views are created (createTreeView), so a click on a table row can
-  // never hit "command 'lakebaseSync.showTableDiff' not found" during the
-  // activation window. The auth check + git init below are async (the auth
-  // path can even surface a blocking dialog), and the schema/branch views
-  // become visible+clickable while they run; registering this command late
-  // (it used to sit ~1600 lines down with the rest) left a race where an
-  // early click failed until activation finished. All deps it needs
-  // (schemaDiffProvider, lakebaseService, handleAuthError) exist at this point.
-  context.subscriptions.push(
-    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
-      if (!tableName || !diffType) {
-        return;
-      }
-      try {
-        // Pass branchName so the diff is computed for the tree row's branch
-        // rather than whichever branch happens to be active in .env; falls
-        // through to .env's LAKEBASE_BRANCH_ID when undefined.
-        await schemaDiffProvider.showTableDiff(
-          tableName,
-          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
-          undefined,
-          branchName,
-        );
-      } catch (err: any) {
-        if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
-        }
-      }
-    }),
-  );
+  // NOTE: lakebaseSync.showTableDiff is registered LATER, with the rest of the
+  // commands (see the table-diff command block below). It used to be registered
+  // HERE in the activation prologue to dodge an early-click race, but that early
+  // slot is the only structural difference from every other (working) command,
+  // and a registered-and-executable handler was still failing to dispatch from a
+  // tree/SCM click. The onCommand:lakebaseSync.showTableDiff activation event now
+  // covers the pre-activation race, so register it the same way as the others.
 
   await gitService.initialize();
 
@@ -1178,10 +1154,33 @@ export async function activate(context: vscode.ExtensionContext) {
     const envWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(wsRoot, '.env'),
     );
-    envWatcher.onDidCreate(() => runnerTreeProvider.refresh());
-    envWatcher.onDidChange(() => runnerTreeProvider.refresh());
+    // A .env create/change means the active Lakebase branch / connection moved
+    // (e.g. a branch switch resynced credentials), so the cached schema diff is
+    // stale. Beyond refreshing the runner pane, drop the diff cache and re-query
+    // the schema tree. This is a FILE trigger (discrete event), not a focus poll,
+    // so it cannot perpetually refresh.
+    //
+    // Deliberately NOT schemaScmProvider.refresh(): its onDidRefresh listener
+    // fans out into extra refreshes (including a 2s-delayed one), which is what
+    // kept the tree perpetually busy. branchTreeProvider.refresh() re-queries
+    // live on its own. The refresh path is read-only w.r.t. .env, so this cannot
+    // feed back into the watcher; the debounce just coalesces the create+change
+    // burst editors emit for a single write into one refresh.
+    let envSchemaRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const onEnvChangedRefreshSchema = () => {
+      runnerTreeProvider.refresh();
+      if (envSchemaRefreshTimer) { clearTimeout(envSchemaRefreshTimer); }
+      envSchemaRefreshTimer = setTimeout(() => {
+        schemaDiffService.clearCache();
+        branchTreeProvider.refresh();
+      }, 500);
+    };
+    envWatcher.onDidCreate(onEnvChangedRefreshSchema);
+    envWatcher.onDidChange(onEnvChangedRefreshSchema);
     envWatcher.onDidDelete(() => runnerTreeProvider.refresh());
-    context.subscriptions.push(envWatcher);
+    context.subscriptions.push(envWatcher, {
+      dispose: () => { if (envSchemaRefreshTimer) { clearTimeout(envSchemaRefreshTimer); } },
+    });
   }
   const mergesView = vscode.window.createTreeView('lakebaseMerges', {
     treeDataProvider: mergesTreeProvider,
@@ -2694,10 +2693,28 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('vscode.diff', prodUri, branchUri, labels[changeType]);
     }),
 
-    // NOTE: lakebaseSync.showTableDiff is registered EARLY (right after
-    // schemaDiffProvider is constructed, above) to avoid an activation race
-    // where a table-row click fired before this block ran. Do not re-add it
-    // here.
+    // Table-diff command. Registered here with the other commands (it used to
+    // be registered early in the activation prologue, the only command that was;
+    // the onCommand:lakebaseSync.showTableDiff activation event now covers a
+    // pre-activation click). Opens the per-table side-by-side schema diff webview.
+    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
+      if (!tableName || !diffType) { return; }
+      try {
+        // Pass branchName so the diff is computed for the tree row's branch
+        // rather than whichever branch is active in .env (falls through to
+        // .env's LAKEBASE_BRANCH_ID when undefined).
+        await schemaDiffProvider.showTableDiff(
+          tableName,
+          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
+          undefined,
+          branchName,
+        );
+      } catch (err: any) {
+        if (!await handleAuthError(lakebaseService, err)) {
+          vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
+        }
+      }
+    }),
 
     vscode.commands.registerCommand('lakebaseSync.moreActions', async () => {
       interface ActionItem extends vscode.QuickPickItem { command: string }
