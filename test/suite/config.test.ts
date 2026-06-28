@@ -112,6 +112,69 @@ describe('Config Utilities', () => {
     });
   });
 
+  // Monorepo-aware language resolution (root descent, overrides, invalid-input
+  // handling) is owned + unit-tested by the kit's migration-layout module. The
+  // extension exercises it end-to-end through getConfig below.
+
+  describe('getConfig migration overrides', () => {
+    function stubConfig(values: Record<string, unknown>) {
+      sinon.stub(vscode.workspace, 'getConfiguration').returns({
+        get: (key: string, def: unknown) => (key in values ? values[key] : def),
+      } as any);
+    }
+
+    it('monorepo: resolves nodejs from migrationPath subdir so the knex .js pattern matches', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      fs.mkdirSync(path.join(tmp, 'recipe-app', 'migrations'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'recipe-app', 'package.json'), '{}');
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: tmp } }];
+      stubConfig({ migrationPath: 'recipe-app/migrations' });
+      try {
+        const cfg = getConfig();
+        assert.strictEqual(cfg.language, 'nodejs');
+        assert.strictEqual(cfg.migrationPath, 'recipe-app/migrations');
+        // The exact files that previously matched zero (Flyway default).
+        assert.ok(cfg.migrationPattern.test('20260101120000_create_recipes.js'));
+        assert.ok(!cfg.migrationPattern.test('V1__init.sql'));
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('explicit language + migrationPattern + migrationGlob win over detection', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'package.json'), '{}'); // would detect nodejs
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: tmp } }];
+      stubConfig({ language: 'python', migrationPattern: '^\\d+_.*\\.js$', migrationGlob: '*.js' });
+      try {
+        const cfg = getConfig();
+        assert.strictEqual(cfg.language, 'python');
+        assert.strictEqual(cfg.migrationGlob, '*.js');
+        assert.ok(cfg.migrationPattern.test('001_init.js'));
+        assert.ok(!cfg.migrationPattern.test('init.py'));
+        // path not configured -> python default
+        assert.strictEqual(cfg.migrationPath, 'alembic/versions');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('invalid migrationPattern falls back to the language default', () => {
+      const tmp = path.join('/tmp', `ws-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      fs.mkdirSync(tmp, { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'package.json'), '{}');
+      (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: tmp } }];
+      stubConfig({ migrationPattern: '([unclosed' });
+      try {
+        const cfg = getConfig();
+        assert.ok(cfg.migrationPattern.test('001_init.js')); // nodejs default still applies
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('updateEnvConnection', () => {
     it('writes connection info to .env with generic vars', () => {
       const tmp = path.join('/tmp', `ws-${Date.now()}`);

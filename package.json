@@ -1528,7 +1528,23 @@
         "lakebaseSync.migrationPath": {
           "type": "string",
           "default": "",
-          "description": "Path to migration files relative to workspace root. Leave empty to auto-detect from project language (Java: src/main/resources/db/migration, Python: alembic/versions, Node.js: migrations)."
+          "description": "Path to migration files relative to workspace root. Leave empty to auto-detect from project language (Java: src/main/resources/db/migration, Python: alembic/versions, Node.js: migrations). In a monorepo, point this at the app's migration dir (e.g. recipe-app/migrations); the language is then detected from that subdir."
+        },
+        "lakebaseSync.language": {
+          "type": "string",
+          "enum": ["", "java", "kotlin", "python", "nodejs"],
+          "default": "",
+          "description": "Override the detected project language used to pick migration defaults (filename pattern, watcher glob, default path). Leave empty to auto-detect from marker files at the workspace root, falling back to the configured migrationPath's subdir for monorepos. Set this for a monorepo whose root has no language marker."
+        },
+        "lakebaseSync.migrationPattern": {
+          "type": "string",
+          "default": "",
+          "description": "Override the regex matched against migration filenames (case-insensitive) used by the Schema Changes cache fast-path and migration listings. Leave empty to use the language default (Flyway: ^V\\d+.*\\.sql$, Alembic: ^[0-9a-f].*\\.py$, knex/Node: ^\\d+.*\\.(js|ts)$). Example for timestamped knex files: ^\\d+_.*\\.(js|ts)$"
+        },
+        "lakebaseSync.migrationGlob": {
+          "type": "string",
+          "default": "",
+          "description": "Override the file glob the migration watcher uses (relative to migrationPath). Leave empty to use the language default (*.sql / *.py / *.{js,ts}). Example: *.js"
         },
         "lakebaseSync.showUnifiedRepo": {
           "type": "boolean",

@@ -1,8 +1,18 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  resolveMigrationLayout,
+  detectLanguageAt,
+  type MigrationLanguage,
+} from '@databricks-solutions/lakebase-app-dev-kit';
 
-export type ProjectLanguage = 'java' | 'kotlin' | 'python' | 'nodejs' | 'unknown';
+// The kit (lakebase-app-dev-kit) owns language detection + the per-language
+// migration conventions (path / pattern / glob) , see its
+// scripts/lakebase/migration-layout.ts. The extension consumes that single
+// source of truth so the two never drift. ProjectLanguage stays as an alias of
+// the kit type for back-compat with existing imports.
+export type ProjectLanguage = MigrationLanguage;
 
 export interface LakebaseConfig {
   databricksHost: string;
@@ -135,34 +145,16 @@ export function parseEnvFile(filePath: string): EnvConfig {
   return config as EnvConfig;
 }
 
-/** Detect project language from marker files in workspace root */
+/**
+ * Detect project language from marker files in the workspace root. Thin
+ * back-compat wrapper over the kit's single-directory detector (the kit owns
+ * the rule). Used by extension.ts for project-type display; the full
+ * migration-layout resolution (monorepo descent + overrides) goes through the
+ * kit's resolveMigrationLayout in getConfig().
+ */
 export function detectLanguage(root?: string): ProjectLanguage {
-  if (!root) { return 'unknown'; }
-  if (fs.existsSync(path.join(root, 'pom.xml'))) {
-    const kotlinDir = path.join(root, 'src', 'main', 'kotlin');
-    if (fs.existsSync(kotlinDir)) {
-      return 'kotlin';
-    }
-    try {
-      const pom = fs.readFileSync(path.join(root, 'pom.xml'), 'utf-8');
-      if (pom.includes('kotlin-maven-plugin')) {
-        return 'kotlin';
-      }
-    } catch { /* fall through to java */ }
-    return 'java';
-  }
-  if (fs.existsSync(path.join(root, 'pyproject.toml')) || fs.existsSync(path.join(root, 'requirements.txt'))) { return 'python'; }
-  if (fs.existsSync(path.join(root, 'package.json')) && !fs.existsSync(path.join(root, 'pom.xml'))) { return 'nodejs'; }
-  return 'unknown';
+  return root ? detectLanguageAt(root) : 'unknown';
 }
-
-const MIGRATION_DEFAULTS: Record<ProjectLanguage, { path: string; pattern: RegExp; glob: string }> = {
-  java:    { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },
-  kotlin:  { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },
-  python:  { path: 'alembic/versions',                pattern: /^[0-9a-f][\w]*.*\.py$/i, glob: '*.py' },
-  nodejs:  { path: 'migrations',                      pattern: /^\d+.*\.(js|ts)$/i,   glob: '*.{js,ts}' },
-  unknown: { path: 'src/main/resources/db/migration', pattern: /^V\d+.*\.sql$/i,  glob: '*.sql' },
-};
 
 export function getConfig(): LakebaseConfig {
   const wsConfig = vscode.workspace.getConfiguration('lakebaseSync');
@@ -174,9 +166,18 @@ export function getConfig(): LakebaseConfig {
     envConfig = parseEnvFile(envPath);
   }
 
-  const language = detectLanguage(root);
-  const defaults = MIGRATION_DEFAULTS[language];
-  const migrationPath = wsConfig.get('migrationPath', '') || defaults.path;
+  // Resolve the whole migration layout (language + path + pattern + glob) via
+  // the kit's single source of truth. It is monorepo-aware (detects from the
+  // configured migrationPath's subdir when the root is unmarked) and honors the
+  // explicit language / migrationPattern / migrationGlob overrides, each of
+  // which wins over the language defaults.
+  const { language, migrationPath, migrationPattern, migrationGlob } = resolveMigrationLayout({
+    projectDir: root,
+    migrationPath: wsConfig.get('migrationPath', ''),
+    language: wsConfig.get('language', ''),
+    migrationPattern: wsConfig.get('migrationPattern', ''),
+    migrationGlob: wsConfig.get('migrationGlob', ''),
+  });
 
   return {
     databricksHost: wsConfig.get('databricksHost', '') || envConfig.DATABRICKS_HOST || '',
@@ -185,8 +186,8 @@ export function getConfig(): LakebaseConfig {
     autoRefreshCredentials: wsConfig.get('autoRefreshCredentials', true),
     autoCreateLocalBranchesFromOrigin: wsConfig.get('autoCreateLocalBranchesFromOrigin', true),
     migrationPath,
-    migrationPattern: defaults.pattern,
-    migrationGlob: defaults.glob,
+    migrationPattern,
+    migrationGlob,
     language,
     showUnifiedRepo: wsConfig.get('showUnifiedRepo', true),
     productionReadOnly: wsConfig.get('productionReadOnly', true),
