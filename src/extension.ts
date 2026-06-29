@@ -23,6 +23,7 @@ import { GraphWebviewProvider } from './providers/graphWebview';
 import { getConfig, getWorkspaceRoot, detectLanguage } from './utils/config';
 import { classifyGitError } from './utils/errorClassification';
 import { parseBranchResourcePath } from './utils/branchParsing';
+import { runScmOp, gitOpErrorMessage } from './utils/scmOps';
 import { stripInvisibles } from './utils/text';
 import { isMainBranch, isTierBranch } from './utils/theme';
 import { buildDiffTuples, DiffTuple } from './utils/diffBuilder';
@@ -3316,31 +3317,25 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.push', async () => {
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Pushing...' },
-          () => gitService.push()
-        );
-        vscode.window.showInformationMessage('Pushed successfully.');
-        statusBarProvider.refresh();
-      } catch (err: any) {
-        vscode.window.showErrorMessage(`Push failed: ${err.message}`);
-      }
+      await runScmOp('Push', () => gitService.push(), {
+        progressTitle: 'Pushing...',
+        successMessage: 'Pushed successfully.',
+        onSuccess: () => statusBarProvider.refresh(),
+        onError: (code, message) => gitOpErrorMessage('Push', code, message),
+      });
     }),
 
     vscode.commands.registerCommand('lakebaseSync.pull', async () => {
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Pulling...' },
-          () => gitService.pull()
-        );
-        schemaDiffService.clearCache();
-        vscode.window.showInformationMessage('Pulled successfully.');
-        schemaScmProvider.refresh();
-        statusBarProvider.refresh();
-      } catch (err: any) {
-        vscode.window.showErrorMessage(`Pull failed: ${err.message}`);
-      }
+      await runScmOp('Pull', () => gitService.pull(), {
+        progressTitle: 'Pulling...',
+        successMessage: 'Pulled successfully.',
+        onSuccess: () => {
+          schemaDiffService.clearCache();
+          schemaScmProvider.refresh();
+          statusBarProvider.refresh();
+        },
+        onError: (code, message) => gitOpErrorMessage('Pull', code, message),
+      });
     }),
 
     vscode.commands.registerCommand('lakebaseSync.switchBranchPicker', async () => {
@@ -4186,27 +4181,25 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('lakebaseSync.sync', async () => {
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Syncing...' },
-          async () => {
-            await gitService.sync();
-            // Refresh Lakebase credentials after sync
-            const currentBranch = await gitService.getCurrentBranch();
-            if (currentBranch && !isMainBranch(currentBranch, getConfig().trunkBranch)) {
-              try {
-                const lb = await lakebaseService.getBranchByName(currentBranch);
-                if (lb) { await lakebaseService.syncConnection(lb.branchId); }
-              } catch { /* Lakebase sync is optional */ }
-            }
-          }
-        );
-        vscode.window.showInformationMessage('Synced successfully.');
-        schemaScmProvider.refresh();
-        statusBarProvider.refresh();
-      } catch (err: any) {
-        vscode.window.showErrorMessage(`Sync failed: ${err.message}`);
-      }
+      await runScmOp('Sync', async () => {
+        await gitService.sync();
+        // Refresh Lakebase credentials after sync
+        const currentBranch = await gitService.getCurrentBranch();
+        if (currentBranch && !isMainBranch(currentBranch, getConfig().trunkBranch)) {
+          try {
+            const lb = await lakebaseService.getBranchByName(currentBranch);
+            if (lb) { await lakebaseService.syncConnection(lb.branchId); }
+          } catch { /* Lakebase sync is optional */ }
+        }
+      }, {
+        progressTitle: 'Syncing...',
+        successMessage: 'Synced successfully.',
+        onSuccess: () => {
+          schemaScmProvider.refresh();
+          statusBarProvider.refresh();
+        },
+        onError: (code, message) => gitOpErrorMessage('Sync', code, message),
+      });
     }),
 
     vscode.commands.registerCommand('lakebaseSync.fetch', async () => {

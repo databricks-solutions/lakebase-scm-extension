@@ -8,6 +8,35 @@
 import * as vscode from 'vscode';
 import { classifyGitError, type GitErrorCode } from './errorClassification';
 
+/**
+ * Map a classified push/sync/pull error to a SPECIFIC, actionable message +
+ * severity , so the panel never collapses distinct failures into one generic
+ * "Sync failed: failed to push some refs" (the eval's headline). `in-sync` is
+ * handled as success by runScmOp and never reaches here.
+ */
+export function gitOpErrorMessage(
+  label: string,
+  code: GitErrorCode,
+  message: string,
+): { text: string; severity: 'error' | 'warning' | 'info' } {
+  switch (code) {
+    case 'auth':
+      return {
+        text: `${label} blocked: Databricks auth is stale (the pre-push hook needs it to sync CI secrets). Sign in via "Lakebase: Connect Workspace" or run \`databricks auth login\`, then ${label.toLowerCase()} again.`,
+        severity: 'error',
+      };
+    case 'rejected':
+      return {
+        text: `${label} rejected: the remote has commits you do not have. Pull, then ${label.toLowerCase()} again.`,
+        severity: 'error',
+      };
+    case 'network':
+      return { text: `${label} failed: network unreachable. ${message}`, severity: 'error' };
+    default:
+      return { text: `${label} failed: ${message}`, severity: 'error' };
+  }
+}
+
 /** Run `fn` under a notification progress bar. The single home for the
  *  `vscode.window.withProgress({ location: Notification, title })` boilerplate. */
 export function runWithProgress<T>(

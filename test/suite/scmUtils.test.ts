@@ -1,6 +1,7 @@
 import { strict as assert } from 'assert';
 import { parseBranchResourcePath, normalizeBranchName } from '../../src/utils/branchParsing';
 import { classifyGitError } from '../../src/utils/errorClassification';
+import { gitOpErrorMessage } from '../../src/utils/scmOps';
 
 describe('branchParsing', () => {
   describe('parseBranchResourcePath', () => {
@@ -60,5 +61,21 @@ describe('classifyGitError', () => {
   it('handles non-Error input without throwing', () => {
     assert.strictEqual(classifyGitError(undefined).code, 'unknown');
     assert.strictEqual(classifyGitError('failed to push some refs').code, 'rejected');
+  });
+});
+
+describe('gitOpErrorMessage', () => {
+  it('gives a sign-in message for stale auth (not a generic push failure)', () => {
+    const m = gitOpErrorMessage('Push', 'auth', 'request failed: 401');
+    assert.match(m.text, /Databricks auth is stale|Connect Workspace|databricks auth login/);
+  });
+  it('tells the user to pull on a real rejection', () => {
+    const m = gitOpErrorMessage('Sync', 'rejected', 'failed to push some refs');
+    assert.match(m.text, /Pull, then sync again/i);
+    assert.strictEqual(m.severity, 'error');
+  });
+  it('falls back to the raw message for unknown', () => {
+    const m = gitOpErrorMessage('Pull', 'unknown', 'boom');
+    assert.match(m.text, /Pull failed: boom/);
   });
 });
