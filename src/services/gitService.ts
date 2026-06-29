@@ -581,10 +581,35 @@ export class GitService {
     }
   }
 
+  /** Current HEAD sha, or undefined on an unborn branch / error. */
+  private async headSha(root: string): Promise<string | undefined> {
+    try { return (await exec('git rev-parse HEAD', root)).trim(); } catch { return undefined; }
+  }
+
+  /**
+   * Run a commit op and report a TRUTHFUL outcome. A commit can throw from
+   * post-commit hook / schema-diff enrichment noise AFTER git already created
+   * the commit. If HEAD advanced and nothing is left staged, the commit landed
+   * , swallow the noise so the SCM panel never shows "Commit failed" (with the
+   * files still "Staged") for a commit that actually succeeded. Only propagate
+   * when the commit truly did not land.
+   */
+  private async commitTruthfully(root: string, doCommit: () => Promise<void>): Promise<void> {
+    const before = await this.headSha(root);
+    try {
+      await doCommit();
+    } catch (err) {
+      const after = await this.headSha(root);
+      const stillStaged = (await this.getStagedChanges()).length > 0;
+      if (after && after !== before && !stillStaged) { return; }
+      throw err;
+    }
+  }
+
   async commit(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommit({ cwd: root, message });
+    await this.commitTruthfully(root, () => substrateCommit({ cwd: root, message }));
   }
 
   /** Check if current branch has a remote upstream */
@@ -635,19 +660,19 @@ export class GitService {
   async commitAll(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommitAll({ cwd: root, message });
+    await this.commitTruthfully(root, () => substrateCommitAll({ cwd: root, message }));
   }
 
   async commitAmend(): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommitAmend({ cwd: root });
+    await this.commitTruthfully(root, () => substrateCommitAmend({ cwd: root }));
   }
 
   async commitAmendMessage(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommitAmend({ cwd: root, message });
+    await this.commitTruthfully(root, () => substrateCommitAmend({ cwd: root, message }));
   }
 
   async undoLastCommit(): Promise<void> {
@@ -730,13 +755,13 @@ export class GitService {
   async commitSignedOff(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommitSignedOff({ cwd: root, message });
+    await this.commitTruthfully(root, () => substrateCommitSignedOff({ cwd: root, message }));
   }
 
   async commitAllSignedOff(message: string): Promise<void> {
     const root = getWorkspaceRoot();
     if (!root) { throw new Error('No workspace root'); }
-    await substrateCommitAllSignedOff({ cwd: root, message });
+    await this.commitTruthfully(root, () => substrateCommitAllSignedOff({ cwd: root, message }));
   }
 
   async stashStaged(message?: string): Promise<void> {
