@@ -19,6 +19,10 @@ export const AUTH_ERROR_SIGNATURES: readonly string[] = [
   "invalid token",
   "no configuration",
   "cannot configure default credentials",
+  // Any message whose remediation is `databricks auth login` is, by
+  // definition, an auth error , including the create-flow auth precondition's
+  // "Databricks authentication is required ... Run: databricks auth login".
+  "databricks auth login",
 ];
 
 /** True when `message` contains any generic auth-failure signature. */

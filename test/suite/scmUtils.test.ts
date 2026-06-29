@@ -43,6 +43,15 @@ describe('classifyGitError', () => {
     assert.strictEqual(code('invalid token'), 'auth');
   });
 
+  it('classifies the create-flow auth precondition (W5) as auth', () => {
+    // The substrate's create-project auth precondition throws this; the create
+    // command routes it to "Connect Workspace" via classifyGitError.
+    assert.strictEqual(
+      code('Databricks authentication is required before creating a project. Run: databricks auth login --host https://x.cloud.databricks.com'),
+      'auth',
+    );
+  });
+
   it('treats "Everything up-to-date" as in-sync, not a failure', () => {
     assert.strictEqual(code('Everything up-to-date'), 'in-sync');
   });

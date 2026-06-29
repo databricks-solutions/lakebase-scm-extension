@@ -42,6 +42,13 @@ export interface ProjectCreationResult {
   githubRepoUrl?: string;
   lakebaseProjectId: string;
   lakebaseDefaultBranch: string;
+  /**
+   * Non-fatal warnings the substrate surfaced during creation (e.g. a failed
+   * kit warm, CI-secret sync, or runner setup). The project was still created;
+   * the caller should show these so create-time problems (W3) are visible
+   * rather than silent.
+   */
+  warnings: string[];
 }
 
 /**
@@ -119,6 +126,7 @@ export class ProjectCreationService {
       githubRepoUrl: result.githubRepoUrl,
       lakebaseProjectId: result.lakebaseProjectId,
       lakebaseDefaultBranch: result.lakebaseDefaultBranch,
+      warnings: result.warnings ?? [],
     };
   }
 

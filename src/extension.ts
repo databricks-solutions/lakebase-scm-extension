@@ -1689,6 +1689,15 @@ export async function activate(context: vscode.ExtensionContext) {
           result.githubRepoUrl ? `GitHub: ${result.githubRepoUrl}` : 'GitHub: skipped (local project)',
           `Lakebase: ${result.lakebaseProjectId}`,
         ];
+        // W3 + general: surface the substrate's non-fatal warnings (e.g. a
+        // failed kit warm) so create-time problems are visible, not silent.
+        // The project still succeeded, so this is a separate warning toast.
+        if (result.warnings && result.warnings.length > 0) {
+          for (const w of result.warnings) { log(`createProject warning: ${w}`); }
+          vscode.window.showWarningMessage(
+            `Project created with ${result.warnings.length} warning(s): ${result.warnings[0]}`,
+          );
+        }
         const openAction = await vscode.window.showInformationMessage(
           successLines.join('\n'),
           'Open Project',
@@ -1701,6 +1710,21 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.env.openExternal(vscode.Uri.parse(result.githubRepoUrl));
         }
       } catch (err: any) {
+        // W5: a stale/missing Databricks token fails the substrate's up-front
+        // auth precondition BEFORE anything is created, so there is nothing to
+        // clean up , offer "Connect Workspace" (sign-in), not a misleading
+        // "Clean Up". The shared classifier recognizes the prereq message via
+        // the `databricks auth login` signature.
+        if (classifyGitError(err).code === 'auth') {
+          const action = await vscode.window.showErrorMessage(
+            `Project creation failed: ${err.message}`,
+            'Connect Workspace', 'Dismiss'
+          );
+          if (action === 'Connect Workspace') {
+            await vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+          }
+          return;
+        }
         const action = await vscode.window.showErrorMessage(
           `Project creation failed: ${err.message}`,
           'Clean Up', 'Dismiss'
