@@ -63,7 +63,7 @@ Extension: `normalizeBranchName` (null-safe) at `schemaDiffService:307` + `tiers
   (`compareBranchSchemas` / showTableDiff path) -> no `name.trim` throw, returns a
   diff. Add to test/integration gated on LAKEBASE_TEST_INSTANCE.
 
-### W2 commit off the synchronous-install path , [TODO] (kit templates + `lk`)
+### W2 commit off the synchronous-install path , [DONE] (kit templates + `lk`)
 Fix: hard timeout on commit-time schema-diff; NEVER `npm install` on commit (skip
 silently if the kit cache is cold); run enrichment best-effort/background.
 Files: `templates/project/common/scripts/prepare-schema-diff.sh` (+ `lk` shim).
@@ -74,7 +74,7 @@ Files: `templates/project/common/scripts/prepare-schema-diff.sh` (+ `lk` shim).
 - LIVE: with a WARM kit, the diff enrichment runs and appends to the commit msg
   within the timeout.
 
-### W3 warm + verify at create (loud failure) , [TODO] (kit + extension create flow)
+### W3 warm + verify at create (loud failure) , [DONE] (kit + extension create flow)
 Fix: pre-warm the kit at project-create, VERIFY it, fail LOUDLY at create when the
 warm fails (instead of a later commit hang).
 Files: `create-project.ts` (extension ProjectCreationService + kit createProject),
@@ -84,7 +84,7 @@ Files: `create-project.ts` (extension ProjectCreationService + kit createProject
   registry -> create surfaces a specific "kit could not be warmed" error AT create
   time (test asserts the thrown/surfaced message), and does not leave a half-state.
 
-### W5 hooks fail loud in UI + surface the prereq , [TODO] (extension + kit hooks)
+### W5 hooks fail loud in UI + surface the prereq , [DONE] (extension + kit hooks)
 Fix: detect/prompt the one-time `databricks auth login` prereq in the create flow;
 hooks emit specific, parseable reasons that the extension maps to precise UI
 messages (composes with W1 `gitOpErrorMessage` + W8).
@@ -94,7 +94,7 @@ messages (composes with W1 `gitOpErrorMessage` + W8).
 - LIVE: with stale auth, a push surfaces the specific sign-in guidance in the panel;
   with auth present, the prereq check passes silently.
 
-### W7 Flyway baseline trap (`baselineVersion=0`) , [TODO] (kit templates)
+### W7 Flyway baseline trap (`baselineVersion=0`) , [DONE] (kit templates)
 Fix: add `<baselineVersion>0</baselineVersion>` to java + kotlin fallback `pom.xml`.
 - LOCAL: assert both generated poms contain `baselineVersion=0` alongside
   `baselineOnMigrate=true` (template/scaffoldService assertion).
@@ -102,14 +102,14 @@ Fix: add `<baselineVersion>0</baselineVersion>` to java + kotlin fallback `pom.x
   Java project, provision a Lakebase branch, run Flyway migrate on a FRESH db ->
   assert `V1` applied (its object exists) and `V2` succeeds (the eval's exact trap).
 
-### W8 pre-push warn-not-block , [TODO] (kit templates)
+### W8 pre-push warn-not-block , [DONE] (kit templates)
 Fix: `pre-push.sh` token-refresh failure -> warn (exit 0), do not `exit 1`.
 - LOCAL integration: temp repo + the scaffolded `pre-push.sh` + a fake
   `databricks auth token` on PATH that exits nonzero -> `git push` to a bare remote
   SUCCEEDS (exit 0) with the warning on stderr. Reproduces "push blocked by stale
   DB auth" -> proves it warns instead.
 
-### W9 orphaned project slug on failed create , [TODO] (extension + kit create)
+### W9 orphaned project slug on failed create , [DONE] (extension + kit create)
 Fix: roll back the just-created Lakebase project on a partial-failure, OR detect the
 reserved/soft-deleted slug on retry and offer purge (`delete-project --purge`).
 - LIVE integration (extension projectCreation): inject a failure AFTER project
