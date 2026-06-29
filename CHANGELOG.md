@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.6 (2026-06-29)
+
+Greenfield hardening. Repins the substrate to `lakebase-app-dev-kit` v0.3.0-beta.5
+(the matching kit fixes: Flyway baseline, pre-push warn-not-block, commit-time
+schema-diff timeout, multi-schema diff, and create-project auth precondition +
+warm-verify + slug rollback) and wires the create-flow surfacing on the
+extension side. All fixes validated live on a real workspace.
+
+### Fixed
+
+- **Truthful SCM panels.** A commit that lands (even with a noisy
+  `prepare-commit-msg` hook) reports success and clears the staged list instead
+  of a false "Commit failed"; a push with nothing new reads as in-sync, not a
+  failure; a real non-fast-forward is classified as "rejected" with a
+  pull-first message instead of a generic error.
+- **Per-table schema diff no longer crashes** on a branch whose parent is
+  recorded only as a Lakebase resource path (the branch-name normalize is now
+  null-safe). Confirmed live against a forked feature branch.
+
+### Changed
+
+- **Create-project surfaces substrate warnings.** The result now carries the
+  substrate's non-fatal warnings (e.g. a failed kit warm), shown as a warning
+  toast, so a create-time problem is visible instead of silently swallowed.
+- **Create-project routes a Databricks auth failure to "Connect Workspace."**
+  The substrate's up-front auth precondition fails before anything is created,
+  so the command offers sign-in (not a misleading "Clean Up"). Auth-error
+  detection is unified through the shared classifier.
+
 ## 0.6.4 (2026-06-15)
 
 Schema-diff cache invalidation for non-Flyway migration tools.
