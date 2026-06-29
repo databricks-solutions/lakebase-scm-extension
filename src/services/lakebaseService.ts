@@ -42,6 +42,7 @@ import { setKnownTierNames, isMainBranch } from "../utils/theme";
 import { projectProtectedTierNames } from "../utils/tiers";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
 import { isAuthStorageCacheError } from "../utils/databricksAuth";
+import { parseBranchResourcePath } from "../utils/branchParsing";
 import { SubstrateWorkerClient } from "./substrateWorkerClient";
 
 // Kit substrate functions the worker dispatches by name. The kit resolves
@@ -209,9 +210,9 @@ async function lakebaseExec(command: string, cwd?: string, env?: Record<string, 
 
 function adaptBranchInfo(b: LakebaseBranchInfo): LakebaseBranch {
   const fullName = b.name || "";
-  const branchId = fullName.split("/branches/").pop() || b.uid;
+  const branchId = parseBranchResourcePath(fullName) ?? b.uid;
   const sourceBranch = b.sourceBranchName || "";
-  const sourceBranchId = sourceBranch.split("/branches/").pop() || "";
+  const sourceBranchId = parseBranchResourcePath(sourceBranch) ?? "";
   return {
     uid: b.uid,
     name: fullName,

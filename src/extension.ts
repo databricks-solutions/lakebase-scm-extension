@@ -21,6 +21,8 @@ import { PullRequestTreeProvider } from './providers/pullRequestTree';
 import { MergesTreeProvider } from './providers/mergesTree';
 import { GraphWebviewProvider } from './providers/graphWebview';
 import { getConfig, getWorkspaceRoot, detectLanguage } from './utils/config';
+import { classifyGitError } from './utils/errorClassification';
+import { parseBranchResourcePath } from './utils/branchParsing';
 import { stripInvisibles } from './utils/text';
 import { isMainBranch, isTierBranch } from './utils/theme';
 import { buildDiffTuples, DiffTuple } from './utils/diffBuilder';
@@ -588,10 +590,7 @@ async function handleAuthError(lakebaseService: LakebaseService, err: any): Prom
     return true;
   }
 
-  const isAuth = (err as any).isAuthError === true ||
-    err.message?.includes('project id not found') ||
-    err.message?.includes('not authenticated') ||
-    err.message?.includes('401');
+  const isAuth = (err as any).isAuthError === true || classifyGitError(err).code === 'auth';
 
   if (!isAuth) {
     return false;
@@ -2684,7 +2683,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // resolved comparison branch (e.g. `staging` when forking from staging
       // on a 3-tier setup) so the diff title matches Branch Diff Summary.
       const prodUri = vscode.Uri.parse(`lakebase-schema-content://production/${tableName}`);
-      const parentName = diff?.comparisonBranchName?.split('/branches/').pop() || diff?.comparisonBranchName || 'parent';
+      const parentName = parseBranchResourcePath(diff?.comparisonBranchName) ?? diff?.comparisonBranchName ?? 'parent';
       const labels: Record<string, string> = {
         new: `${tableName} (new on branch)`,
         modified: `${tableName} (${parentName} ↔ branch)`,

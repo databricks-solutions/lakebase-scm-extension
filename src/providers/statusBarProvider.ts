@@ -5,6 +5,7 @@ import { SchemaMigrationService } from '../services/schemaMigrationService';
 import { isMainBranch, isTierBranch } from '../utils/theme';
 import { getConfig } from '../utils/config';
 import { SYNC_STATE } from '../utils/statusPresentation';
+import { classifyGitError } from '../utils/errorClassification';
 
 type SyncState = 'synced' | 'pending' | 'error' | 'loading' | 'unavailable' | 'auth_error';
 
@@ -78,10 +79,7 @@ export class StatusBarProvider {
         this.setState('error', this.lakebaseService.sanitizeBranchName(gitBranch), `V${migrationVersion}`);
       }
     } catch (err: any) {
-      const isAuth = (err as any).isAuthError === true ||
-        err.message?.includes('project id not found') ||
-        err.message?.includes('not authenticated') ||
-        err.message?.includes('401');
+      const isAuth = (err as any).isAuthError === true || classifyGitError(err).code === 'auth';
       if (isAuth) {
         this.setState('auth_error', gitBranch, undefined, 'Click to login: ' + err.message);
       } else {
