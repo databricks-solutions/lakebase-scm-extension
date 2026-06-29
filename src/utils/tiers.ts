@@ -10,9 +10,9 @@
 
 import {
   resolveProtectedTierNames,
-  normalizeTierName,
 } from '@databricks-solutions/lakebase-app-dev-kit';
 import { getConfig } from './config';
+import { normalizeBranchName } from './branchParsing';
 import { isTierBranch, getKnownTierNames, isMainBranch } from './theme';
 
 /**
@@ -44,6 +44,6 @@ export function isLongRunningTier(branchName: string): boolean {
   // tier cache (the kit's tierBranchNames excludes the default branch), so it
   // must be classified by name here, not by cache membership.
   if (isMainBranch(branchName, getConfig().trunkBranch)) { return true; }
-  if (!projectProtectedTierNames().has(normalizeTierName(branchName))) { return false; }
+  if (!projectProtectedTierNames().has(normalizeBranchName(branchName))) { return false; }
   return isTierBranch(branchName) || getKnownTierNames().length === 0;
 }

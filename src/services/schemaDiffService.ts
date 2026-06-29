@@ -15,7 +15,7 @@ import * as path from "path";
 import { getWorkspaceRoot, getEnvConfig, getConfig, getProjectDatabase } from "../utils/config";
 import { LakebaseService } from "./lakebaseService";
 import { projectProtectedTierNames } from "../utils/tiers";
-import { normalizeTierName } from "@databricks-solutions/lakebase-app-dev-kit";
+import { normalizeBranchName } from "../utils/branchParsing";
 
 export interface SchemaObject {
   type: "TABLE" | "INDEX";
@@ -304,7 +304,7 @@ export class SchemaDiffService {
     // A protected tier (default set + this project's overrides, per the
     // kit-backed resolver) compares against the default branch, not a
     // per-feature base. Covers trunk/staging/base + lakebaseSync.tierNames.
-    if (projectProtectedTierNames().has(normalizeTierName(branchId))) { return undefined; }
+    if (projectProtectedTierNames().has(normalizeBranchName(branchId))) { return undefined; }
 
     try {
       const target = await this.lakebaseService.getBranchByName(branchId);
