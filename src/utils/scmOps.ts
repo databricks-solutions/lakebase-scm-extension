@@ -37,6 +37,21 @@ export function gitOpErrorMessage(
   }
 }
 
+/**
+ * Did a commit actually land? True when HEAD advanced (a new commit object
+ * exists) and nothing is left staged , so a commit op that threw from
+ * post-commit hook / schema-diff enrichment noise is reported as the success
+ * it was. Pure + exported so the decision is unit-testable without the
+ * (hard-to-reproduce) throw-but-landed race.
+ */
+export function commitLanded(
+  before: string | undefined,
+  after: string | undefined,
+  stillStaged: boolean,
+): boolean {
+  return !!after && after !== before && !stillStaged;
+}
+
 /** Run `fn` under a notification progress bar. The single home for the
  *  `vscode.window.withProgress({ location: Notification, title })` boilerplate. */
 export function runWithProgress<T>(

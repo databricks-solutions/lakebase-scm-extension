@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
+import { commitLanded } from '../utils/scmOps';
 import { exec } from '../utils/exec';
 // Substrate covers clone + origin-remote parsing (FEIP-7065) AND, as of
 // FEIP-7323 P5a, the workflow-coordination inspection ops (list local /
@@ -601,7 +602,7 @@ export class GitService {
     } catch (err) {
       const after = await this.headSha(root);
       const stillStaged = (await this.getStagedChanges()).length > 0;
-      if (after && after !== before && !stillStaged) { return; }
+      if (commitLanded(before, after, stillStaged)) { return; }
       throw err;
     }
   }

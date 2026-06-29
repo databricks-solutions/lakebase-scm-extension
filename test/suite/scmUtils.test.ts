@@ -1,7 +1,7 @@
 import { strict as assert } from 'assert';
 import { parseBranchResourcePath, normalizeBranchName } from '../../src/utils/branchParsing';
 import { classifyGitError } from '../../src/utils/errorClassification';
-import { gitOpErrorMessage } from '../../src/utils/scmOps';
+import { gitOpErrorMessage, commitLanded } from '../../src/utils/scmOps';
 
 describe('branchParsing', () => {
   describe('parseBranchResourcePath', () => {
@@ -77,5 +77,20 @@ describe('gitOpErrorMessage', () => {
   it('falls back to the raw message for unknown', () => {
     const m = gitOpErrorMessage('Pull', 'unknown', 'boom');
     assert.match(m.text, /Pull failed: boom/);
+  });
+});
+
+describe('commitLanded (truthful-commit decision)', () => {
+  it('true when HEAD advanced and nothing is staged', () => {
+    assert.strictEqual(commitLanded('aaa', 'bbb', false), true);
+  });
+  it('false when HEAD did not move', () => {
+    assert.strictEqual(commitLanded('aaa', 'aaa', false), false);
+  });
+  it('false when something is still staged even if HEAD moved', () => {
+    assert.strictEqual(commitLanded('aaa', 'bbb', true), false);
+  });
+  it('false on an unborn branch (no HEAD)', () => {
+    assert.strictEqual(commitLanded(undefined, undefined, false), false);
   });
 });
