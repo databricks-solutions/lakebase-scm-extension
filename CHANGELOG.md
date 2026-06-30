@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.7 (2026-06-30)
+
+Auth-propagation fixes for spawned subprocesses. A GUI editor's extension host
+does not inherit the user's shell env, so an exported `DATABRICKS_CONFIG_PROFILE`
+or `GITHUB_TOKEN` never reaches the processes the extension spawns. The extension
+now reads these pins from a source it can see (the project `.env`, or a setting).
+
+### Fixed
+
+- **Schema Changes no longer errors with profile ambiguity** when several
+  `~/.databrickscfg` profiles point at the same workspace host. The profile is
+  now resolved from an explicit pin (`lakebaseSync.databricksProfile` setting, or
+  `.env` `DATABRICKS_CONFIG_PROFILE`), validated to name a real profile for that
+  host, before host-matching. Previously the schema-diff worker spawned
+  `databricks auth token` with no profile and the CLI could not disambiguate.
+- **Create PR and self-hosted runner setup no longer fail with "Not Found" on a
+  private (EMU) repo.** Two root causes, both fixed:
+  - The editor's GitHub session can be a different identity than the one with
+    repo access. The kit-delegated GitHub ops now use an explicit token pin
+    (`lakebaseSync.githubToken` setting, or `.env` `GITHUB_TOKEN`) when present,
+    so an EMU PAT is honored instead of the wrong editor session.
+    `getConfiguredGitHubToken` also reads the project `.env`.
+  - When the git remote uses an SSH host alias (common for EMU, e.g.
+    `org-140212977@github-emu:databricks-field-eng/partner-asset-tracker.git`),
+    owner/repo derivation only normalized a literal `git@github.com:` remote and
+    mis-parsed the alias into a garbage owner, 404ing every owner/repo API call.
+    The remote normalizer now extracts owner/repo after any host (SCP, `ssh://`,
+    or `https://`, with or without a user) and re-homes it on github.com.
+
+### Added
+
+- **`lakebaseSync.databricksProfile` setting** , the `~/.databrickscfg` profile to
+  pin for CLI auth (falls back to `.env` `DATABRICKS_CONFIG_PROFILE`). Set it when
+  several profiles match the same workspace host.
+
 ## 0.6.6 (2026-06-29)
 
 Greenfield hardening. Repins the substrate to `lakebase-app-dev-kit` v0.3.0-beta.5
