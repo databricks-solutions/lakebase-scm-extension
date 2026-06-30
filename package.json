@@ -1537,7 +1537,13 @@
         },
         "lakebaseSync.language": {
           "type": "string",
-          "enum": ["", "java", "kotlin", "python", "nodejs"],
+          "enum": [
+            "",
+            "java",
+            "kotlin",
+            "python",
+            "nodejs"
+          ],
           "default": "",
           "description": "Override the detected project language used to pick migration defaults (filename pattern, watcher glob, default path). Leave empty to auto-detect from marker files at the workspace root, falling back to the configured migrationPath's subdir for monorepos. Set this for a monorepo whose root has no language marker."
         },
@@ -1631,7 +1637,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-beta.5",
+    "@databricks-solutions/lakebase-app-dev-kit": "github:databricks-solutions/lakebase-app-dev-kit#v0.3.0-beta.6",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",
