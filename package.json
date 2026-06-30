@@ -1505,6 +1505,11 @@
           "default": "",
           "description": "Databricks workspace URL (auto-read from .env if empty)"
         },
+        "lakebaseSync.databricksProfile": {
+          "type": "string",
+          "default": "",
+          "description": "~/.databrickscfg profile to use for CLI auth (auto-read from .env DATABRICKS_CONFIG_PROFILE if empty). Set this when several profiles point at the same workspace host and the CLI cannot disambiguate."
+        },
         "lakebaseSync.lakebaseProjectId": {
           "type": "string",
           "default": "",

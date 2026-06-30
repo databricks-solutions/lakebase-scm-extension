@@ -16,6 +16,14 @@ export type ProjectLanguage = MigrationLanguage;
 
 export interface LakebaseConfig {
   databricksHost: string;
+  /**
+   * ~/.databrickscfg profile to pin for CLI auth. Resolution:
+   * `lakebaseSync.databricksProfile` setting, else `.env`
+   * DATABRICKS_CONFIG_PROFILE. Empty when neither is set (the extension then
+   * falls back to host-matching against ~/.databrickscfg). The explicit pin is
+   * the only thing that disambiguates a host that several profiles match.
+   */
+  databricksProfile: string;
   lakebaseProjectId: string;
   autoCreateBranch: boolean;
   autoRefreshCredentials: boolean;
@@ -90,6 +98,10 @@ export interface EnvConfig {
   DATABRICKS_CONFIG_PROFILE?: string;
   DATABRICKS_TOKEN?: string;
   DATABRICKS_AUTH_STORAGE?: string;
+  /** GitHub PAT pinned in the project .env (e.g. an EMU token). The extension
+   * host does not inherit the shell env, so a token exported in a terminal
+   * never reaches us; a .env pin is how a project supplies one. */
+  GITHUB_TOKEN?: string;
   LAKEBASE_PROJECT_ID?: string;
   LAKEBASE_HOST?: string;
   LAKEBASE_BRANCH_ID?: string;
@@ -181,6 +193,7 @@ export function getConfig(): LakebaseConfig {
 
   return {
     databricksHost: wsConfig.get('databricksHost', '') || envConfig.DATABRICKS_HOST || '',
+    databricksProfile: wsConfig.get('databricksProfile', '') || envConfig.DATABRICKS_CONFIG_PROFILE || '',
     lakebaseProjectId: wsConfig.get('lakebaseProjectId', '') || envConfig.LAKEBASE_PROJECT_ID || '',
     autoCreateBranch: wsConfig.get('autoCreateBranch', true),
     autoRefreshCredentials: wsConfig.get('autoRefreshCredentials', true),

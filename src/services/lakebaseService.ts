@@ -326,9 +326,10 @@ export class LakebaseService {
   private async withHost<T>(fn: () => Promise<T>): Promise<T> {
     const host = this.getEffectiveHost();
     if (!host) { return fn(); }
-    // Resolve the matching profile (host-match against ~/.databrickscfg)
-    // so CLI auth uses the right profile instead of a broken DEFAULT.
-    const profile = (await this.resolveProfileForHost(host)) ?? undefined;
+    // Resolve the effective profile (explicit .env/setting pin first, then
+    // host-match) so CLI auth uses the right profile instead of a broken
+    // DEFAULT , or, when several profiles match the host, instead of nothing.
+    const profile = await this.effectiveProfileForHost(host);
     return withDatabricksHostEnv(host, fn, profile ? { profile } : {});
   }
 
@@ -348,7 +349,7 @@ export class LakebaseService {
    */
   private async callSubstrate<T>(fn: string, ...args: unknown[]): Promise<T> {
     const host = this.getEffectiveHost();
-    const profile = host ? ((await this.resolveProfileForHost(host)) ?? undefined) : undefined;
+    const profile = host ? await this.effectiveProfileForHost(host) : undefined;
     if (isSubstrateMockLoaded()) {
       return (WORKER_SUBSTRATE_FNS[fn] as (...a: unknown[]) => Promise<T>)(...args);
     }
@@ -382,6 +383,52 @@ export class LakebaseService {
    * exactly-one-match. Kept in sync by rule, not import, until the kit
    * alpha exposing that selector is pinned here.
    */
+  /**
+   * The profile to pin for CLI auth against `host`. Resolution order:
+   *
+   *   1. An EXPLICIT pin , `lakebaseSync.databricksProfile` setting, else `.env`
+   *      DATABRICKS_CONFIG_PROFILE , validated to be a real profile that points
+   *      at this host. This is the ONLY thing that disambiguates a host that
+   *      several profiles match, and it is necessary because the extension host
+   *      does NOT inherit the user's shell env (an exported
+   *      DATABRICKS_CONFIG_PROFILE never reaches a spawned `databricks` CLI).
+   *   2. Host-match , the single valid profile whose host matches (null when
+   *      none or ambiguous; the CLI then resolves on its own).
+   *
+   * Returns undefined when neither yields a profile (caller passes none and
+   * lets the CLI resolve / surface its own error).
+   */
+  async effectiveProfileForHost(host: string): Promise<string | undefined> {
+    if (!host) { return undefined; }
+    const pinned = await this.pinnedProfileForHost(host);
+    if (pinned) { return pinned; }
+    return (await this.resolveProfileForHost(host)) ?? undefined;
+  }
+
+  /**
+   * The explicitly-pinned profile (setting or `.env`) IF it names a real
+   * ~/.databrickscfg profile whose host matches `host`. Returns undefined when
+   * unset, unknown, or pinned to a different host (so a stale/wrong pin can't
+   * silently auth against the wrong workspace). An expired-but-matching pin is
+   * still honored , the CLI then surfaces a precise re-auth error, which is far
+   * better than the host-ambiguity error the user hit without any pin.
+   */
+  private async pinnedProfileForHost(host: string): Promise<string | undefined> {
+    const pinned = getConfig().databricksProfile?.trim();
+    if (!pinned) { return undefined; }
+    const want = normalizeHost(host);
+    try {
+      const profiles = await this.listProfiles();
+      const match = profiles.find((p) => p.name === pinned);
+      if (!match) { return undefined; }
+      if (match.host && normalizeHost(match.host) !== want) { return undefined; }
+      return pinned;
+    } catch {
+      // Can't list profiles (rare): trust the explicit pin rather than block.
+      return pinned;
+    }
+  }
+
   async resolveProfileForHost(host: string): Promise<string | null> {
     if (!host) { return null; }
     const want = normalizeHost(host);

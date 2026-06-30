@@ -5,7 +5,7 @@
 // the substrate. FEIP-7065 + FEIP-7076.
 
 import { Octokit, RequestError } from "octokit";
-import { getGitHubToken, GITHUB_SCOPES } from "../utils/githubAuth";
+import { getGitHubToken, getConfiguredGitHubToken, GITHUB_SCOPES } from "../utils/githubAuth";
 import {
   parseOwnerRepo,
   // Repo
@@ -140,20 +140,44 @@ export class GitHubService {
 
   // ── Substrate-routed: PR flow (FEIP-7076) ──────────────────────
 
+  /**
+   * Run a substrate GitHub op with an EXPLICIT pinned token injected as
+   * GITHUB_TOKEN, so the kit's resolver (GITHUB_TOKEN env -> editor session ->
+   * gh) uses it FIRST. Without this, the kit takes the editor's GitHub session,
+   * which on a private EMU repo is the wrong identity and 404s -- and because a
+   * session exists it never falls through to a correctly-authed `gh`. The
+   * extension host does not inherit the user's shell env, so the pin comes from
+   * the `lakebaseSync.githubToken` setting or the project `.env` GITHUB_TOKEN
+   * (see getConfiguredGitHubToken). When no pin is set, the kit's own chain runs
+   * unchanged. Save/restore keeps overlapping ops from leaking the override.
+   */
+  private async withGitHubAuth<T>(fn: () => Promise<T>): Promise<T> {
+    const token = getConfiguredGitHubToken();
+    if (!token) { return fn(); }
+    const saved = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = token;
+    try {
+      return await fn();
+    } finally {
+      if (saved === undefined) { delete process.env.GITHUB_TOKEN; }
+      else { process.env.GITHUB_TOKEN = saved; }
+    }
+  }
+
   async getPullRequest(ownerRepo: string, headBranch: string): Promise<PullRequestInfo | undefined> {
-    return substrateGetPullRequest(ownerRepo, headBranch);
+    return this.withGitHubAuth(() => substrateGetPullRequest(ownerRepo, headBranch));
   }
 
   async getPullRequestReviews(ownerRepo: string, pullNumber: number): Promise<PullRequestReview[]> {
-    return substrateGetPullRequestReviews(ownerRepo, pullNumber);
+    return this.withGitHubAuth(() => substrateGetPullRequestReviews(ownerRepo, pullNumber));
   }
 
   async getPullRequestFiles(ownerRepo: string, pullNumber: number): Promise<PullRequestFile[]> {
-    return substrateGetPullRequestFiles(ownerRepo, pullNumber);
+    return this.withGitHubAuth(() => substrateGetPullRequestFiles(ownerRepo, pullNumber));
   }
 
   async getPullRequestComments(ownerRepo: string, pullNumber: number): Promise<Array<{ author: string; body: string }>> {
-    return substrateGetPullRequestComments(ownerRepo, pullNumber);
+    return this.withGitHubAuth(() => substrateGetPullRequestComments(ownerRepo, pullNumber));
   }
 
   async createPullRequest(
@@ -163,7 +187,7 @@ export class GitHubService {
     body: string,
     baseBranch?: string,
   ): Promise<string> {
-    return substrateCreatePullRequest({ ownerRepo, headBranch, title, body, baseBranch });
+    return this.withGitHubAuth(() => substrateCreatePullRequest({ ownerRepo, headBranch, title, body, baseBranch }));
   }
 
   async mergePullRequest(
@@ -172,11 +196,11 @@ export class GitHubService {
     method: "merge" | "squash" | "rebase" = "merge",
     deleteRemoteBranch = true,
   ): Promise<string> {
-    return substrateMergePullRequest({ ownerRepo, pullNumber, method, deleteRemoteBranch });
+    return this.withGitHubAuth(() => substrateMergePullRequest({ ownerRepo, pullNumber, method, deleteRemoteBranch }));
   }
 
   async listIssueComments(ownerRepo: string, issueNumber: number): Promise<string[]> {
-    return substrateListIssueComments(ownerRepo, issueNumber);
+    return this.withGitHubAuth(() => substrateListIssueComments(ownerRepo, issueNumber));
   }
 
   /** Alias for {@link listWorkflowRuns}. */
@@ -185,7 +209,7 @@ export class GitHubService {
   }
 
   async listWorkflowRuns(ownerRepo: string, limit = 5): Promise<WorkflowRunSummary[]> {
-    return substrateListWorkflowRuns(ownerRepo, limit);
+    return this.withGitHubAuth(() => substrateListWorkflowRuns(ownerRepo, limit));
   }
 
   // ── Inline: extension-specific avatar enrichment ───────────────
