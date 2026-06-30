@@ -3924,6 +3924,29 @@ export async function activate(context: vscode.ExtensionContext) {
         });
       }
 
+      // 6b. GitHub Actions enabled? When disabled (commonly an ORG policy on
+      // EMU repos, which a repo admin cannot override), pr.yml / merge.yml
+      // silently never run , no migrations, tests, or schema-diff comment.
+      // This is the difference between "CI failed" and "CI never happened".
+      if (ghOk) {
+        try {
+          const ownerRepo = await gitService.getOwnerRepo(root);
+          if (ownerRepo) {
+            const actionsEnabled = await githubService.getActionsEnabled(ownerRepo);
+            if (actionsEnabled === false) {
+              results.push({
+                label: 'GitHub Actions enabled',
+                ok: false,
+                detail: 'Disabled for this repo (often an org policy on EMU repos) – pr.yml / merge.yml will never run. An org owner must enable Actions (repo Settings → Actions, or the org Actions policy).',
+              });
+            } else if (actionsEnabled === true) {
+              results.push({ label: 'GitHub Actions enabled', ok: true, detail: 'Enabled' });
+            }
+            // undefined => couldn't determine (no access) => no row, no false alarm.
+          }
+        } catch { /* best effort */ }
+      }
+
       // 7. Check migration directory
       const config = getConfig();
       const migDir = path.join(root, config.migrationPath);

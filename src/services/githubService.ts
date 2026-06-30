@@ -24,6 +24,7 @@ import {
   getRunnerStatus as substrateGetRunnerStatus,
   createRegistrationToken as substrateCreateRegistrationToken,
   deleteRunner as substrateDeleteRunner,
+  getActionsEnabled as substrateGetActionsEnabled,
   // PR flow (FEIP-7076)
   createPullRequest as substrateCreatePullRequest,
   getPullRequest as substrateGetPullRequest,
@@ -201,6 +202,16 @@ export class GitHubService {
 
   async listIssueComments(ownerRepo: string, issueNumber: number): Promise<string[]> {
     return this.withGitHubAuth(() => substrateListIssueComments(ownerRepo, issueNumber));
+  }
+
+  /**
+   * Whether GitHub Actions is enabled for the repo. Returns undefined when it
+   * can't be determined (no token, repo invisible). Wrapped in withGitHubAuth so
+   * the explicit token pin is used , without it a private EMU repo reads as
+   * invisible (undefined) rather than its true enabled/disabled state.
+   */
+  async getActionsEnabled(ownerRepo: string): Promise<boolean | undefined> {
+    return this.withGitHubAuth(() => substrateGetActionsEnabled(ownerRepo));
   }
 
   /** Alias for {@link listWorkflowRuns}. */

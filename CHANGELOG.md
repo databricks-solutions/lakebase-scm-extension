@@ -34,6 +34,12 @@ now reads these pins from a source it can see (the project `.env`, or a setting)
 - **`lakebaseSync.databricksProfile` setting** , the `~/.databrickscfg` profile to
   pin for CLI auth (falls back to `.env` `DATABRICKS_CONFIG_PROFILE`). Set it when
   several profiles match the same workspace host.
+- **Health Check now reports whether GitHub Actions is enabled.** When Actions is
+  disabled for the repo (commonly an org policy on EMU repos that a repo admin
+  cannot override), `pr.yml` / `merge.yml` silently never run , no migrations,
+  tests, or schema-diff comment. Health Check now shows this explicitly with the
+  remediation, turning a silent "CI never happened" into a visible, actionable
+  finding.
 
 ## 0.6.6 (2026-06-29)
 
