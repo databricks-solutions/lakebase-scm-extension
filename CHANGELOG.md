@@ -128,7 +128,7 @@ A hotfix on top of 0.5.17 that ships the **Schema Diff command activation fix** 
 
 ## 0.5.17 (2026-06-05)
 
-The headline theme is **Databricks auth is reliable on multi-workspace machines**: the extension and the substrate now resolve and pin the right CLI profile for a project's host, so branch switches and credential mints stop failing with "Unable to load OAuth Config" when a developer has several `~/.databrickscfg` profiles. Plus the Tier-3 leg of the DRY consolidation (FEIP-7507) and a kit bump to `v0.3.0-alpha.57`. 442/442 mocha tests pass; tsc clean.
+The headline theme is **Databricks auth is reliable on multi-workspace machines**: the extension and the substrate now resolve and pin the right CLI profile for a project's host, so branch switches and credential mints stop failing with "Unable to load OAuth Config" when a developer has several `~/.databrickscfg` profiles. Plus the Tier-3 leg of the DRY consolidation and a kit bump to `v0.3.0-alpha.57`. 442/442 mocha tests pass; tsc clean.
 
 ### Fixed: multi-workspace auth
 
@@ -137,7 +137,7 @@ The headline theme is **Databricks auth is reliable on multi-workspace machines*
 - **`withDatabricksHostEnv` is ref-counted.** Concurrent calls wanting the same host + profile share one `process.env` mutation (save on first enter, restore on last exit); a conflicting different-host call waits for full unwind. This closes the residual race where one call's restore stripped the profile mid-flight of another's child process.
 - **Branch switch skips the redundant credential mint.** The git checkout fires the project's post-checkout hook, which already syncs `.env`. The extension now detects that (`envReflectsBranch`) and skips its own `syncConnection`, removing the duplicate mint and the concurrent host-scoped call that widened the race; it falls back to `syncConnection` only when the hook was absent or did not run.
 
-### Changed: DRY / service-layer consolidation (FEIP-7507, Tier 3)
+### Changed: DRY / service-layer consolidation (Tier 3)
 
 - **One source for status presentation, by domain** (`utils/statusPresentation.ts`, vscode-free): `CI_STATUS`, `CHECK_CONCLUSION`, `REVIEW_DECISION`, `REVIEW_STATE`, `SYNC_STATE`, plus `workflowRunStyle` + `resolveStatusStyle`. Adopted by pullRequestTree, schemaScmProvider, runnerTreeProvider, statusBarProvider, and branchTreeProvider (which also dropped its dead local status maps for `theme.ts`).
 - **One placeholder-tree base** (`providers/scmStateTree.ts`): `ScmStateTreeProvider` + `scmStateToTreeItem`; the merges / migrations / lakebase-schema trees collapse to thin subclasses.
@@ -149,7 +149,7 @@ The headline theme is **Databricks auth is reliable on multi-workspace machines*
 
 ## 0.5.16 (2026-06-04)
 
-The headline theme is **the new-project / set-up wizard and Databricks auth now work end to end**, plus a large DRY / service-layer consolidation (FEIP-7507). First changelog entry since 0.5.11; the intervening 0.5.12 to 0.5.15 tags shipped the day-zero defect fixes, the FEIP-7494 shell-thinning kit pin, the full-`node_modules` VSIX bundling fix, and the git-init prompt. 372/372 mocha tests pass; tsc clean. Kit pin unchanged at `v0.3.0-alpha.55`.
+The headline theme is **the new-project / set-up wizard and Databricks auth now work end to end**, plus a large DRY / service-layer consolidation. First changelog entry since 0.5.11; the intervening 0.5.12 to 0.5.15 tags shipped the day-zero defect fixes, the shell-thinning kit pin, the full-`node_modules` VSIX bundling fix, and the git-init prompt. 372/372 mocha tests pass; tsc clean. Kit pin unchanged at `v0.3.0-alpha.55`.
 
 ### Fixed: setup + auth wizard
 
@@ -173,7 +173,7 @@ The headline theme is **the new-project / set-up wizard and Databricks auth now 
 
 - **Separate, editable Lakebase project id** collected at step 2 of 9 (defaults to the project name), so the folder name and the Lakebase project id can differ. The redundant trailing "Lakebase project name" prompt is gone; wizard steps renumbered to /9.
 
-### Changed: DRY / service-layer consolidation (FEIP-7507)
+### Changed: DRY / service-layer consolidation
 
 Business logic that invokes a CLI, parses output, resolves config, or mutates remote/db state was moved out of the UI layer into services, and duplicated blocks collapsed to a single source of truth. Two latent bugs fixed in passing: three divergent `github.com` owner/repo regexes (now one `GitService.getOwnerRepo`), and a migrate-command map that dropped the `refresh-token.sh` wrapper in one copy (now `SchemaMigrationService.buildMigrateCommand`, always wrapped).
 
@@ -192,15 +192,15 @@ The headline theme is **`git checkout -b feature/x` now works on workspaces with
 
 ### Fixed
 
-- **Workspace TTL auto-recovery (kit FEIP-7436).** Workspaces enforce a maximum branch-expiration policy that the Lakebase API does not directly expose. The kit's `createFeatureBranch` defaults to a 30-day TTL; some workspaces cap below this and rejected the create with `expiration time exceeds the maximum expiration time`, leaving the user with a half-finished checkout. The kit now self-heals: on a TTL-too-long rejection it probes `databricks postgres get-project` for `history_retention_duration` (a conservative upper bound for the cap) and retries with `min(originalTtl, retention)`. Retention is cached per-instance for the rest of the session. Surfaced by the partner-asset-tracker workflow on 2026-06-02.
+- **Workspace TTL auto-recovery (kit).** Workspaces enforce a maximum branch-expiration policy that the Lakebase API does not directly expose. The kit's `createFeatureBranch` defaults to a 30-day TTL; some workspaces cap below this and rejected the create with `expiration time exceeds the maximum expiration time`, leaving the user with a half-finished checkout. The kit now self-heals: on a TTL-too-long rejection it probes `databricks postgres get-project` for `history_retention_duration` (a conservative upper bound for the cap) and retries with `min(originalTtl, retention)`. Retention is cached per-instance for the rest of the session. Surfaced by the partner-asset-tracker workflow on 2026-06-02.
 
 ### Changed
 
-- **Extension no longer ships its own `templates/project/` copy (FEIP-7435).** The substrate already bundles the templates via the kit npm package; the extension was overriding the substrate's resolver with a stale duplicate that had drifted 131+ lines from the kit's canonical copy (including the recent `SCRIPT_DIR` bug fix). The extension now lets the substrate auto-resolve via `findTemplatesDir` from the kit's `node_modules` location. The Playwright "Install Reference Config" command also reads from the kit's bundled location via `require.resolve`. VSIX shrinks from 246 files / 1.40MB to 179 files / 1.25MB.
+- **Extension no longer ships its own `templates/project/` copy.** The substrate already bundles the templates via the kit npm package; the extension was overriding the substrate's resolver with a stale duplicate that had drifted 131+ lines from the kit's canonical copy (including the recent `SCRIPT_DIR` bug fix). The extension now lets the substrate auto-resolve via `findTemplatesDir` from the kit's `node_modules` location. The Playwright "Install Reference Config" command also reads from the kit's bundled location via `require.resolve`. VSIX shrinks from 246 files / 1.40MB to 179 files / 1.25MB.
 
 ### Substrate
 
-- **Kit pin: `v0.3.0-alpha.38` -> `v0.3.0-alpha.39`.** alpha.39 ships FEIP-7436 (TTL auto-recovery + parse/min/cache helpers) and the prerequisite for FEIP-7435 (templates now ship in the kit's npm package `files` array, so consumers can resolve them via `findTemplatesDir` without overriding).
+- **Kit pin: `v0.3.0-alpha.38` -> `v0.3.0-alpha.39`.** alpha.39 ships the TTL auto-recovery (parse/min/cache helpers) and the prerequisite for dropping the extension's template copy (templates now ship in the kit's npm package `files` array, so consumers can resolve them via `findTemplatesDir` without overriding).
 
 372/372 mocha tests pass; tsc clean.
 
@@ -224,7 +224,7 @@ The headline theme is **First-Time Setup for existing projects actually works**,
 
 ### Substrate
 
-- **Kit pin: `v0.3.0-alpha.36` → `v0.3.0-alpha.37`.** alpha.37 ships the `adoptLakebaseProject` brownfield primitive (kit PR #116) plus FEIP-7211 (spike → design-spec carry-forward), FEIP-7218 (per-experiment cap), FEIP-7424 (command-drift detector), FEIP-7425 (`lakebase-update-commands` bin), and `MarkdownAdapter.pull` reader.
+- **Kit pin: `v0.3.0-alpha.36` → `v0.3.0-alpha.37`.** alpha.37 ships the `adoptLakebaseProject` brownfield primitive (kit PR #116) plus spike → design-spec carry-forward, a per-experiment cap, a command-drift detector, the `lakebase-update-commands` bin, and the `MarkdownAdapter.pull` reader.
 
 372/372 mocha tests pass; tsc clean.
 
@@ -234,7 +234,7 @@ The headline theme is **kit alpha.36 + tier auto-discovery in the extension + au
 
 ### Added
 
-- **`isTierBranch(name)` + module-level tier cache** in `src/utils/theme.ts`. Sync helper backed by a cache that `LakebaseService.listBranches()` refreshes on every call via the substrate's `tierBranchNames()`. Replaces `isStagingBranch(name, alias)` across the extension (statusBarProvider, branchTreeProvider, ~10 extension.ts call sites). Status bar, tree grouping, validators, and the auto-create gate all now drive off the same auto-discovered tier set: any non-default, no-expireTime Lakebase branch counts as a tier (FEIP-7098). PR #53 + PR #54.
+- **`isTierBranch(name)` + module-level tier cache** in `src/utils/theme.ts`. Sync helper backed by a cache that `LakebaseService.listBranches()` refreshes on every call via the substrate's `tierBranchNames()`. Replaces `isStagingBranch(name, alias)` across the extension (statusBarProvider, branchTreeProvider, ~10 extension.ts call sites). Status bar, tree grouping, validators, and the auto-create gate all now drive off the same auto-discovered tier set: any non-default, no-expireTime Lakebase branch counts as a tier. PR #53 + PR #54.
 
 ### Fixed: substrate bugs surfaced by live smoke
 
@@ -247,13 +247,13 @@ The headline theme is **kit alpha.36 + tier auto-discovery in the extension + au
 
 ### Substrate
 
-- **Kit pin: `v0.3.0-alpha.34` → `v0.3.0-alpha.36`.** alpha.35 shipped FEIP-7098 (`isTier` / `tierBranchNames` + `paired-branch.ts` auto-discover seam) + FEIP-7139 (`updateWorkflows()` in-place YAML refresh primitive). alpha.36 hotfixed the `expireTime` filter so feature branches stop being misclassified as tiers.
+- **Kit pin: `v0.3.0-alpha.34` → `v0.3.0-alpha.36`.** alpha.35 shipped `isTier` / `tierBranchNames` + the `paired-branch.ts` auto-discover seam plus `updateWorkflows()` (in-place YAML refresh primitive). alpha.36 hotfixed the `expireTime` filter so feature branches stop being misclassified as tiers.
 
 372/372 hermetic tests pass.
 
 ## 0.5.8 (2026-06-01)
 
-The headline theme is **substrate v0.3.0-alpha.34 + tidy-up + CLI auth-storage compat fix**. Picks up the FEIP-7210 schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate. Late addition: surfaced + fixed an auth-storage compat issue caused by recent Databricks CLI upgrades.
+The headline theme is **substrate v0.3.0-alpha.34 + tidy-up + CLI auth-storage compat fix**. Picks up the schema-migration adapter pattern (Flyway / Alembic / Knex behind one contract; `lakebase-schema-migrate` bin) plus every kit-API identifier now carrying the `Schema` prefix. Folds in long-standing Phase 6 / Phase 5 cleanup that the prior 9-PR substrate-extraction sweep left behind: orphaned commands gain menu placements, the Cmd+Shift+P findability gap closes, the `theme.ts` constants finally get adopted, and one last inline `git merge-base` exec call routes through the substrate. Late addition: surfaced + fixed an auth-storage compat issue caused by recent Databricks CLI upgrades.
 
 ### Added
 
@@ -305,9 +305,9 @@ The headline theme is **VS Code command for the long-running-tier methodology + 
 
 ### Added
 
-- **`lakebaseSync.cutLongRunningTier` command** (FEIP-7097). Closes the biggest documented UX gap in the supported branching methodology. Quick-picks tier name (`staging` / `uat` / `perf` / custom) and fork-from branch (defaults to current HEAD or `main` for the first tier). One confirmation dialog explains "this creates a Lakebase branch + matching git branch that release PRs target; it's not auto-created". Calls substrate `createLongRunningBranch` with the inputs. Surfaces in the Project view title bar.
+- **`lakebaseSync.cutLongRunningTier` command.** Closes the biggest documented UX gap in the supported branching methodology. Quick-picks tier name (`staging` / `uat` / `perf` / custom) and fork-from branch (defaults to current HEAD or `main` for the first tier). One confirmation dialog explains "this creates a Lakebase branch + matching git branch that release PRs target; it's not auto-created". Calls substrate `createLongRunningBranch` with the inputs. Surfaces in the Project view title bar.
 - **`isMigrationMetadataTable` helper** (PR #23). Consolidates `flyway_schema_history` / `alembic_version` / `knex_migrations` exclusion behind a single predicate consumed by every table-diff path. Previously each call site had its own filter list.
-- **Auth helper hardening** (FEIP-7112, PR #19). Silent-fallback removal across `lakebaseService` auth paths. Typecheck cleanup pass. CI gate ensures typecheck stays green on every PR.
+- **Auth helper hardening** (PR #19). Silent-fallback removal across `lakebaseService` auth paths. Typecheck cleanup pass. CI gate ensures typecheck stays green on every PR.
 
 ### Fixed
 
@@ -317,13 +317,13 @@ The headline theme is **VS Code command for the long-running-tier methodology + 
 
 ### Substrate
 
-- **`deployService` + `runnerService` routed through substrate** (FEIP-7128, FEIP-7129, PR #20). Both services now delegate to substrate primitives for their non-VS Code-specific paths. Same pattern as the earlier migrations of `gitService` and `lakebaseService`. Part of the broader substrate-extraction story.
+- **`deployService` + `runnerService` routed through substrate** (PR #20). Both services now delegate to substrate primitives for their non-VS Code-specific paths. Same pattern as the earlier migrations of `gitService` and `lakebaseService`. Part of the broader substrate-extraction story.
 - **Kit pin: alpha.17 → alpha.18** (PR #18). Picked up substrate fixes for the staging-tier discovery flow.
 
 ### Tooling
 
-- **Drop broken `npm run lint`** (FEIP-7132, PR #21). The script was registered but no eslint config existed; running it produced confusing errors. Removed until eslint is genuinely set up.
-- **Correct section 4 of `vs-code-parity-followups.md`** (FEIP-7104, PR #17). The self-hosted-vs-github-hosted runner write-up was out of date relative to the substrate's actual capabilities.
+- **Drop broken `npm run lint`** (PR #21). The script was registered but no eslint config existed; running it produced confusing errors. Removed until eslint is genuinely set up.
+- **Correct section 4 of `vs-code-parity-followups.md`** (PR #17). The self-hosted-vs-github-hosted runner write-up was out of date relative to the substrate's actual capabilities.
 
 ## 0.5.6 (2026-05-24)
 

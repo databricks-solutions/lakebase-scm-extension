@@ -13,7 +13,7 @@ The test surgery in this PR therefore deliberately avoids hardcoding `'staging'`
 
 ## What "release" means here
 
-A release is a primitive defined in the substrate. PR #12 ships the extension's test-side helper as `promoteStagingToMain(...)`, but the design intent is the substrate's `release({ from, to, releaseId })` primitive (planned, FEIP-7059). The extension helper is a thin caller. In a future cleanup the helper should be renamed `release({ from, to })` and `promoteStagingToMain` becomes a one-line shim for the two-tier default.
+A release is a primitive defined in the substrate. PR #12 ships the extension's test-side helper as `promoteStagingToMain(...)`, but the design intent is the substrate's `release({ from, to, releaseId })` primitive (planned). The extension helper is a thin caller. In a future cleanup the helper should be renamed `release({ from, to })` and `promoteStagingToMain` becomes a one-line shim for the two-tier default.
 
 Two-tier shape (this PR):
 

@@ -8,7 +8,7 @@ the gaps between what the tests do today and what a real VS Code user
 experiences, plus the substrate/extension follow-ups needed to close them.
 
 Filed after diagnosing why feature branches kept forking from production
-instead of staging — root cause was the contributor's global
+instead of staging – root cause was the contributor's global
 `core.hooksPath` pointing at the Databricks corporate hooks dir, which
 made git skip `.git/hooks/` entirely. Fixed in lakebase-app-dev-kit
 v0.3.0-alpha.10 (both `install-hook.sh` and the TypeScript `installHooks`
@@ -16,7 +16,7 @@ now pin `core.hooksPath` project-local). With the hook actually firing on
 every git checkout, several test patterns that previously hid the bug now
 need re-examination.
 
-## 1. `createLakebaseBranchAndConnect` is now redundant with the hook (DONE — FEIP-7099)
+## 1. `createLakebaseBranchAndConnect` is now redundant with the hook (DONE)
 
 **Today:** The integration test helpers explicitly call
 `createLakebaseBranchAndConnect(ctx, BRANCH)` after `git checkout -b
@@ -39,14 +39,14 @@ call now duplicates this work. Likely outcomes:
 
 **Action:** Remove `createLakebaseBranchAndConnect` from the test helpers
 (or shrink it to "wait for the hook to finish writing `.env`, then read
-the connection out" — i.e. just `waitForEnvBranchId`). Let the post-checkout
+the connection out" – i.e. just `waitForEnvBranchId`). Let the post-checkout
 hook be the only path that talks to Lakebase during a feature checkout.
 This matches what a VS Code user experiences: they run `git checkout -b`,
 the hook handles the rest.
 
 Files to touch:
-- `test/integration/ecommerce/helpers.ts` — `createLakebaseBranchAndConnect`
-- `test/integration/python-devloop/helpers.ts` — same name
+- `test/integration/ecommerce/helpers.ts` – `createLakebaseBranchAndConnect`
+- `test/integration/python-devloop/helpers.ts` – same name
 - All scenario `A1b` / `A2` blocks that call it
 
 Probably also `verifyBranchConnection` (an `A1-verify` block) can drop to a
@@ -85,13 +85,13 @@ recommended branching pattern.
 - On success: shows the tier in the branch sidebar with a distinct icon
 
 Files to touch:
-- `src/extension.ts` — register the command
-- `src/services/lakebaseService.ts` — already has `createBranch`; just
+- `src/extension.ts` – register the command
+- `src/services/lakebaseService.ts` – already has `createBranch`; just
   wire to `createLongRunningBranch` from the substrate
-- `src/providers/branchTreeProvider.ts` — tier rendering (currently only
+- `src/providers/branchTreeProvider.ts` – tier rendering (currently only
   knows about `stagingAlias`/`trunkAlias`; needs to discover tiers from
   the Lakebase branch list, matching what alpha.9 did in the hook)
-- `package.json` — `contributes.commands` entry + `contributes.menus`
+- `package.json` – `contributes.commands` entry + `contributes.menus`
   placement (probably the branch tree title bar)
 
 ## 3. Spring Initializr is forced off by the test
@@ -100,7 +100,7 @@ Files to touch:
 `LAKEBASE_SCAFFOLD_FALLBACK=1` to force the bundled static Java template
 instead of going through Spring Initializr.
 
-**Real VS Code users:** Default path is Spring Initializr — different
+**Real VS Code users:** Default path is Spring Initializr – different
 generated `pom.xml`, different application class name, different
 `.gitignore`. The fallback exists for offline cases and CI.
 
@@ -116,20 +116,20 @@ that uses the real Initializr.
 
 **Today:** Test forces `runnerType=self-hosted`, downloads + registers an
 ephemeral runner per run. The substrate's `runnerType` setting now
-correctly patches the deployed workflows for both modes (FEIP-7121,
-substrate v0.3.0-alpha.17) — `github-hosted` rewrites `runs-on:
+correctly patches the deployed workflows for both modes (substrate
+v0.3.0-alpha.17): `github-hosted` rewrites `runs-on:
 self-hosted` → `runs-on: ubuntu-latest` across `.github/workflows/*.yml`;
 `self-hosted` keeps the template default + swaps in the local-JDK shim.
 
 **Real VS Code users:** can already pick github-hosted at scaffold
 time via the createProject Quick Pick (`src/extension.ts` line 664). The
 substrate accepts it and `patchWorkflowsForRunnerType` rewrites
-`runs-on:` to `ubuntu-latest` correctly (FEIP-7121, alpha.17). The
+`runs-on:` to `ubuntu-latest` correctly (alpha.17). The
 github-hosted code path is functional in the extension UI today.
 
 What still blocks the FULL end-to-end on github-hosted:
 
-- **Workspace IP allowlist (FEIP-7124).** Test runs surfaced that
+- **Workspace IP allowlist.** Test runs surfaced that
   `fevm-serverless-stable-ecparr` (and likely other internal test
   workspaces) blocks GitHub Actions Azure egress IPs at the Databricks
   network layer. When `pr.yml` runs on github-hosted and tries
@@ -137,7 +137,7 @@ What still blocks the FULL end-to-end on github-hosted:
   "Source IP address: 20.168.x.x is blocked by Databricks IP ACL". Self-
   hosted bypasses this because the runner is on the contributor's
   allowlisted laptop. Resolution paths: a workspace without IP ACL, a
-  widened ACL, or a static-IP egress gateway. See FEIP-7124.
+  widened ACL, or a static-IP egress gateway.
 - **No post-scaffold switcher.** A user who scaffolded as self-hosted
   and later wants github-hosted has no in-product path; they'd manually
   re-run `patchWorkflowsForRunnerType` or hand-edit the YAML.
@@ -148,29 +148,29 @@ What still blocks the FULL end-to-end on github-hosted:
 
 **Coverage status:** substrate-primitive coverage closed by
 `test/integration/hook/githubHostedRunner.test.ts` (PR #16). Full E2E
-under FEIP-7104 blocked on FEIP-7124 (workspace IP ACL).
+blocked on the workspace IP ACL.
 
 **Action plan (roadmap):**
 
-1. **FEIP-7124** — resolve the workspace IP ACL blocker so a real
+1. **Resolve the workspace IP ACL blocker** so a real
    github-hosted CI run can succeed end-to-end.
-2. **`lakebaseSync.changeRunnerType` command** — for projects already
+2. **`lakebaseSync.changeRunnerType` command** – for projects already
    scaffolded, re-run `patchWorkflowsForRunnerType` against the working
    tree, commit the diff with a templated message.
-3. **Default policy ADR** — short doc stating which mode we ship as the
+3. **Default policy ADR** – short doc stating which mode we ship as the
    v1 default with rationale.
-4. **README addition** — call out runner type in the scaffold flow +
+4. **README addition** – call out runner type in the scaffold flow +
    how to change it post-scaffold + note the workspace IP-ACL caveat
    for github-hosted CI.
 
 Files likely to touch:
-- `src/extension.ts` — register `lakebaseSync.changeRunnerType`
-- `src/services/projectCreationService.ts` — already accepts +
+- `src/extension.ts` – register `lakebaseSync.changeRunnerType`
+- `src/services/projectCreationService.ts` – already accepts +
   forwards `runnerType` (existing)
-- `package.json` — `contributes.commands` for the change-runner-type
+- `package.json` – `contributes.commands` for the change-runner-type
   command
-- `docs/adr/` (new) — default-policy ADR
-- `README.md` — runner-type section
+- `docs/adr/` (new) – default-policy ADR
+- `README.md` – runner-type section
 
 ## 5. PR creation bypasses the VS Code GitHub extension
 
@@ -197,7 +197,7 @@ Root cause: substrate `release()` (alpha.7 onward) opens the PR and
 immediately calls `mergePullRequest`. The original design relied on
 GitHub branch protection (required status checks) to block the merge
 button until pr.yml passed. **Branch protection is a paid feature on
-private repos** — every test scaffold (free private repo) cannot
+private repos** – every test scaffold (free private repo) cannot
 configure it, and the merge button is unconditional there. The same
 applies to any user who scaffolds without GitHub Pro/Enterprise.
 
@@ -207,7 +207,7 @@ to complete with `conclusion=success` before calling
 with the PR left open for inspection. New args:
 - `prWorkflowFile?: string` (default `'pr.yml'`)
 - `prGateTimeoutMs?: number` (default 10 min)
-- `requireCiGate?: boolean` (default `true`) — escape hatch only for
+- `requireCiGate?: boolean` (default `true`) – escape hatch only for
   callers enforcing the gate some other way
 
 In a properly-configured production repo with branch protection +
@@ -223,7 +223,7 @@ Followup work this exposes:
   filter out the initial scaffold push (no real migrations to apply,
   the run hangs trying to migrate against an empty target). The orphan
   initial-scaffold run on main during testing also seems to block
-  subsequent merge.yml dispatches on the same branch — separate issue,
+  subsequent merge.yml dispatches on the same branch – separate issue,
   but related to the test reliability story.
 
 ## 6. The pre-push and post-merge hooks weren't running before alpha.10
@@ -235,7 +235,7 @@ triggers `post-merge.sh` (Lakebase branch cleanup + ref prune).
 
 **Implications:**
 - Test runtime increases per `git push` (token refresh + secrets sync are
-  not free — likely 5-15s each)
+  not free – likely 5-15s each)
 - The `delete-lakebase-branches.sh` cleanup script may delete branches the
   test still needs for assertions. Need to audit assumptions in Phase D
   verification blocks.
@@ -265,7 +265,7 @@ reference the old `stagingAlias`
 The alpha.9 hook redesign removed `LAKEBASE_STAGING_BRANCH` and the
 hook's `STAGING_ALIAS` path, but two consumers still use the old
 naming:
-- Substrate: `scripts/lakebase/paired-branch.ts` — `stagingAlias` field
+- Substrate: `scripts/lakebase/paired-branch.ts` – `stagingAlias` field
   in args, `isStagingAlias` logic
 - Extension UI: `src/utils/theme.ts` `isStagingBranch`,
   `src/providers/branchTreeProvider.ts` tier coloring,
@@ -300,16 +300,16 @@ This would let us drop `LAKEBASE_TRUNK_BRANCH` entirely.
 
 `test/integration/hook/hookOnCheckout.test.ts` runs in ~26s end-to-end
 and exercises just the hook + a Lakebase project + a few git checkouts.
-It was the right tool to surface the `core.hooksPath` bug — 60x faster
+It was the right tool to surface the `core.hooksPath` bug – 60x faster
 than the full ecom suite.
 
 **Action:** Build similar small repros for:
-- `release()` (PR open + merge + workflow polling) — exercises the
+- `release()` (PR open + merge + workflow polling) – exercises the
   release flow without 8 scenarios in front of it
-- `cut-backup.ts` (pre-migrate snapshot lifecycle) — currently only
+- `cut-backup.ts` (pre-migrate snapshot lifecycle) – currently only
   hit transitively via the ecom Step E1/E2 assertions
-- `pre-push.sh` token refresh — currently no isolated test
-- `post-merge.sh` cleanup — currently no isolated test
+- `pre-push.sh` token refresh – currently no isolated test
+- `post-merge.sh` cleanup – currently no isolated test
 
 The pattern: minimum viable scaffolding to exercise ONE substrate
 primitive, with instrumentation (logs to `/tmp/<name>.log`) and
@@ -318,7 +318,7 @@ primitive, with instrumentation (logs to `/tmp/<name>.log`) and
 ---
 
 **Priority order suggested:**
-1. ✅ (#1) DONE per FEIP-7099 + kit alpha.10. `createLakebaseBranchAndConnect` removed from helpers; the hook is the sole branch-create path on feature checkout.
+1. ✅ (#1) DONE per kit alpha.10. `createLakebaseBranchAndConnect` removed from helpers; the hook is the sole branch-create path on feature checkout.
 2. (#6) Audit `post-merge.sh` cleanup vs Phase D assertions; the now-firing
    hook may delete branches the test still inspects.
 3. (#2) VS Code command for `createLongRunningBranch`, closes the biggest

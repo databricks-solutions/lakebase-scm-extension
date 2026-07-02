@@ -21,7 +21,7 @@ lakebase-app-dev-kit (the kit)
 └── (consumed by) lakebase-scm-extension     ← this skill, IDE surface
 ```
 
-The extension is a thin VS Code shell over the substrate. Every operation (branch lifecycle, schema diff, PR flow, scaffold, runner setup, credential mint) calls the same substrate function the agent skill calls. The equivalence harness at `test/equivalence/` (FEIP-7080) catches drift between extension proxies and the substrate.
+The extension is a thin VS Code shell over the substrate. Every operation (branch lifecycle, schema diff, PR flow, scaffold, runner setup, credential mint) calls the same substrate function the agent skill calls. The equivalence harness at `test/equivalence/` catches drift between extension proxies and the substrate.
 
 ## What only the extension provides
 
@@ -73,7 +73,7 @@ Paired-branch + Lakebase ops:
 - `lakebaseSync.publishBranch` – push current branch + open PR
 
 Schema + migrations:
-- `lakebaseSync.runMigrate` – apply pending migrations (current substrate-bridged; FEIP-7091 standardizes the primitive)
+- `lakebaseSync.runMigrate` – apply pending migrations (current substrate-bridged; a future substrate primitive standardizes this)
 - `lakebaseSync.showMigrationHistory` – open the migrations tree
 - `lakebaseSync.showTableDiff` – single-table schema diff
 - `lakebaseSync.showBranchDiff` – full branch schema diff webview
@@ -81,7 +81,7 @@ Schema + migrations:
 
 Tests + tooling:
 - `lakebaseSync.runTests` – run the project's test suite against the branch
-- `lakebaseSync.installPlaywrightConfig` – drop in Playwright config (FEIP-7094 standardizes the primitive)
+- `lakebaseSync.installPlaywrightConfig` – drop in Playwright config (a future substrate primitive standardizes this)
 
 Git ops (also available in core VS Code SCM, surfaced here too):
 - `lakebaseSync.stageFile` / `unstageFile` / `discardChanges` / `stageAll` / `unstageAll`
@@ -105,5 +105,5 @@ The extension's operations are not new – they're the substrate's operations wr
 
 - Parent skill: [`lakebase-scm-workflows`](https://github.com/databricks-solutions/lakebase-app-dev-kit/blob/main/skills/lakebase-scm-workflows/SKILL.md) – agent surface for the same operations
 - Architecture diagram + version history: [`docs/plugin-plan.md`](./docs/plugin-plan.md)
-- Equivalence test pattern (catches extension/substrate drift): [`test/equivalence/`](./test/equivalence/) and the FEIP-7080 ticket
-- Sibling skills (planned): `lakebase-tdd-workflows` (FEIP-7066 hint), future deploy-to-Apps workflow skill
+- Equivalence test pattern (catches extension/substrate drift): [`test/equivalence/`](./test/equivalence/)
+- Sibling skills (planned): `lakebase-tdd-workflows`, future deploy-to-Apps workflow skill
