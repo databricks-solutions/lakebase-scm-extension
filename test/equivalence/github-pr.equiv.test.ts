@@ -57,7 +57,9 @@ describe("equivalence: github PR flow", () => {
   });
 
   it("mergePullRequest – defaults to merge + deleteRemoteBranch=true", async () => {
-    const tracker = stubSubstrate("mergePullRequest", "merged-sha");
+    // The substrate now returns a MergePullRequestResult ({ message, sha? });
+    // the service surfaces the sha.
+    const tracker = stubSubstrate("mergePullRequest", { message: "Merged", sha: "merged-sha" });
 
     const result = await service.mergePullRequest("acme/repo", 42);
 
@@ -72,7 +74,7 @@ describe("equivalence: github PR flow", () => {
   });
 
   it("mergePullRequest – honors method + deleteRemoteBranch overrides", async () => {
-    const tracker = stubSubstrate("mergePullRequest", "merged-sha");
+    const tracker = stubSubstrate("mergePullRequest", { message: "Merged", sha: "merged-sha" });
 
     await service.mergePullRequest("acme/repo", 42, "squash", false);
 

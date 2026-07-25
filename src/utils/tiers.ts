@@ -1,6 +1,6 @@
 // Protected long-running tier classification for the extension.
 //
-// SOURCE OF TRUTH: the kit (@databricks-solutions/lakebase-app-dev-kit). The
+// SOURCE OF TRUTH: the kit (@databricks-solutions/lakebase-scm-utils). The
 // default protected name set (main/master/staging/dev), the union/normalize
 // rule, and the "named AND long-running" predicate all come from the kit. The
 // extension does NOT reimplement any of that; it only supplies this project's
@@ -10,7 +10,7 @@
 
 import {
   resolveProtectedTierNames,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import { getConfig } from './config';
 import { normalizeBranchName } from './branchParsing';
 import { isTierBranch, getKnownTierNames, isMainBranch } from './theme';

@@ -5,9 +5,9 @@ import {
   resolveMigrationLayout,
   detectLanguageAt,
   type MigrationLanguage,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 
-// The kit (lakebase-app-dev-kit) owns language detection + the per-language
+// The kit (lakebase-scm-utils) owns language detection + the per-language
 // migration conventions (path / pattern / glob) , see its
 // scripts/lakebase/migration-layout.ts. The extension consumes that single
 // source of truth so the two never drift. ProjectLanguage stays as an alias of

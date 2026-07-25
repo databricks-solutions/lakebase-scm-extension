@@ -21,7 +21,7 @@ import {
   parseTargetsYaml as substrateParseTargetsYaml,
   getTargetNames as substrateGetTargetNames,
   type DeployTarget as SubstrateDeployTarget,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import { exec } from '../utils/exec';
 import { getConfig, getWorkspaceRoot } from '../utils/config';
 import { isLongRunningTier } from '../providers/branchTreeProvider';
@@ -197,7 +197,7 @@ export class DeployService {
    * Retained for backward compatibility with `ensureLakebaseSecretAuth`.
    */
   static async getAppSpClientId(profile: string, appName: string): Promise<string | undefined> {
-    const { getAppServicePrincipal } = await import('@databricks-solutions/lakebase-app-dev-kit');
+    const { getAppServicePrincipal } = await import('@databricks-solutions/lakebase-scm-utils');
     try {
       const sp = await getAppServicePrincipal({ profile, appName });
       return sp?.clientId;

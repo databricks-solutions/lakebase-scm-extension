@@ -36,7 +36,7 @@ import { SchemaMigrationService } from '../../../src/services/schemaMigrationSer
 import {
   applySchemaMigrations as substrateApplyMigrations,
   schemaMigrationStatus as substrateMigrationStatus,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 
 // ── Context shared across all scenarios ──────────────────────────────
 

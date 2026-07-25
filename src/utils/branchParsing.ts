@@ -5,7 +5,7 @@
 // "name.trim is not a function" crash when a branch records its parent only as
 // a resource path with empty short-name fields.
 
-import { normalizeTierName } from '@databricks-solutions/lakebase-app-dev-kit';
+import { normalizeTierName } from '@databricks-solutions/lakebase-scm-utils';
 
 /**
  * Extract the short branch id from a Lakebase resource path

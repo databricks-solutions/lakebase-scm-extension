@@ -25,7 +25,7 @@ import { SchemaDiffService } from '../../src/services/schemaDiffService';
 import {
   createLakebaseProject,
   deleteLakebaseProject,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 
 const liveE2E = process.env.LAKEBASE_TEST_E2E === '1';
 const host = (process.env.DATABRICKS_TEST_HOST || '').trim();

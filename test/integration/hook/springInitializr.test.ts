@@ -21,7 +21,7 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { deploySpringStarter } from '@databricks-solutions/lakebase-app-dev-kit';
+import { deploySpringStarter } from '@databricks-solutions/lakebase-scm-utils';
 
 const NETWORK_TIMEOUT_MS = 30000;
 

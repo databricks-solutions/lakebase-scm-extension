@@ -3,7 +3,7 @@
  *
  * The core release primitives - `release({from, to, ...})` and
  * `createLongRunningBranch({name, forkFromBranch, ...})` - live in the
- * substrate (`@databricks-solutions/lakebase-app-dev-kit`). This module
+ * substrate (`@databricks-solutions/lakebase-scm-utils`). This module
  * re-exports them for convenience, plus adds two integration-test-only
  * assertion helpers that don't belong in the substrate (they shell out
  * to `databricks postgres list-branches` and `psql` for verification).
@@ -20,7 +20,7 @@ import {
   release,
   createLongRunningBranch,
   getDefaultBranch,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 
 // Re-export substrate primitives so the test files can keep importing

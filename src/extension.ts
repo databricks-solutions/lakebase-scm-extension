@@ -1749,7 +1749,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('lakebaseSync.createLakebaseProject', async () => {
       log('=== setupExistingProject START ===');
       const path = require('path');
-      const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId, scaffoldAll } = require('@databricks-solutions/lakebase-app-dev-kit');
+      const { adoptLakebaseProject, assertAdoptionPreflight, deployEnv, deployEnvExample, getDefaultBranchId, scaffoldAll } = require('@databricks-solutions/lakebase-scm-utils');
 
       const root = getWorkspaceRoot();
       log(`workspace root: ${root || '<none>'}`);
@@ -2486,10 +2486,10 @@ export async function activate(context: vscode.ExtensionContext) {
       // root via require.resolve, then walks down to the template file.
       let src: string;
       try {
-        const kitPkgPath = require.resolve('@databricks-solutions/lakebase-app-dev-kit/package.json');
+        const kitPkgPath = require.resolve('@databricks-solutions/lakebase-scm-utils/package.json');
         src = path.join(path.dirname(kitPkgPath), 'templates', 'project', 'common', 'client-reference', 'playwright.config.ts');
       } catch {
-        vscode.window.showErrorMessage('Could not resolve the lakebase-app-dev-kit package (templates source).');
+        vscode.window.showErrorMessage('Could not resolve the lakebase-scm-utils package (templates source).');
         return;
       }
       if (!fs.existsSync(src)) {
@@ -3719,7 +3719,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const root = getWorkspaceRoot();
             if (root) {
               try {
-                const { syncCiSecrets } = require('@databricks-solutions/lakebase-app-dev-kit');
+                const { syncCiSecrets } = require('@databricks-solutions/lakebase-scm-utils');
                 const cfg = getConfig();
                 await syncCiSecrets({
                   projectDir: root,
@@ -4111,7 +4111,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const root = getWorkspaceRoot();
         if (root) {
           try {
-            const { syncCiSecrets } = require('@databricks-solutions/lakebase-app-dev-kit');
+            const { syncCiSecrets } = require('@databricks-solutions/lakebase-scm-utils');
             const cfg = getConfig();
             await syncCiSecrets({
               projectDir: root,
