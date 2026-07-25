@@ -9,7 +9,7 @@
 //   2. The proxy returned the substrate result unchanged - migrate
 //      proxies do no adapting today (catches future-shape divergence).
 //
-// Pairs with the substrate's own live BDD coverage in lakebase-app-dev-kit
+// Pairs with the substrate's own live BDD coverage in lakebase-scm-utils
 // (migrate-live.test.ts for Alembic, migrate-live-flyway.test.ts for
 // Flyway). FEIP-7091 / FEIP-7098.
 

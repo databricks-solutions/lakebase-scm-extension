@@ -81,7 +81,7 @@ import {
   checkoutDetached as substrateCheckoutDetached,
   revert as substrateRevert,
   cherryPick as substrateCherryPick,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 
 export interface PullRequestCheck {
   name: string;

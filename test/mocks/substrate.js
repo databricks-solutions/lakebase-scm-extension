@@ -1,4 +1,4 @@
-// Mock module for @databricks-solutions/lakebase-app-dev-kit.
+// Mock module for @databricks-solutions/lakebase-scm-utils.
 //
 // The real substrate, built by tsup with __esModule named exports, has
 // non-configurable property descriptors. sinon.stub and direct
@@ -21,7 +21,7 @@
 const path = require('path');
 const PACKAGE_DIR = path.resolve(
   __dirname,
-  '../../node_modules/@databricks-solutions/lakebase-app-dev-kit'
+  '../../node_modules/@databricks-solutions/lakebase-scm-utils'
 );
 const PKG = require(path.join(PACKAGE_DIR, 'package.json'));
 const MAIN_REL = PKG.main || 'index.js';

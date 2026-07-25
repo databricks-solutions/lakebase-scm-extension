@@ -29,7 +29,7 @@ import {
   deployScripts,
   installHooks,
   listBranches,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import { assertIntegrationCredentials } from '../lib/credentials';
 
 const HOOK_LOG = '/tmp/lakebase-post-merge.log';

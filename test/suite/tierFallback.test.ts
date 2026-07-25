@@ -1,7 +1,7 @@
 import { strict as assert } from 'assert';
 import { TIER_FALLBACK_NAMES } from '../../src/utils/theme';
 import { isLongRunningTier } from '../../src/providers/branchTreeProvider';
-import { DEFAULT_PROTECTED_TIER_NAMES } from '@databricks-solutions/lakebase-app-dev-kit';
+import { DEFAULT_PROTECTED_TIER_NAMES } from '@databricks-solutions/lakebase-scm-utils';
 
 describe('TIER_FALLBACK_NAMES (re-exports the kit default; no duplicated list)', () => {
   it('IS the kit default protected set (source of truth), not an extension-local copy', () => {

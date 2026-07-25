@@ -17,7 +17,7 @@ import { parentPort } from 'worker_threads';
 // The kit is externalized in webpack (commonjs require at runtime from the
 // vsix-shipped node_modules), exactly as the main bundle requires it.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const kit: Record<string, unknown> = require('@databricks-solutions/lakebase-app-dev-kit');
+const kit: Record<string, unknown> = require('@databricks-solutions/lakebase-scm-utils');
 
 interface SubstrateRequest {
   id: number;

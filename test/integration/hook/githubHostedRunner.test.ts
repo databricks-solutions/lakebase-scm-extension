@@ -32,7 +32,7 @@ import * as path from 'path';
 import {
   deployWorkflows,
   patchWorkflowsForRunnerType,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 
 describe('github-hosted runner patch (small repro)', function () {
   this.timeout(30000);

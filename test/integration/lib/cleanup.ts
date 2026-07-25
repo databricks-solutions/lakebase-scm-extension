@@ -11,7 +11,7 @@
 import {
   deleteLakebaseProject as substrateDeleteLakebaseProject,
   deleteRepo as substrateDeleteRepo,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';

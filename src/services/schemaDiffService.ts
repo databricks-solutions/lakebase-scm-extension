@@ -1,7 +1,7 @@
 // SchemaDiffService – VS Code-aware shell over the substrate's schema-diff.
 //
 // FEIP-7065 (publish_and_consume): the core "compare two Lakebase branches"
-// logic lives in @databricks-solutions/lakebase-app-dev-kit. This
+// logic lives in @databricks-solutions/lakebase-scm-utils. This
 // service keeps:
 //   - Per-branch cache (mtime + age) – pure VS Code perf optimization
 //   - parseMarkdownDiff / generateDiff / readCachedDiff – legacy schema-diff.md

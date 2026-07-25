@@ -21,7 +21,7 @@
 import { strict as assert } from 'assert';
 import * as cp from 'child_process';
 import { LakebaseService } from '../../../src/services/lakebaseService';
-import { cutBackup } from '@databricks-solutions/lakebase-app-dev-kit';
+import { cutBackup } from '@databricks-solutions/lakebase-scm-utils';
 import { assertIntegrationCredentials } from '../lib/credentials';
 
 describe('cut-backup primitive (small repro)', function () {

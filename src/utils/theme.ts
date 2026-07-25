@@ -46,7 +46,7 @@ export const STATUS_COLORS: Record<string, string> = {
 // the extension does NOT keep its own list. Re-exported here under the existing
 // name so importers are unchanged. Per-project overrides (tierNames + configured
 // trunk/staging/base) are unioned in by utils/tiers.projectProtectedTierNames.
-export { DEFAULT_PROTECTED_TIER_NAMES as TIER_FALLBACK_NAMES } from '@databricks-solutions/lakebase-app-dev-kit';
+export { DEFAULT_PROTECTED_TIER_NAMES as TIER_FALLBACK_NAMES } from '@databricks-solutions/lakebase-scm-utils';
 
 export function isMainBranch(name: string, trunkAlias?: string): boolean {
   if (trunkAlias && trunkAlias.length > 0) {

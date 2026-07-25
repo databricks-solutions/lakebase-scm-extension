@@ -1,4 +1,4 @@
-// GitHubService – thin proxy over @databricks-solutions/lakebase-app-dev-kit.
+// GitHubService – thin proxy over @databricks-solutions/lakebase-scm-utils.
 //
 // All operations except `listCommits` (extension-specific avatar enrichment
 // for the graph view) and the local `octokit` cache for it now delegate to
@@ -34,7 +34,7 @@ import {
   listIssueComments as substrateListIssueComments,
   listWorkflowRuns as substrateListWorkflowRuns,
   mergePullRequest as substrateMergePullRequest,
-} from "@databricks-solutions/lakebase-app-dev-kit";
+} from "@databricks-solutions/lakebase-scm-utils";
 import type {
   PullRequestFile,
   PullRequestInfo,
@@ -197,7 +197,13 @@ export class GitHubService {
     method: "merge" | "squash" | "rebase" = "merge",
     deleteRemoteBranch = true,
   ): Promise<string> {
-    return this.withGitHubAuth(() => substrateMergePullRequest({ ownerRepo, pullNumber, method, deleteRemoteBranch }));
+    // The substrate now returns a MergePullRequestResult ({ message, sha? });
+    // surface the new base-tip SHA (or the confirmation message) as the string
+    // this method has always returned.
+    const result = await this.withGitHubAuth(() =>
+      substrateMergePullRequest({ ownerRepo, pullNumber, method, deleteRemoteBranch }),
+    );
+    return result.sha ?? result.message;
   }
 
   async listIssueComments(ownerRepo: string, issueNumber: number): Promise<string[]> {

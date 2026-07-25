@@ -9,7 +9,7 @@ import { RunnerService } from './runnerService';
 // is the single source of truth and the other services (already routed) are
 // no longer reached through this DI graph. Constructor signature is preserved
 // for caller compat. FEIP-7065.
-import { createProject as substrateCreateProject } from '@databricks-solutions/lakebase-app-dev-kit';
+import { createProject as substrateCreateProject } from '@databricks-solutions/lakebase-scm-utils';
 import { validateDatabricksHostInput } from '../utils/text';
 
 /**

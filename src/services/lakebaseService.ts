@@ -2,7 +2,7 @@
 //
 // FEIP-7065 (publish_and_consume): branch CRUD, endpoint lookup, credential
 // minting, schema introspection, and project CRUD live in
-// @databricks-solutions/lakebase-app-dev-kit. This service keeps:
+// @databricks-solutions/lakebase-scm-utils. This service keeps:
 //   - Per-session host + projectId overrides (set by the VS Code workspace
 //     picker; substrate's CLI calls honor process.env.DATABRICKS_HOST so we
 //     mutate that around each substrate call).
@@ -37,7 +37,7 @@ import {
   tierBranchNames as substrateTierBranchNames,
   type LakebaseBranchInfo,
   type CreateLongRunningBranchResult,
-} from "@databricks-solutions/lakebase-app-dev-kit";
+} from "@databricks-solutions/lakebase-scm-utils";
 import { setKnownTierNames, isMainBranch } from "../utils/theme";
 import { projectProtectedTierNames } from "../utils/tiers";
 import { withDatabricksHostEnv } from "../utils/databricksEnv";
@@ -74,7 +74,7 @@ const WORKER_SUBSTRATE_FNS: Record<string, (...args: any[]) => Promise<any>> = {
 function isSubstrateMockLoaded(): boolean {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("@databricks-solutions/lakebase-app-dev-kit");
+    const mod = require("@databricks-solutions/lakebase-scm-utils");
     return !!mod && typeof mod.__overrides === "object";
   } catch {
     return false;

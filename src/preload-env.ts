@@ -6,7 +6,7 @@
 // code paths.
 //
 // This module must be imported FIRST in extension.ts, before any
-// service module that pulls in `@databricks-solutions/lakebase-app-dev-kit`.
+// service module that pulls in `@databricks-solutions/lakebase-scm-utils`.
 
 if (!process.env.LAKEBASE_KIT_TIMEOUT_PG_CONNECT_MS) {
   // Kit default is 10s, tuned for hermetic test flows where the

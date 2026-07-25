@@ -21,7 +21,7 @@ import { GitService } from '../../../src/services/gitService';
 import { LakebaseService } from '../../../src/services/lakebaseService';
 import { ScaffoldService } from '../../../src/services/scaffoldService';
 import { ProjectCreationService, ProjectCreationInput } from '../../../src/services/projectCreationService';
-import { applySchemaMigrations as substrateApplyMigrations } from '@databricks-solutions/lakebase-app-dev-kit';
+import { applySchemaMigrations as substrateApplyMigrations } from '@databricks-solutions/lakebase-scm-utils';
 
 // ── Context shared across all scenarios ──────────────────────────────
 

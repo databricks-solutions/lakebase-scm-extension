@@ -12,7 +12,7 @@ import {
   type SchemaMigrationFile as SubstrateMigrationFile,
   type SchemaMigrationStatusResult,
   type RollbackSchemaMigrationResult,
-} from '@databricks-solutions/lakebase-app-dev-kit';
+} from '@databricks-solutions/lakebase-scm-utils';
 import { LakebaseService } from './lakebaseService';
 
 export interface SchemaMigrationFile {
