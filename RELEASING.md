@@ -32,7 +32,7 @@ Lessons from prior releases that the script now enforces in code:
 ## When to release
 
 Default cadence is **one tagged release per substantive feature / bug-fix
-batch**. The kit (`lakebase-app-dev-kit`) cuts alpha-versioned releases
+batch**. The kit (`consort`) cuts alpha-versioned releases
 on a per-PR cadence (`v0.3.0-alpha.<N>`), but the extension consolidates
 multiple PRs into a single user-facing version bump (`v0.5.<N>`).
 
@@ -54,7 +54,7 @@ Run these from a clean checkout on `main`:
 git checkout main && git pull --ff-only origin main
 
 # 2. Verify the kit pin is what you want shipping
-grep "lakebase-app-dev-kit" package.json
+grep "lakebase-scm-utils" package.json
 
 # 3. Hermetic checks
 npm run typecheck
@@ -216,7 +216,7 @@ CHANGELOG body as the release notes. Anyone hitting the README's
 - Close any Jira tickets whose work shipped in this release. Add a
   comment to each pointing at the tag URL.
 - If the kit was bumped, confirm the kit's release notes reference any
-  consumer-facing changes. The kit (`lakebase-app-dev-kit`) has its own
+  consumer-facing changes. The kit (`consort`) has its own
   release cadence; this checklist is extension-only.
 - Update the SKILL.md / lakebase-scm-workflows skill docs ONLY if the
   release introduced a user-facing command rename or removed a primitive.

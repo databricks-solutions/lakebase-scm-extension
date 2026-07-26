@@ -1,7 +1,7 @@
 ---
 name: lakebase-scm-extension
 description: "VS Code/Cursor surface for paired-branch Lakebase SCM workflows. Use ONLY when guiding a human in their IDE – for programmatic / agent operations on the same workflow domain, use the substrate skill `lakebase-scm-workflows` directly."
-compatibility: VS Code >= 1.85 or Cursor; requires databricks CLI, git, Node.js 20+, and consumes `@databricks-solutions/lakebase-app-dev-kit`
+compatibility: VS Code >= 1.85 or Cursor; requires databricks CLI, git, Node.js 20+, and consumes `@databricks-solutions/lakebase-scm-utils`
 metadata:
   version: "0.5.6"
 parent: lakebase-scm-workflows
@@ -9,14 +9,14 @@ parent: lakebase-scm-workflows
 
 # Lakebase SCM Extension
 
-The VS Code/Cursor surface for the SCM workflow domain hosted by [`lakebase-app-dev-kit`](https://github.com/databricks-solutions/lakebase-app-dev-kit). Same canonical operations as the substrate skill `lakebase-scm-workflows`; this skill documents the IDE-specific UX that is **not** exposed via the agent-callable substrate scripts.
+The VS Code/Cursor surface for the SCM workflow domain hosted by [`consort`](https://github.com/databricks-solutions/consort). Same canonical operations as the substrate skill `lakebase-scm-workflows`; this skill documents the IDE-specific UX that is **not** exposed via the agent-callable substrate scripts.
 
-**Agents driving paired-branch SCM should use the parent [`lakebase-scm-workflows`](https://github.com/databricks-solutions/lakebase-app-dev-kit/blob/main/skills/lakebase-scm-workflows/SKILL.md) skill directly.** This skill exists to (a) document the extension surface for discoverability and (b) give an agent acting on behalf of a human in VS Code the right command IDs to invoke via `vscode.commands.executeCommand`.
+**Agents driving paired-branch SCM should use the parent [`lakebase-scm-workflows`](https://github.com/databricks-solutions/consort/blob/main/skills/lakebase-scm-workflows/SKILL.md) skill directly.** This skill exists to (a) document the extension surface for discoverability and (b) give an agent acting on behalf of a human in VS Code the right command IDs to invoke via `vscode.commands.executeCommand`.
 
 ## Relationship to the substrate
 
 ```
-lakebase-app-dev-kit (the kit)
+consort (the kit)
 ├── skills/lakebase-scm-workflows/SKILL.md  ← agent surface, parent skill
 └── (consumed by) lakebase-scm-extension     ← this skill, IDE surface
 ```
@@ -103,7 +103,7 @@ The extension's operations are not new – they're the substrate's operations wr
 
 ## Cross-references
 
-- Parent skill: [`lakebase-scm-workflows`](https://github.com/databricks-solutions/lakebase-app-dev-kit/blob/main/skills/lakebase-scm-workflows/SKILL.md) – agent surface for the same operations
+- Parent skill: [`lakebase-scm-workflows`](https://github.com/databricks-solutions/consort/blob/main/skills/lakebase-scm-workflows/SKILL.md) – agent surface for the same operations
 - Architecture diagram + version history: [`docs/plugin-plan.md`](./docs/plugin-plan.md)
 - Equivalence test pattern (catches extension/substrate drift): [`test/equivalence/`](./test/equivalence/)
 - Sibling skills (planned): `lakebase-tdd-workflows`, future deploy-to-Apps workflow skill

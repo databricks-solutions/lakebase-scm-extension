@@ -10,7 +10,7 @@ experiences, plus the substrate/extension follow-ups needed to close them.
 Filed after diagnosing why feature branches kept forking from production
 instead of staging – root cause was the contributor's global
 `core.hooksPath` pointing at the Databricks corporate hooks dir, which
-made git skip `.git/hooks/` entirely. Fixed in lakebase-app-dev-kit
+made git skip `.git/hooks/` entirely. Fixed in consort
 v0.3.0-alpha.10 (both `install-hook.sh` and the TypeScript `installHooks`
 now pin `core.hooksPath` project-local). With the hook actually firing on
 every git checkout, several test patterns that previously hid the bug now

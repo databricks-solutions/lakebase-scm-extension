@@ -72,12 +72,12 @@ Runs the mocha `test/suite/` and `test/equivalence/` tests against mocks. **Alwa
 
 `npm run package` first because `test/suite/bundleSmoke.test.ts` requires `dist/extension.js` (it `require()`s the packed bundle to catch externalized-but-not-bundled deps). The test self-skips when `dist/` is absent, so on a fresh clone `npm test` alone will pass without the smoke ever running. The pre-push gate (husky) compiles first; do the same locally.
 
-**Equivalence harness (`test/equivalence/`)** – every extension service method that delegates to `@databricks-solutions/lakebase-app-dev-kit` has an adapter-aware equivalence test. Each test stubs the substrate function via `test/mocks/substrate.js` and asserts (a) substrate is called with the args the proxy derived from VS Code context, and (b) the proxy returns the documented adapter applied to the substrate result. When you change a proxy's argument-mapping or its result-adapter, update the matching test in `test/equivalence/`. Run just this slice with `npm run test:equivalence`.
+**Equivalence harness (`test/equivalence/`)** – every extension service method that delegates to `@databricks-solutions/lakebase-scm-utils` has an adapter-aware equivalence test. Each test stubs the substrate function via `test/mocks/substrate.js` and asserts (a) substrate is called with the args the proxy derived from VS Code context, and (b) the proxy returns the documented adapter applied to the substrate result. When you change a proxy's argument-mapping or its result-adapter, update the matching test in `test/equivalence/`. Run just this slice with `npm run test:equivalence`.
 
 ### Tier 2 – Hermetic substrate BDD (no credentials, ~10s)
 
 ```bash
-cd node_modules/@databricks-solutions/lakebase-app-dev-kit && npx vitest run
+cd node_modules/@databricks-solutions/lakebase-scm-utils && npx vitest run
 ```
 
 Covers branch-create collision validation, env-file shape, github URL parsing, etc. against mocks. Runs in your editor / pre-commit hook range. Useful when changing anything in `src/services/lakebaseService.ts` or anything that re-exports substrate symbols.

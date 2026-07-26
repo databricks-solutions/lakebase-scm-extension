@@ -1,6 +1,6 @@
 .mocharc.yml
 test/**
-# Ship node_modules in full. The kit (@databricks-solutions/lakebase-app-dev-kit)
+# Ship node_modules in full. The kit (@databricks-solutions/lakebase-scm-utils)
 # is required at runtime by the extension and brings ~417 transitive
 # dependencies (tar, octokit, pg, @databricks/appkit, find-java-home,
 # tree-kill, ...). Maintaining a whitelist of every transitive package
