@@ -20,7 +20,7 @@ import { MigrationsTreeProvider } from './providers/migrationsTree';
 import { PullRequestTreeProvider } from './providers/pullRequestTree';
 import { MergesTreeProvider } from './providers/mergesTree';
 import { GraphWebviewProvider } from './providers/graphWebview';
-import { getConfig, getWorkspaceRoot, detectLanguage } from './utils/config';
+import { getConfig, getWorkspaceRoot, detectLanguage, hasProjectId } from './utils/config';
 import { classifyGitError } from './utils/errorClassification';
 import { parseBranchResourcePath } from './utils/branchParsing';
 import { runScmOp, gitOpErrorMessage } from './utils/scmOps';
@@ -985,6 +985,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const config = getConfig();
 
+  // Set the welcome-view context IMMEDIATELY from the config already in hand,
+  // before the slow warm-up awaits below (git init, CLI availability, auth
+  // check, a possible modal auth prompt). Otherwise, for an already-paired
+  // project, the `lakebaseBranches` / `lakebaseChanges` viewsWelcome (gated on
+  // `!hasProjectId`, which defaults falsy) renders its first-time-setup panel
+  // during that gap, and if any warm-up await throws or a prompt is dismissed,
+  // the later (line ~1232) set never runs and the panel sticks until a reload.
+  // Recomputed again after warm-up and on every .env change (the env watcher).
+  vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', hasProjectId(config));
+
   if (!config.lakebaseProjectId) {
     // The bare warning toast (no action button) used to be the user's
     // first signal that something was off. It left them to discover
@@ -1046,34 +1056,42 @@ export async function activate(context: vscode.ExtensionContext) {
 
   await gitService.initialize();
 
-  const cliAvailable = await lakebaseService.isAvailable();
-  if (!cliAvailable) {
-    vscode.window.showWarningMessage(
-      'Lakebase Sync: Databricks CLI not found. Install it and run "databricks auth login".'
-    );
-  }
-
-  // Check auth on startup
-  if (cliAvailable && config.lakebaseProjectId) {
-    const authStatus = await lakebaseService.checkAuth();
-    if (!authStatus.authenticated) {
-      // Special-case: CLI upgraded past a credential-storage break.
-      // Re-route through handleAuthError so the user gets the same
-      // two-action notification (Re-authenticate / Use plaintext) they
-      // would see from any other CLI call that hits this error class.
-      if (authStatus.error && isAuthStorageCacheError(new Error(authStatus.error))) {
-        await handleAuthError(lakebaseService, new Error(authStatus.error));
-      } else {
-        const action = await vscode.window.showWarningMessage(
-          `Lakebase Sync: Not connected to ${authStatus.expectedHost}.`,
-          'Connect'
-        );
-        if (action === 'Connect') {
-          vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+  // CLI availability + startup auth check. This MUST NOT block activation: it
+  // shells out to the Databricks CLI and, on a not-connected result, shows a
+  // notification with a 'Connect' action. A non-modal notification with a button
+  // does not auto-resolve, so `await`-ing it parks activate() until the user
+  // clicks, and everything registered below (the tree data providers) never
+  // registers, the view then reports "no data provider registered". Run the whole
+  // warm-up fire-and-forget so the views always register; auth resolves after.
+  void (async () => {
+    const cliAvailable = await lakebaseService.isAvailable();
+    if (!cliAvailable) {
+      vscode.window.showWarningMessage(
+        'Lakebase Sync: Databricks CLI not found. Install it and run "databricks auth login".'
+      );
+      return;
+    }
+    if (config.lakebaseProjectId) {
+      const authStatus = await lakebaseService.checkAuth();
+      if (!authStatus.authenticated) {
+        // Special-case: CLI upgraded past a credential-storage break.
+        // Re-route through handleAuthError so the user gets the same
+        // two-action notification (Re-authenticate / Use plaintext) they
+        // would see from any other CLI call that hits this error class.
+        if (authStatus.error && isAuthStorageCacheError(new Error(authStatus.error))) {
+          await handleAuthError(lakebaseService, new Error(authStatus.error));
+        } else {
+          const action = await vscode.window.showWarningMessage(
+            `Lakebase Sync: Not connected to ${authStatus.expectedHost}.`,
+            'Connect'
+          );
+          if (action === 'Connect') {
+            vscode.commands.executeCommand('lakebaseSync.connectWorkspace');
+          }
         }
       }
     }
-  }
+  })();
 
   // Initialize providers
   statusBarProvider = new StatusBarProvider(gitService, lakebaseService, migrationService);
@@ -1169,6 +1187,12 @@ export async function activate(context: vscode.ExtensionContext) {
     let envSchemaRefreshTimer: ReturnType<typeof setTimeout> | undefined;
     const onEnvChangedRefreshSchema = () => {
       runnerTreeProvider.refresh();
+      // A .env create/change can be the moment the workspace becomes bound to a
+      // Lakebase project (a scaffold or `connect` writing LAKEBASE_PROJECT_ID, or
+      // a branch resync). Recompute the welcome-view context so the first-time
+      // setup panel flips to the real branch/changes views on its own, without a
+      // window reload. hasProjectId() re-reads .env; harmless when unchanged.
+      vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', hasProjectId());
       if (envSchemaRefreshTimer) { clearTimeout(envSchemaRefreshTimer); }
       envSchemaRefreshTimer = setTimeout(() => {
         schemaDiffService.clearCache();
@@ -1228,8 +1252,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Drives the viewsWelcome contributions for `lakebaseBranches` /
   // `lakebaseChanges` in package.json: when this is false the views
   // render an onboarding button rather than silently rendering an
-  // empty list.
-  vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', !!getConfig().lakebaseProjectId);
+  // empty list. Re-affirmed here after warm-up (also set early at line ~996
+  // and recomputed by the .env watcher).
+  vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', hasProjectId());
   // Drive the "Attach GitHub Repository" tree affordance: show it only
   // when the folder has no origin remote.
   void setGitRemoteContext(gitService);

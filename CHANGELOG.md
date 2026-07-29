@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.8 (2026-07-29)
+
+Startup resilience + the `@databricks-solutions/lakebase-scm-utils` bump to
+`v0.1.0-beta.9`. A paired project could open to the first-time-setup panel with
+the tree views reporting "no data provider registered": the extension either
+failed to load its substrate dependency or parked activation on a startup auth
+prompt, so the views never registered. Activation is now non-blocking and the
+welcome-view state re-derives itself.
+
+### Fixed
+
+- **A paired workspace no longer opens stuck on "first-time setup" / "no data
+  provider registered."** Two independent startup faults, both fixed:
+  - **Activation parked on the startup auth check.** The CLI-availability + auth
+    warm-up ran with `await` before the tree data providers were registered, and
+    its not-connected path shows a notification with a `Connect` button. A
+    non-modal notification with an action does not auto-resolve, so `activate()`
+    blocked until the user clicked and the branch/changes providers below it never
+    registered. The whole warm-up is now fire-and-forget: the views always
+    register, and auth resolves afterward.
+  - **The welcome-view context was computed once, late in activation.** If `.env`
+    gained `LAKEBASE_PROJECT_ID` after activation (a scaffold, a `connect`, a
+    branch resync), the first-time-setup panel stuck until a manual window reload.
+    `hasProjectId` is now set immediately from the config in hand at activation
+    start, and recomputed by the `.env` watcher, so the panel clears on its own.
+
+### Changed
+
+- **Bumped `@databricks-solutions/lakebase-scm-utils` to `v0.1.0-beta.9`** (from
+  `beta.3`), picking up the substrate's client-scaffold `.gitignore` fix and the
+  apply-tier + lk-routing changes. The dependency ships inside the vsix
+  (`node_modules` is packaged), so `vsce package` must run without
+  `--no-dependencies`, packaging without it strips the substrate and the
+  extension fails to load with `Cannot find module`.
+
+Hermetic suite: 479 passing, zero failing.
+
 ## 0.6.7 (2026-06-30)
 
 Auth-propagation fixes for spawned subprocesses. A GUI editor's extension host

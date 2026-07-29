@@ -220,6 +220,19 @@ export function getConfig(): LakebaseConfig {
   };
 }
 
+/**
+ * Whether the workspace is bound to a Lakebase project (has LAKEBASE_PROJECT_ID).
+ * This is the single source of truth for the `lakebaseSync.hasProjectId` context
+ * that drives the first-time-setup welcome view. It re-reads config on every call
+ * (unless an explicit cfg is passed), so a `.env` that gains LAKEBASE_PROJECT_ID
+ * AFTER activation (a scaffold, a branch resync, an external write) can be
+ * re-detected by the env watcher, rather than the welcome view sticking until a
+ * manual window reload.
+ */
+export function hasProjectId(cfg?: LakebaseConfig): boolean {
+  return !!(cfg ?? getConfig()).lakebaseProjectId;
+}
+
 export function getEnvConfig(): EnvConfig {
   const root = getWorkspaceRoot();
   if (!root) {
