@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.9 (2026-08-23)
+
+Fixes the tree views showing "no data provider registered" / "no Lakebase project
+configured" on a paired project , the root cause 0.6.8's startup-resilience work
+didn't reach.
+
+- **Guard project detection against a substrate throw.** `getConfig()` called the
+  kit's `resolveMigrationLayout` unguarded; the ancient bundled substrate (beta.9)
+  could throw on a newer Consort project's structure, and because `getConfig()`
+  drives project detection (`hasProjectId`), that throw left the views empty even
+  when `LAKEBASE_PROJECT_ID` was present. Migration-layout resolution is now wrapped
+  , detection depends ONLY on `LAKEBASE_PROJECT_ID`, so a layout hiccup can never
+  blank the trees again.
+- **Bump `@databricks-solutions/lakebase-scm-utils` `v0.1.0-beta.9` -> `v0.2.6`.**
+  The current substrate understands today's project structure and carries the
+  central workspace-host resolution + de-sftdd fixes.
+
 ## 0.6.8 (2026-07-29)
 
 Startup resilience + the `@databricks-solutions/lakebase-scm-utils` bump to

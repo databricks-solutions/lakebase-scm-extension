@@ -178,18 +178,33 @@ export function getConfig(): LakebaseConfig {
     envConfig = parseEnvFile(envPath);
   }
 
-  // Resolve the whole migration layout (language + path + pattern + glob) via
-  // the kit's single source of truth. It is monorepo-aware (detects from the
-  // configured migrationPath's subdir when the root is unmarked) and honors the
-  // explicit language / migrationPattern / migrationGlob overrides, each of
-  // which wins over the language defaults.
-  const { language, migrationPath, migrationPattern, migrationGlob } = resolveMigrationLayout({
-    projectDir: root,
-    migrationPath: wsConfig.get('migrationPath', ''),
-    language: wsConfig.get('language', ''),
-    migrationPattern: wsConfig.get('migrationPattern', ''),
-    migrationGlob: wsConfig.get('migrationGlob', ''),
-  });
+  // Resolve the migration layout (language + path + pattern + glob) via the kit's
+  // single source of truth (monorepo-aware; honors explicit overrides).
+  //
+  // WRAP it: this is a substrate call that can THROW on a project whose structure
+  // the installed kit version doesn't recognize (e.g. an old extension against a
+  // newer consort layout). getConfig() is the FIRST thing activation calls AND it
+  // drives project detection (hasProjectId), so an unguarded throw here breaks
+  // detection + leaves the trees empty ("no data provider") even when
+  // LAKEBASE_PROJECT_ID is present. Detection must depend ONLY on
+  // LAKEBASE_PROJECT_ID, never on migration-layout resolution , keep defaults on
+  // failure so the project is still recognized and the views populate.
+  let language: ProjectLanguage = 'unknown';
+  let migrationPath = '';
+  let migrationPattern: RegExp = /(?!)/; // never-match fallback; real value set below
+  let migrationGlob = '';
+  try {
+    ({ language, migrationPath, migrationPattern, migrationGlob } = resolveMigrationLayout({
+      projectDir: root,
+      migrationPath: wsConfig.get('migrationPath', ''),
+      language: wsConfig.get('language', ''),
+      migrationPattern: wsConfig.get('migrationPattern', ''),
+      migrationGlob: wsConfig.get('migrationGlob', ''),
+    }));
+  } catch {
+    const langOverride = wsConfig.get('language', '');
+    if (langOverride) { language = langOverride as ProjectLanguage; }
+  }
 
   return {
     databricksHost: wsConfig.get('databricksHost', '') || envConfig.DATABRICKS_HOST || '',
