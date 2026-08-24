@@ -2,7 +2,7 @@
   "name": "lakebase-scm-extension",
   "displayName": "Lakebase SCM Extension",
   "description": "Unified visibility into code and database branch changes for Databricks Lakebase",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "publisher": "kevin-hartman",
   "icon": "resources/icons/extension-icon.png",
   "repository": {
@@ -1519,6 +1519,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically create Lakebase branch on git checkout"
+        },
+        "lakebaseSync.revealViewOnActivate": {
+          "type": "boolean",
+          "default": true,
+          "description": "When opening a paired Lakebase/Consort project, reveal the Lakebase SCM view (the live viewer) instead of leaving focus on the File Explorer."
         },
         "lakebaseSync.autoRefreshCredentials": {
           "type": "boolean",

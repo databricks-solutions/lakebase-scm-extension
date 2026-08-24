@@ -995,6 +995,17 @@ export async function activate(context: vscode.ExtensionContext) {
   // Recomputed again after warm-up and on every .env change (the env watcher).
   vscode.commands.executeCommand('setContext', 'lakebaseSync.hasProjectId', hasProjectId(config));
 
+  // Land the user ON the Lakebase SCM view (the live viewer) rather than the File
+  // Explorer when a PAIRED project opens , the extension activates in every window via
+  // `onStartupFinished`, so gate the reveal on hasProjectId so a non-Lakebase window
+  // never has its focus stolen. Opt out with `lakebaseSync.revealViewOnActivate: false`.
+  // Focusing the primary view reveals its activity-bar container (`lakebase-synced-scm`).
+  if (hasProjectId(config) && vscode.workspace.getConfiguration('lakebaseSync').get<boolean>('revealViewOnActivate', true)) {
+    void Promise.resolve(vscode.commands.executeCommand('lakebaseBranches.focus')).then(undefined, () => {
+      /* best-effort , a reveal failure must never break activation */
+    });
+  }
+
   if (!config.lakebaseProjectId) {
     // The bare warning toast (no action button) used to be the user's
     // first signal that something was off. It left them to discover
