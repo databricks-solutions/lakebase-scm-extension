@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.17 (2026-09-17)
+
+Repoint bundled scm-utils to v0.2.39 — scaffolded scripts resolve the substrate via `./scripts/lk` (no more `node_modules/.bin` trap).
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `v0.2.38` -> `v0.2.39`.** The extension's scaffolder now emits the fixed scripts: `refresh-token.sh`, `connect-main-branch.sh`, `delete-lakebase-branches.sh`, `set-production-db-secrets.sh`, and `sanitize-branch-name.sh` resolve the substrate through `./scripts/lk` (which auto-installs the shared cache) instead of a root `node_modules/.bin` path a scaffolded project never has, and no longer misdirect to `npm install`.
+
 ## 0.6.16 (2026-09-17)
 
 Fix: "set up Lakebase" now adopts an already-existing project instead of hard-failing.
