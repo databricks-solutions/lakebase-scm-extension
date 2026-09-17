@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.18 (2026-09-17)
+
+Repoint bundled scm-utils to v0.2.40 — completes the local-E2E free-port fix for the upgrade/append path.
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `v0.2.39` -> `v0.2.40`.** The E2E block the scaffolder/upgrade appends to `run-tests.sh` now self-allocates free ports (sources `port-utils.sh`, exports `E2E_BACKEND_PORT` / `E2E_CLIENT_PORT` / `VITE_PROXY_TARGET`), so a stale `:8000` / `:5173` can't hard-fail Playwright's webServer on the append path either (v0.2.39 covered the inline `run-tests.sh`; v0.2.40 covers the appended block).
+
 ## 0.6.17 (2026-09-17)
 
 Repoint bundled scm-utils to v0.2.39 — scaffolded scripts resolve the substrate via `./scripts/lk` (no more `node_modules/.bin` trap).
