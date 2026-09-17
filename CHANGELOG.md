@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.14 (2026-09-17)
+
+Fix: "set up Lakebase" no longer prompts for a language (or re-scaffolds) on an already-scaffolded project.
+
+- **fix(setup): detect the language for an existing project instead of prompting + re-scaffolding.** The adopt / "set up Lakebase" flow asked for the programming language and then ran `scaffoldAll`, which for an already-scaffolded project both prompted needlessly AND clobbered hand-written source (e.g. `main.py`'s `include_router` wiring, models, `scripts/*`, workflows). It now detects the language from marker files (`pom.xml` / `pyproject.toml` / `package.json`); when the project is already scaffolded it skips the language + runner pickers and the language-tree scaffold, wiring only `.env` + Lakebase. The picker + scaffold remain for a truly empty (greenfield) adopt.
+
 ## 0.6.13 (2026-09-17)
 
 Repoint the bundled substrate to scm-utils v0.2.37 (fail-closed Lakebase provisioning + scaffold hardening).

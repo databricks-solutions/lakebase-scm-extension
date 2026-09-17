@@ -1877,18 +1877,33 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
       }
-      // Pick language + runner BEFORE auth so users don't authenticate
-      // first only to abandon the wizard at language pick. These drive
-      // the scaffoldAll call after .env is wired up; without them, the
-      // adopt path leaves an empty folder with just .env, which is not
-      // a usable Lakebase project tree.
-      const setupLanguageValue = await pickLakebaseLanguage('Lakebase: Project Language');
-      if (!setupLanguageValue) { log('=== ABORT: user dismissed language pick ==='); return; }
-      log(`language: ${setupLanguageValue}`);
+      // Detect the language from the EXISTING project's marker files (pom.xml,
+      // pyproject.toml/requirements.txt, package.json). Setting up Lakebase for an
+      // already-scaffolded project must NOT prompt for a language, nor re-scaffold
+      // the language tree over the existing source (a greenfield-only step): the
+      // language is a fact of the project, not a choice, and re-scaffolding clobbers
+      // hand-written feature code (main.py include_router wiring, models, scripts,
+      // workflows). Only a truly empty adopt (no markers -> "unknown") still needs
+      // the picker + the scaffold. Picks happen BEFORE auth so a user never
+      // authenticates only to abandon the wizard at a pick.
+      const LAKEBASE_LANGS: readonly LakebaseLanguage[] = ['java', 'kotlin', 'python', 'nodejs'];
+      const detectedLanguage = detectLanguage(root);
+      const alreadyScaffolded = (LAKEBASE_LANGS as readonly string[]).includes(detectedLanguage);
+      let setupLanguageValue: LakebaseLanguage;
+      let setupRunnerValue: Awaited<ReturnType<typeof pickLakebaseRunner>> = undefined;
+      if (alreadyScaffolded) {
+        setupLanguageValue = detectedLanguage as LakebaseLanguage;
+        log(`existing project: detected language "${detectedLanguage}" from marker files – skipping the language + runner pickers and the language-tree scaffold (adopt only wires .env + Lakebase).`);
+      } else {
+        const pickedLanguage = await pickLakebaseLanguage('Lakebase: Project Language');
+        if (!pickedLanguage) { log('=== ABORT: user dismissed language pick ==='); return; }
+        setupLanguageValue = pickedLanguage;
+        log(`language (greenfield adopt): ${setupLanguageValue}`);
 
-      const setupRunnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type');
-      if (!setupRunnerValue) { log('=== ABORT: user dismissed runner pick ==='); return; }
-      log(`runner: ${setupRunnerValue}`);
+        setupRunnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type');
+        if (!setupRunnerValue) { log('=== ABORT: user dismissed runner pick ==='); return; }
+        log(`runner: ${setupRunnerValue}`);
+      }
 
       try {
         assertAdoptionPreflight({ projectDir: root, expectedProjectName: projectId });
@@ -1980,36 +1995,42 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       }
 
-      // Scaffold the language tree + scripts + workflows + hooks into
-      // the workspace so the user has a usable project tree, not just
-      // a lone .env file. Errors here are non-fatal: .env is already
-      // written and the welcome view flip below still completes; we
-      // surface a warning and the user can re-run setup.
-      log(`scaffolding language tree (lang=${setupLanguageValue}, runner=${setupRunnerValue})`);
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguageValue} project tree...`, cancellable: false },
-          async (progress) => {
-            await lakebaseService.withHostEnv(() => scaffoldAll({
-              targetDir: root,
-              databricksHost: host,
-              lakebaseProjectId: projectId,
-              language: setupLanguageValue,
-              runnerType: setupRunnerValue,
-              report: (step: string, detail?: string) => {
-                progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
-                log(`scaffold: ${step}${detail ? ' (' + detail + ')' : ''}`);
-              },
-            }));
-          },
-        );
-        log('scaffold ok');
-      } catch (scaffoldErr: any) {
-        log(`scaffold FAILED (non-fatal): ${scaffoldErr?.message || scaffoldErr}`);
-        vscode.window.showWarningMessage(
-          `Lakebase project wired up but scaffolding the ${setupLanguageValue} tree failed: ${scaffoldErr?.message || scaffoldErr}. ` +
-            `See "View > Output > Lakebase SCM" for the failing step.`,
-        );
+      // Scaffold the language tree + scripts + workflows + hooks so a GREENFIELD
+      // adopt (empty folder) has a usable project tree, not just a lone .env.
+      // SKIPPED for an already-scaffolded project: re-running scaffoldAll over
+      // existing source clobbers hand-written feature code (main.py include_router
+      // wiring, models, scripts, workflows) – there the adopt only needed the .env +
+      // Lakebase wiring above. Errors here are non-fatal (.env is written; the
+      // welcome view flip below still completes).
+      if (alreadyScaffolded) {
+        log('existing project already scaffolded – skipping the language-tree scaffold (only .env + Lakebase wiring applied).');
+      } else {
+        log(`scaffolding language tree (lang=${setupLanguageValue}, runner=${setupRunnerValue})`);
+        try {
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Scaffolding ${setupLanguageValue} project tree...`, cancellable: false },
+            async (progress) => {
+              await lakebaseService.withHostEnv(() => scaffoldAll({
+                targetDir: root,
+                databricksHost: host,
+                lakebaseProjectId: projectId,
+                language: setupLanguageValue,
+                runnerType: setupRunnerValue!,
+                report: (step: string, detail?: string) => {
+                  progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
+                  log(`scaffold: ${step}${detail ? ' (' + detail + ')' : ''}`);
+                },
+              }));
+            },
+          );
+          log('scaffold ok');
+        } catch (scaffoldErr: any) {
+          log(`scaffold FAILED (non-fatal): ${scaffoldErr?.message || scaffoldErr}`);
+          vscode.window.showWarningMessage(
+            `Lakebase project wired up but scaffolding the ${setupLanguageValue} tree failed: ${scaffoldErr?.message || scaffoldErr}. ` +
+              `See "View > Output > Lakebase SCM" for the failing step.`,
+          );
+        }
       }
 
       // Persist a completion stamp in workspaceState so the activation
