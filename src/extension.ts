@@ -1958,7 +1958,12 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (err: any) {
         const msg = err?.message || String(err);
         log(`adoptLakebaseProject threw: ${msg}`);
-        const alreadyExists = /project with such id already exists/i.test(msg);
+        // Match the Lakebase "already exists" error across CLI message variants:
+        // "A project with this resource name already exists in the workspace."
+        // (current) and the older "project with such id already exists". A prior
+        // setup attempt that created the server-side project must route to the
+        // local-only adoption recovery below, not hard-fail.
+        const alreadyExists = /project.*already exists/i.test(msg);
         if (!alreadyExists) {
           if (!(await handleAuthError(lakebaseService, err))) {
             vscode.window.showErrorMessage(`Failed to set up Lakebase project: ${msg}. See "View > Output > Lakebase SCM" for details.`);

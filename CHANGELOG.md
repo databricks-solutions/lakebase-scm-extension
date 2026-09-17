@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.16 (2026-09-17)
+
+Fix: "set up Lakebase" now adopts an already-existing project instead of hard-failing.
+
+- **fix(setup): match the current "already exists" error so the adopt recovery path fires.** When the Lakebase project already exists in the workspace (a prior setup attempt created it), `create-project` errors "A project with this resource name already exists in the workspace." The adopt flow's recovery (resolve the default branch + wire `.env` locally) was gated on a stale regex (`project with such id already exists`) that no longer matches the CLI's wording, so setup hard-failed instead of adopting. Broadened the match to `/project.*already exists/i`; re-running "set up Lakebase" on an existing project now wires `.env` to it.
+
 ## 0.6.15 (2026-09-17)
 
 Repoint bundled scm-utils to v0.2.38 — fixes "set up Lakebase" failing with "did not reach READY (state: unknown)".
