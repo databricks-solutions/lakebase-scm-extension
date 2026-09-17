@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.15 (2026-09-17)
+
+Repoint bundled scm-utils to v0.2.38 — fixes "set up Lakebase" failing with "did not reach READY (state: unknown)".
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `v0.2.37` -> `v0.2.38`.** v0.2.37's post-create provisioning check required a project-level `current_state === "READY"` that the Lakebase API never returns, so "set up Lakebase" failed every time with `did not reach READY (state: unknown)`. v0.2.38 keys the check on project PRESENCE instead (still fail-closed on a genuinely absent project).
+
 ## 0.6.14 (2026-09-17)
 
 Fix: "set up Lakebase" no longer prompts for a language (or re-scaffolds) on an already-scaffolded project.
