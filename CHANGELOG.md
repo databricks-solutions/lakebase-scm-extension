@@ -1,9 +1,15 @@
 # Changelog
 
+## 0.6.13 (2026-09-17)
+
+Repoint the bundled substrate to scm-utils v0.2.37 (fail-closed Lakebase provisioning + scaffold hardening).
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `v0.2.23` -> `v0.2.37`.** Picks up the fail-closed `createLakebaseProject` (verifies the project reached `READY` via `get-project` instead of fabricating success on an exit-0-but-not-provisioned create), the scaffolded `pyproject.toml` Starlette `<1.0` cap (unbreaks `include_router` on a fresh clone), the local-E2E free-port allocation, and every substrate fix between v0.2.23 and v0.2.37.
+
 ## 0.6.9 (2026-08-23)
 
 Fixes the tree views showing "no data provider registered" / "no Lakebase project
-configured" on a paired project , the root cause 0.6.8's startup-resilience work
+configured" on a paired project – the root cause 0.6.8's startup-resilience work
 didn't reach.
 
 - **Guard project detection against a substrate throw.** `getConfig()` called the
@@ -11,7 +17,7 @@ didn't reach.
   could throw on a newer Consort project's structure, and because `getConfig()`
   drives project detection (`hasProjectId`), that throw left the views empty even
   when `LAKEBASE_PROJECT_ID` was present. Migration-layout resolution is now wrapped
-  , detection depends ONLY on `LAKEBASE_PROJECT_ID`, so a layout hiccup can never
+  – detection depends ONLY on `LAKEBASE_PROJECT_ID`, so a layout hiccup can never
   blank the trees again.
 - **Bump `@databricks-solutions/lakebase-scm-utils` `v0.1.0-beta.9` -> `v0.2.6`.**
   The current substrate understands today's project structure and carries the
@@ -138,7 +144,7 @@ Branch Diff + connection-resilience fixes.
 
 ### Fixed
 
-- **`.env` stays source-able when a branch endpoint is not ready.** On a checkout/re-sync that raced a not-ready Lakebase endpoint, the connection writer emitted `DATABASE_URL=# ENDPOINT_NOT_READY ...` , a `#...` string on the right-hand side of the assignment, which is NOT a comment to a shell that sources `.env`. Any `set -e; source .env` consumer (shells, git hooks, tooling) aborted with `ENDPOINT_NOT_READY: command not found`. The not-ready path now writes empty, source-able values (`DATABASE_URL=`), keeping the human breadcrumb in a real comment line; same fix for the JDBC `application-local.properties` url.
+- **`.env` stays source-able when a branch endpoint is not ready.** On a checkout/re-sync that raced a not-ready Lakebase endpoint, the connection writer emitted `DATABASE_URL=# ENDPOINT_NOT_READY ...` – a `#...` string on the right-hand side of the assignment, which is NOT a comment to a shell that sources `.env`. Any `set -e; source .env` consumer (shells, git hooks, tooling) aborted with `ENDPOINT_NOT_READY: command not found`. The not-ready path now writes empty, source-able values (`DATABASE_URL=`), keeping the human breadcrumb in a real comment line; same fix for the JDBC `application-local.properties` url.
 - **Branch Diff Summary names the actual comparison base, not a hardcoded "main".** The empty code-changes message always read "No code changes vs main" regardless of the resolved base (while the Schema panel correctly showed e.g. "vs release"), which masked base-resolution failures. It now names the resolved base, and when the base cannot be resolved it says so instead of implying a clean diff.
 
 ## 0.6.2 (2026-06-14)
@@ -148,7 +154,7 @@ Branch + database resolution fixes for the schema diff and on checkout; moves th
 ### Fixed
 
 - **Branch diff + table views target the project's database, not the Lakebase default.** The schema-diff call omitted the database, so it queried `databricks_postgres` (the Lakebase default) instead of the project's app database, returning an empty / in-sync diff for any project whose data lives in a non-default database. It now passes the resolved project database (`DB_NAME` / `PGDATABASE` / parsed `DATABASE_URL`).
-- **`.env` re-syncs to the checked-out branch on every external checkout, tiers included.** The branch-change handler returned early for trunk/tier branches and only synced feature branches, so switching to (or through) a tier left `.env` , and therefore the running dev server and tests , pinned to the previous branch's database. It now re-points `.env` at whatever branch is checked out (trunk maps to the default branch; tier/feature by name); auto-create stays feature-only.
+- **`.env` re-syncs to the checked-out branch on every external checkout, tiers included.** The branch-change handler returned early for trunk/tier branches and only synced feature branches, so switching to (or through) a tier left `.env` – and therefore the running dev server and tests – pinned to the previous branch's database. It now re-points `.env` at whatever branch is checked out (trunk maps to the default branch; tier/feature by name); auto-create stays feature-only.
 
 ### Substrate
 
@@ -166,7 +172,7 @@ Connect-flow reliability + named-tier protection.
 
 - **Connect no longer aborts with "workspace selection cancelled/failed" on focus loss.** The workspace QuickPick is shown after a slow "Discovering Lakebase workspaces..." step; without `ignoreFocusOut` it auto-dismissed the moment window focus shifted (alt-tab, a browser/notification stealing focus during discovery), returning no selection. The picker and the "new workspace" host input now set `ignoreFocusOut: true`.
 - **Stale profile cache self-heals after an external re-login.** `resolveProfileForHost` cached the host->valid-profile map once and only the extension's own login invalidated it. When a profile's OAuth refresh token expired and was fixed via an external `databricks auth login` in a terminal, the extension kept the stale "no valid profile" entry until a full window reload. It now rebuilds the map once on a miss (a cheap, no-auth config read), so the next call after any re-auth recovers.
-- **Login no longer mints a duplicate host-mangled profile.** When connect couldn't resolve a profile (e.g. the valid one's token was momentarily expired), the login fallback created a brand-new profile named after the host (`host_with_underscores`), leaving two `~/.databrickscfg` entries for one host , which then confused host-based resolution. The fallback now reuses any existing profile for the host (valid or not, re-authenticating it in place via `anyProfileNameForHost`) and only mints a new name for a genuinely new workspace.
+- **Login no longer mints a duplicate host-mangled profile.** When connect couldn't resolve a profile (e.g. the valid one's token was momentarily expired), the login fallback created a brand-new profile named after the host (`host_with_underscores`), leaving two `~/.databrickscfg` entries for one host – which then confused host-based resolution. The fallback now reuses any existing profile for the host (valid or not, re-authenticating it in place via `anyProfileNameForHost`) and only mints a new name for a genuinely new workspace.
 
 ## 0.6.0 (2026-06-05)
 
