@@ -46,6 +46,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   private cachedData: BranchItem[] = [];
   private _suppressRefresh = false;
   private shownSchemaErrors = new Set<string>();
+  private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     gitService: GitService,
@@ -66,11 +67,26 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     this._suppressRefresh = value;
   }
 
+  /**
+   * Coalesce rapid refresh triggers (branch-changed + file/env watchers can all
+   * fire within a few ms) into ONE trailing full-tree refresh. Each fire makes VS
+   * Code re-query getChildren, which re-runs the per-branch schema queries and
+   * keeps the tree in a "refreshing" state; while it is refreshing a click on a
+   * table row can fail to dispatch `lakebaseSync.showTableDiff` ("command not
+   * found"). Debouncing collapses a burst into a single pass, shrinking that
+   * window to near-zero. A trailing 150ms delay is imperceptible for a tree.
+   */
   refresh(): void {
     if (this._suppressRefresh) {
       return;
     }
-    this._onDidChangeTreeData.fire(undefined);
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+    }
+    this._refreshTimer = setTimeout(() => {
+      this._refreshTimer = undefined;
+      this._onDidChangeTreeData.fire(undefined);
+    }, 150);
   }
 
   getTreeItem(element: BranchItem): vscode.TreeItem {
@@ -892,6 +908,10 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
   }
 
   dispose(): void {
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = undefined;
+    }
     this._onDidChangeTreeData.dispose();
   }
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.23 (2026-09-26)
+
+Repoint bundled scm-utils to `0.2.45`, plus schema-diff click + merge fixes.
+
+- **Fix: clicking a table in the branch tree no longer fails with `command 'lakebaseSync.showTableDiff' not found` while the tree is refreshing.** Two causes: (1) the command was registered late in activation, after the tree view was already clickable — it now registers EARLY, before the tree views are created; (2) `branchTreeProvider.refresh()` fired a full-tree change on every trigger, keeping the tree in a "refreshing" state where the click failed to dispatch — it is now debounced (150ms trailing) so a burst of watcher events collapses into one refresh.
+- **Merge button self-heals a stale scaffolded `merge.yml` before merging.** "Merge Pull Request" now refreshes a drifted promote workflow (`apply` → `apply-tier`) via the substrate before the merge, so the promote's CI migrate passes instead of failing on the tier guard. Best-effort; never blocks the merge.
+- **Substrate worker resilience.** A concurrent call crashing the single shared worker no longer collateral-rejects unrelated in-flight calls — a worker-lifecycle failure retries once on a fresh worker (genuine substrate errors surface immediately, unretried).
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.44` -> `0.2.45`.**
+
 ## 0.6.18 (2026-09-17)
 
 Repoint bundled scm-utils to v0.2.40 — completes the local-E2E free-port fix for the upgrade/append path.

@@ -146,11 +146,17 @@ describe('BranchTreeProvider', () => {
   });
 
   describe('refresh', () => {
-    it('fires tree change event', () => {
-      let fired = false;
-      provider.onDidChangeTreeData(() => { fired = true; });
+    it('fires tree change event (debounced)', async () => {
+      let fired = 0;
+      provider.onDidChangeTreeData(() => { fired++; });
+      // refresh() coalesces rapid triggers into one trailing fire (~150ms) so a
+      // burst of watcher events doesn't keep the tree perpetually refreshing.
       provider.refresh();
-      assert.ok(fired);
+      provider.refresh();
+      provider.refresh();
+      assert.strictEqual(fired, 0, 'does not fire synchronously');
+      await new Promise((r) => setTimeout(r, 250));
+      assert.strictEqual(fired, 1, 'a burst collapses into a single trailing fire');
     });
 
     it('suppresses refresh when flag is set', () => {

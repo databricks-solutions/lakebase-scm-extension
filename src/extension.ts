@@ -1057,13 +1057,37 @@ export async function activate(context: vscode.ExtensionContext) {
   schemaDiffService = new SchemaDiffService(lakebaseService);
   schemaDiffProvider = new SchemaDiffProvider(schemaDiffService, gitService, migrationService);
 
-  // NOTE: lakebaseSync.showTableDiff is registered LATER, with the rest of the
-  // commands (see the table-diff command block below). It used to be registered
-  // HERE in the activation prologue to dodge an early-click race, but that early
-  // slot is the only structural difference from every other (working) command,
-  // and a registered-and-executable handler was still failing to dispatch from a
-  // tree/SCM click. The onCommand:lakebaseSync.showTableDiff activation event now
-  // covers the pre-activation race, so register it the same way as the others.
+  // lakebaseSync.showTableDiff is registered HERE, BEFORE the tree views are
+  // created (createTreeView below), because it is the one command dispatched by
+  // CLICKING A TREE ITEM. The tree becomes visible + clickable as soon as its
+  // provider is registered; if the command were registered later in activate()
+  // (after the intervening awaits), a click on a table row during the initial
+  // populate could hit "command 'lakebaseSync.showTableDiff' not found". Register
+  // it before any tree item can exist so that window cannot open. (Paired with the
+  // debounced branchTreeProvider.refresh(), which shrinks the refreshing window
+  // where the same race otherwise recurs.)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'lakebaseSync.showTableDiff',
+      async (tableName?: string, diffType?: string, branchName?: string) => {
+        if (!tableName || !diffType) { return; }
+        try {
+          // Pass branchName so the diff is computed for the tree row's branch
+          // rather than whichever branch is active in .env.
+          await schemaDiffProvider.showTableDiff(
+            tableName,
+            diffType as 'created' | 'modified' | 'removed' | 'unchanged',
+            undefined,
+            branchName,
+          );
+        } catch (err: any) {
+          if (!await handleAuthError(lakebaseService, err)) {
+            vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
+          }
+        }
+      },
+    ),
+  );
 
   await gitService.initialize();
 
@@ -2779,28 +2803,9 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('vscode.diff', prodUri, branchUri, labels[changeType]);
     }),
 
-    // Table-diff command. Registered here with the other commands (it used to
-    // be registered early in the activation prologue, the only command that was;
-    // the onCommand:lakebaseSync.showTableDiff activation event now covers a
-    // pre-activation click). Opens the per-table side-by-side schema diff webview.
-    vscode.commands.registerCommand('lakebaseSync.showTableDiff', async (tableName?: string, diffType?: string, branchName?: string) => {
-      if (!tableName || !diffType) { return; }
-      try {
-        // Pass branchName so the diff is computed for the tree row's branch
-        // rather than whichever branch is active in .env (falls through to
-        // .env's LAKEBASE_BRANCH_ID when undefined).
-        await schemaDiffProvider.showTableDiff(
-          tableName,
-          diffType as 'created' | 'modified' | 'removed' | 'unchanged',
-          undefined,
-          branchName,
-        );
-      } catch (err: any) {
-        if (!await handleAuthError(lakebaseService, err)) {
-          vscode.window.showErrorMessage(`Schema diff failed: ${err.message}`);
-        }
-      }
-    }),
+    // NB: lakebaseSync.showTableDiff is registered EARLY (before the tree views)
+    // in the activation prologue — it is the tree-item click command, so it must
+    // exist before any table row can be clicked. See that block above.
 
     vscode.commands.registerCommand('lakebaseSync.moreActions', async () => {
       interface ActionItem extends vscode.QuickPickItem { command: string }
@@ -3791,6 +3796,28 @@ export async function activate(context: vscode.ExtensionContext) {
                   lifetimeSeconds: 3600,
                 });
               } catch { /* non-fatal */ }
+            }
+
+            // Self-heal a stale scaffolded merge.yml BEFORE the merge so the merge
+            // commit carries the corrected promote step (lakebase-schema-migrate
+            // apply-tier). Without this, a project whose SCM_UTILS_REF was bumped
+            // past the tier-guard fix runs plain `apply` against the parent tier,
+            // which the guard refuses -> the promote's migrate-target fails and the
+            // schema never reaches the tier via CI. Best-effort: never blocks the
+            // merge (mirrors the substrate scm-merge promote's own self-heal).
+            if (root) {
+              try {
+                progress.report({ message: 'Refreshing CI workflows...' });
+                const scm = require('@databricks-solutions/lakebase-scm-utils');
+                if (typeof scm.defaultRefreshPromoteWorkflows === 'function') {
+                  const r = await scm.defaultRefreshPromoteWorkflows(root);
+                  if (r?.refreshed) {
+                    vscode.window.showInformationMessage(
+                      `Refreshed stale CI workflows before merge${r.detail ? ` (${r.detail})` : ''}.`,
+                    );
+                  }
+                }
+              } catch { /* non-fatal: promote CI may fail on a stale merge.yml; doctor + manual refresh cover it */ }
             }
 
             progress.report({ message: 'Merging...' });
