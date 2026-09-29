@@ -965,6 +965,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // reach globalState without threading context through every call.
   extensionContext = context;
 
+  // Brand the substrate's Lakebase connections as THIS client, so the instance
+  // owner can tell in pg_stat_activity that a connection came from the VS Code
+  // extension vs a bare `lakebase-*` CLI (both otherwise label `scm-utils/<v>`).
+  // The substrate's connectionApplicationName() reads LAKEBASE_SCM_EXTENSION_VERSION
+  // (consort/CONSORT_VERSION still takes precedence). Set BEFORE any substrate call /
+  // worker spawn so in-process connections, the worker thread, and spawned CLI bins
+  // all inherit it. Never overwrite a value an outer context already set.
+  if (!process.env.LAKEBASE_SCM_EXTENSION_VERSION) {
+    const extVersion = (context.extension.packageJSON as { version?: string }).version;
+    if (extVersion) { process.env.LAKEBASE_SCM_EXTENSION_VERSION = extVersion; }
+  }
+
   // Fire-and-forget post-install: auto-clean stale older install dirs
   // on disk (silent), then prompt the user to restart the host editor
   // (Cursor / VS Code) when this is an upgrade or a stale-clean event.
