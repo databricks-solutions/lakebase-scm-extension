@@ -1525,6 +1525,11 @@
           "default": true,
           "description": "When opening a paired Lakebase/Consort project, reveal the Lakebase SCM view (the live viewer) instead of leaving focus on the File Explorer."
         },
+        "lakebaseSync.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "On startup, check GitHub for a newer Lakebase SCM extension release (it ships as a .vsix, not via the marketplace) and offer to view it. Throttled to once per day."
+        },
         "lakebaseSync.autoRefreshCredentials": {
           "type": "boolean",
           "default": true,

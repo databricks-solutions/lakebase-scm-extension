@@ -7,6 +7,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { GitService } from './services/gitService';
+import { cmpVersions } from './utils/versionCheck';
+import { checkForLatestRelease } from './updateCheck';
 import { LakebaseService, getAuthStorageRuntime, isAuthStorageCacheError, isMissingProjectError, isRefreshTokenInvalidError, onAuthStorageRuntimeChange, setAuthStorageRuntime } from './services/lakebaseService';
 import { SchemaMigrationService } from './services/schemaMigrationService';
 import { SchemaDiffService } from './services/schemaDiffService';
@@ -902,14 +904,7 @@ async function handlePostInstall(context: vscode.ExtensionContext): Promise<void
 function watchForOwnInstall(context: vscode.ExtensionContext): void {
   const myId = context.extension.id;
   const myVersion = (context.extension.packageJSON as { version?: string }).version || '0.0.0';
-  const cmp = (a: string, b: string): number => {
-    const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-    const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-      if ((pa[i] || 0) !== (pb[i] || 0)) { return (pa[i] || 0) - (pb[i] || 0); }
-    }
-    return 0;
-  };
+  const cmp = cmpVersions; // shared with the self-update check (one version-compare, not two)
   // Install-event fingerprint of THIS running extension's on-disk
   // package.json. Captured at activation so we can detect a same-version
   // reinstall (rebuilt VSIX with identical manifest version) by noticing
@@ -987,6 +982,11 @@ export async function activate(context: vscode.ExtensionContext) {
   // so the user gets a "reload window" prompt without needing to know
   // to do it themselves.
   watchForOwnInstall(context);
+
+  // Self-update nudge: the extension ships as a .vsix off GitHub releases (not the marketplace), so
+  // nothing else tells a user their install is stale. Fire-and-forget, throttled to once/day; never
+  // blocks activation. Gated by `lakebaseSync.checkForUpdates`.
+  void checkForLatestRelease(context);
 
   // Output channel for setup + auth diagnostics. Stored module-level so
   // the helper `log()` can write without threading context through every
