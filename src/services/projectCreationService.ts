@@ -29,7 +29,9 @@ export interface ProjectCreationInput {
   /** Whether to make the GitHub repo private (default: true) */
   privateRepo?: boolean;
   /** Project language stack (default: 'java') */
-  language?: 'java' | 'kotlin' | 'python' | 'nodejs';
+  language?: 'java' | 'kotlin' | 'python' | 'nodejs' | 'dotnet';
+  /** .NET only: migration tool (default: 'efcore') */
+  migrationTool?: 'efcore' | 'flyway';
   /** CI runner type (default: 'self-hosted') */
   runnerType?: 'self-hosted' | 'github-hosted';
 }
@@ -117,6 +119,7 @@ export class ProjectCreationService {
         createGithubRepo: input.createGithubRepo,
         privateRepo: input.privateRepo,
         language: input.language,
+        migrationTool: input.migrationTool,
         runnerType: input.runnerType,
       },
       progress

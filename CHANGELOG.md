@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+.NET (ASP.NET Core) projects, with EF Core or Flyway migrations. Requires the `@databricks-solutions/lakebase-scm-utils` release that adds .NET support (bump the pinned `0.2.51` once it is published).
+
+- **Create New Project / Set Up Existing Project offer ".NET / ASP.NET Core".** Picking it asks a second question, "EF Core migrations" or "Flyway (SQL)", which is passed to the substrate scaffold as `migrationTool`. An existing .NET repo is detected from its `*.sln` / `*.csproj` and is not re-scaffolded.
+- **Migrations tree and parsing handle both .NET layouts:** EF Core `Migrations/<timestamp>_<Name>.cs` (skipping `.Designer.cs` and the model snapshot) and Flyway `db/migrations/V{N}__*.sql`. `__EFMigrationsHistory` is treated as migration metadata, not user schema.
+- **Run Migrations for .NET** goes through `scripts/flyway-migrate.sh` (wrapped in `refresh-token.sh`), which routes to the kit's `lakebase-schema-migrate` so the tool, credential, and tier guard match CI.
+- `lakebaseSync.language` accepts `dotnet`.
+
 ## 0.6.23 (2026-09-26)
 
 Repoint bundled scm-utils to `0.2.45`, plus schema-diff click + merge fixes.
