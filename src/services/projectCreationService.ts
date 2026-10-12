@@ -3,7 +3,7 @@ import * as path from 'path';
 import { GitService } from './gitService';
 import { GitHubService } from './githubService';
 import { LakebaseService } from './lakebaseService';
-import { ScaffoldService } from './scaffoldService';
+import { ScaffoldService, type DotnetMigrationTool, type ProjectLanguage } from './scaffoldService';
 import { RunnerService } from './runnerService';
 // The orchestrator now delegates to the substrate's createProject. Substrate
 // is the single source of truth and the other services (already routed) are
@@ -29,9 +29,9 @@ export interface ProjectCreationInput {
   /** Whether to make the GitHub repo private (default: true) */
   privateRepo?: boolean;
   /** Project language stack (default: 'java') */
-  language?: 'java' | 'kotlin' | 'python' | 'nodejs' | 'dotnet';
+  language?: ProjectLanguage;
   /** .NET only: migration tool (default: 'efcore') */
-  migrationTool?: 'efcore' | 'flyway';
+  migrationTool?: DotnetMigrationTool;
   /** CI runner type (default: 'self-hosted') */
   runnerType?: 'self-hosted' | 'github-hosted';
 }

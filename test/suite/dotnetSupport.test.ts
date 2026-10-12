@@ -69,18 +69,18 @@ describe('.NET support', () => {
 
   it('passes the chosen migration tool through ScaffoldService to the substrate scaffold', async () => {
     const target = fs.mkdtempSync(path.join(os.tmpdir(), 'dotnet-scaffold-'));
+    const ef = fs.mkdtempSync(path.join(os.tmpdir(), 'dotnet-scaffold-ef-'));
     try {
       await new ScaffoldService().deployLanguageProject(target, 'dotnet', 'demo', undefined, 'flyway');
       assert.ok(fs.existsSync(path.join(target, 'db', 'migrations', 'README.md')));
       assert.ok(!fs.existsSync(path.join(target, '.config', 'dotnet-tools.json')));
 
-      const ef = fs.mkdtempSync(path.join(os.tmpdir(), 'dotnet-scaffold-ef-'));
       await new ScaffoldService().deployLanguageProject(ef, 'dotnet', 'demo');
       assert.ok(fs.existsSync(path.join(ef, '.config', 'dotnet-tools.json')));
       assert.ok(fs.readFileSync(path.join(ef, 'src', 'App', 'App.csproj'), 'utf-8').includes('Microsoft.EntityFrameworkCore.Design'));
-      fs.rmSync(ef, { recursive: true, force: true });
     } finally {
       fs.rmSync(target, { recursive: true, force: true });
+      fs.rmSync(ef, { recursive: true, force: true });
     }
   });
 });
