@@ -464,7 +464,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
     // Migrations – collapsible to show individual files
     if (gb) {
       const config = getConfig();
-      const migFiles = await this.gitService.listMigrationsOnBranch(gb.name, config.migrationPath);
+      const migFiles = await this.gitService.listMigrationsOnBranch(gb.name, config.migrationPath, config.migrationPattern);
       if (migFiles.length > 0) {
         const lastFile = migFiles[migFiles.length - 1];
         const versionMatch = lastFile.match(/^V(\d+(?:\.\d+)*)/i);
@@ -488,7 +488,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
 
   private async getMigrationFiles(branchName: string): Promise<BranchItem[]> {
     const config = getConfig();
-    const migFiles = await this.gitService.listMigrationsOnBranch(branchName, config.migrationPath);
+    const migFiles = await this.gitService.listMigrationsOnBranch(branchName, config.migrationPath, config.migrationPattern);
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     return migFiles.map(filename => {
@@ -769,7 +769,7 @@ export class BranchTreeProvider implements vscode.TreeDataProvider<BranchItem> {
       let trunkMigrationSet = new Set<string>();
       for (const candidate of trunkCandidates) {
         try {
-          const trunkFiles = await this.gitService.listMigrationsOnBranch(candidate, config.migrationPath);
+          const trunkFiles = await this.gitService.listMigrationsOnBranch(candidate, config.migrationPath, config.migrationPattern);
           trunkMigrationSet = new Set(trunkFiles);
           break;
         } catch { /* candidate not present – try next */ }

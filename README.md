@@ -21,6 +21,7 @@ Lakebase SCM Extension is a VS Code / Cursor extension that replaces the built-i
 **For Java/Kotlin projects:** JVM 21+ and Maven (the scaffold includes `mvnw`)
 **For Python projects:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (`brew install uv` or `pip install uv`)
 **For Node.js projects:** Node.js 18+
+**For .NET projects:** .NET 10 SDK (EF Core's `dotnet-ef` is restored per project from `.config/dotnet-tools.json`)
 
 ### Install the VSIX
 
@@ -52,7 +53,7 @@ The wizard walks through up to 9 steps (the GitHub auth/name/visibility steps ar
 | 4 | GitHub authentication | Sign in via browser, or use existing auth (only when creating a repo) |
 | 5 | GitHub repo name | Defaults to project name (only when creating a repo) |
 | 6 | Visibility | Private (default) or Public (only when creating a repo) |
-| 7 | Language | Java/Spring Boot, Kotlin/Spring Boot, Python/FastAPI, or Node.js/Express |
+| 7 | Language | Java/Spring Boot, Kotlin/Spring Boot, Python/FastAPI, Node.js/Express, or .NET/ASP.NET Core (then EF Core or Flyway migrations) |
 | 8 | Runner type | Self-hosted (default) or GitHub-hosted |
 | 9 | Databricks workspace | Select or connect to a workspace with Lakebase (browser sign-in runs in the background, no terminal) |
 
@@ -77,6 +78,7 @@ After creation, the extension offers to open the new project folder.
 | **Kotlin** | Spring Boot (latest via [start.spring.io](https://start.spring.io)) / JPA | Flyway | Maven (mvnw) | JUnit 5 |
 | **Python** | FastAPI / SQLAlchemy / psycopg3 | Alembic 1.14 | uv + pyproject.toml | pytest + httpx |
 | **Node.js** | Express | Knex 3.1 | npm | Jest + supertest |
+| **.NET** | ASP.NET Core / EF Core (Npgsql) | EF Core migrations or Flyway (your choice) | NuGet (.NET 10) | xUnit |
 
 Java and Kotlin projects are generated live from Spring Initializr at scaffold time (always the latest stable Spring Boot version). Lakebase-specific configuration (datasource, Flyway plugin, migration placeholder) is overlaid on top. If Initializr is unreachable, the extension falls back to bundled templates. Override the Initializr URL with the `lakebaseSync.springInitializrUrl` setting for private instances.
 
@@ -328,6 +330,8 @@ The extension supports explicit, versioned migrations – not ORM auto-DDL. Sche
 | Java / Kotlin | Flyway | `src/main/resources/db/migration/V{N}__desc.sql` |
 | Python | Alembic | `alembic/versions/*.py` |
 | Node.js | Knex | `migrations/*.js` |
+| .NET (EF Core) | EF Core | `src/App/Migrations/<timestamp>_<Name>.cs` |
+| .NET (Flyway) | Flyway | `db/migrations/V{N}__desc.sql` |
 
 **Why:** Versioned migrations are reviewable in PRs, applied deterministically by CI, and diffed between branches. ORM auto-DDL (`ddl-auto=create`, `db.create_all()`) bypasses this – use `validate` mode instead.
 

@@ -2,7 +2,7 @@
   "name": "lakebase-scm-extension",
   "displayName": "Lakebase SCM Extension",
   "description": "Unified visibility into code and database branch changes for Databricks Lakebase",
-  "version": "0.6.28",
+  "version": "0.7.0",
   "publisher": "kevin-hartman",
   "icon": "resources/icons/extension-icon.png",
   "repository": {
@@ -1543,7 +1543,7 @@
         "lakebaseSync.migrationPath": {
           "type": "string",
           "default": "",
-          "description": "Path to migration files relative to workspace root. Leave empty to auto-detect from project language (Java: src/main/resources/db/migration, Python: alembic/versions, Node.js: migrations). In a monorepo, point this at the app's migration dir (e.g. recipe-app/migrations); the language is then detected from that subdir."
+          "description": "Path to migration files relative to workspace root. Leave empty to auto-detect from project language (Java: src/main/resources/db/migration, Python: alembic/versions, Node.js: migrations, .NET: db/migrations for Flyway or the EF Core project's Migrations/). In a monorepo, point this at the app's migration dir (e.g. recipe-app/migrations); the language is then detected from that subdir."
         },
         "lakebaseSync.language": {
           "type": "string",
@@ -1552,7 +1552,8 @@
             "java",
             "kotlin",
             "python",
-            "nodejs"
+            "nodejs",
+            "dotnet"
           ],
           "default": "",
           "description": "Override the detected project language used to pick migration defaults (filename pattern, watcher glob, default path). Leave empty to auto-detect from marker files at the workspace root, falling back to the configured migrationPath's subdir for monorepos. Set this for a monorepo whose root has no language marker."
@@ -1647,7 +1648,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-scm-utils": "0.2.51",
+    "@databricks-solutions/lakebase-scm-utils": "0.3.0",
     "adm-zip": "^0.5.17",
     "command-exists": "^1.2.9",
     "find-java-home": "^2.0.0",

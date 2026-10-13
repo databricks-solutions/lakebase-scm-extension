@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.0 (2026-10-13)
+
+.NET (ASP.NET Core) projects, with EF Core or Flyway migrations. Repoints bundled `@databricks-solutions/lakebase-scm-utils` `0.2.51` -> `0.3.0`, which adds the .NET substrate.
+
+- **Create New Project / Set Up Existing Project offer ".NET / ASP.NET Core".** Picking it asks a second question, "EF Core migrations" or "Flyway (SQL)", which is passed to the substrate scaffold as `migrationTool`. An existing .NET repo is detected from its `*.sln` / `*.csproj` and is not re-scaffolded.
+- **Migrations tree and parsing handle both .NET layouts:** EF Core `Migrations/<timestamp>_<Name>.cs` (skipping `.Designer.cs` and the model snapshot) and Flyway `db/migrations/V{N}__*.sql`. `__EFMigrationsHistory` is treated as migration metadata, not user schema.
+- **Run Migrations for .NET** goes through `scripts/flyway-migrate.sh` (wrapped in `refresh-token.sh`), which routes to the kit's `lakebase-schema-migrate` so the tool, credential, and tier guard match CI.
+- `lakebaseSync.language` accepts `dotnet`.
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.51` -> `0.3.0`.**
+
+## 0.6.28 (2026-10-11)
+
+Repoint bundled scm-utils `0.2.50` -> `0.2.51`.
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.50` -> `0.2.51`** — drops timing/ETA provisioning narration; gitignores `.consort/drive.pid` and `.playwright-mcp/` scaffold transients.
+
+## 0.6.27 (2026-10-11)
+
+Repoint bundled scm-utils `0.2.49` -> `0.2.50`.
+
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.49` -> `0.2.50`** — teardown uses `--purge` hard delete (frees the project name for reuse).
+
+## 0.6.26 (2026-10-09)
+
+Repoint bundled scm-utils `0.2.46` -> `0.2.49` for the canonical CI token.
+
+- **CI secrets sync mints the durable token.** The extension's `syncCiSecrets` now mints the 90-day `GitHub Actions (<repo>)` PAT via the substrate, replacing the old 24h token.
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.46` -> `0.2.49`.**
+
+## 0.6.25 (2026-10-08)
+
+- **The extension self-checks for a newer release on activation and offers to update.**
+
+## 0.6.24 (2026-10-08)
+
+Connection branding, plus scm-utils `0.2.45` -> `0.2.46`.
+
+- **Substrate connections from the extension brand as `scm-extension/<v>`** via the generic `LAKEBASE_SCM_CLIENT` env (set at activation), landing in the owner's `pg_stat_activity`.
+- **chore(deps): bump `@databricks-solutions/lakebase-scm-utils` `0.2.45` -> `0.2.46`** (generic `LAKEBASE_SCM_CLIENT` support + Node `/docs` scaffold).
+
 ## 0.6.23 (2026-09-26)
 
 Repoint bundled scm-utils to `0.2.45`, plus schema-diff click + merge fixes.

@@ -11,6 +11,8 @@
 
 export const MIGRATION_METADATA_TABLES: ReadonlySet<string> = new Set([
   "flyway_schema_history",
+  // EF Core's applied-migrations ledger (.NET projects using EF Core migrations).
+  "__EFMigrationsHistory",
 ]);
 
 export function isMigrationMetadataTable(tableName: string): boolean {

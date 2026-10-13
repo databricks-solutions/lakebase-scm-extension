@@ -126,14 +126,19 @@ export class SchemaMigrationService {
       .sort();
 
     return files.map(f => {
-      // Parse by language: Flyway V{version}__{desc}.sql, Alembic {hash}_{desc}.py, Knex {timestamp}_{desc}.js
+      // Parse by language: Flyway V{version}__{desc}.sql, Alembic {hash}_{desc}.py,
+      // Knex {timestamp}_{desc}.js, EF Core {timestamp}_{Name}.cs
       const flywayMatch = f.match(/^V(\d+(?:\.\d+)*)__(.+)\.sql$/i);
       const alembicMatch = f.match(/^([0-9a-f][\w]*)_(.+)\.py$/i);
       const knexMatch = f.match(/^(\d+)_(.+)\.(js|ts)$/i);
-      const match = flywayMatch || alembicMatch || knexMatch;
+      const efMatch = f.match(/^(\d{14})_(.+)\.cs$/i);
+      const match = flywayMatch || alembicMatch || knexMatch || efMatch;
+      const description = efMatch
+        ? efMatch[2].replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        : match ? match[2].replace(/_/g, ' ') : f;
       return {
         version: match ? match[1] : '?',
-        description: match ? match[2].replace(/_/g, ' ') : f,
+        description,
         filename: f,
         fullPath: path.join(migrationDir, f),
       };
@@ -162,7 +167,7 @@ export class SchemaMigrationService {
    * a stale (often expired) Databricks token after a branch switch.
    * This builder ALWAYS wraps in refresh-token.sh, fixing that bug.
    *
-   * @param language - detected stack (java/kotlin/python/nodejs/unknown)
+   * @param language - detected stack (java/kotlin/python/nodejs/dotnet/unknown)
    * @param opts.branchLabel - when set, the terminal name reads
    *   "<Tool>: <branch>" (switch flow); otherwise "<Tool> Migrate".
    */
@@ -175,6 +180,9 @@ export class SchemaMigrationService {
       kotlin:  { tool: 'Flyway',  base: './scripts/flyway-migrate.sh' },
       python:  { tool: 'Alembic', base: 'uv run alembic upgrade head' },
       nodejs:  { tool: 'Knex',    base: 'bash -c "set -a; source .env 2>/dev/null; set +a; npx knex migrate:latest"' },
+      // EF Core or Flyway: flyway-migrate.sh routes .NET through the kit's
+      // tool-agnostic lakebase-schema-migrate, which picks the tool.
+      dotnet:  { tool: '.NET',    base: './scripts/flyway-migrate.sh' },
       unknown: { tool: 'Migrate', base: './scripts/flyway-migrate.sh' },
     };
     const entry = map[language] ?? map.unknown;

@@ -25,14 +25,17 @@ import {
   verifyWorkflows as substrateVerifyWorkflows,
 } from "@databricks-solutions/lakebase-scm-utils";
 
-export type ProjectLanguage = "java" | "kotlin" | "python" | "nodejs";
+export type ProjectLanguage = "java" | "kotlin" | "python" | "nodejs" | "dotnet";
+
+export type DotnetMigrationTool = "efcore" | "flyway";
 
 export type ScaffoldReportFn = (message: string, detail?: string) => void;
 
 /**
  * Service for scaffolding new Lakebase projects.
  * Deploys common files (scripts, workflows, hooks, config) plus language-specific
- * project files (Java/Kotlin via Spring Initializr, Python/FastAPI, Node.js/Express).
+ * project files (Java/Kotlin via Spring Initializr, Python/FastAPI, Node.js/Express,
+ * .NET/ASP.NET Core with EF Core or Flyway).
  */
 export class ScaffoldService {
   constructor(private readonly initializrClient?: SpringInitializrClient) {}
@@ -89,11 +92,13 @@ export class ScaffoldService {
     language: ProjectLanguage,
     projectName?: string,
     report?: ScaffoldReportFn,
+    migrationTool?: DotnetMigrationTool,
   ): Promise<void> {
     return substrateDeployLanguageProject({
       targetDir,
       language,
       projectName,
+      migrationTool,
       report,
       initializrClient: this.getInitializrClient(),
     });
@@ -107,6 +112,7 @@ export class ScaffoldService {
       databricksHost?: string;
       lakebaseProjectId?: string;
       language?: ProjectLanguage;
+      migrationTool?: DotnetMigrationTool;
       runnerType?: "self-hosted" | "github-hosted";
       report?: ScaffoldReportFn;
     },
@@ -117,6 +123,7 @@ export class ScaffoldService {
       databricksHost: values?.databricksHost,
       lakebaseProjectId: values?.lakebaseProjectId,
       language: values?.language ?? "java",
+      migrationTool: values?.migrationTool,
       runnerType: values?.runnerType ?? "self-hosted",
       report: values?.report,
       initializrClient: this.getInitializrClient(),

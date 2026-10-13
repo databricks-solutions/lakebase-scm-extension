@@ -30,7 +30,7 @@ import { stripInvisibles } from './utils/text';
 import { isMainBranch, isTierBranch } from './utils/theme';
 import { buildDiffTuples, DiffTuple } from './utils/diffBuilder';
 import { ProjectCreationService, PROJECT_CREATION_PROMPTS } from './services/projectCreationService';
-import { ScaffoldService } from './services/scaffoldService';
+import { ScaffoldService, type DotnetMigrationTool } from './services/scaffoldService';
 import { DeployService, DeployTarget, DeployTargetsConfig } from './services/deployService';
 import { RunnerTreeProvider } from './providers/runnerTreeProvider';
 import { GitHubService } from './services/githubService';
@@ -208,7 +208,7 @@ async function runDatabricksLoginInBackground(
  * places and risked drift. The `title` arg lets each caller supply the
  * step-numbered title appropriate to its flow.
  */
-type LakebaseLanguage = 'java' | 'kotlin' | 'python' | 'nodejs';
+type LakebaseLanguage = 'java' | 'kotlin' | 'python' | 'nodejs' | 'dotnet';
 async function pickLakebaseLanguage(title: string): Promise<LakebaseLanguage | undefined> {
   const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: LakebaseLanguage }>(
     [
@@ -216,8 +216,22 @@ async function pickLakebaseLanguage(title: string): Promise<LakebaseLanguage | u
       { label: '$(symbol-class) Kotlin / Spring Boot', description: 'Maven, Flyway, JPA', value: 'kotlin' },
       { label: '$(symbol-method) Python / FastAPI', description: 'Alembic, SQLAlchemy, pytest', value: 'python' },
       { label: '$(symbol-variable) Node.js / Express', description: 'Knex, pg, Jest', value: 'nodejs' },
+      { label: '$(symbol-namespace) .NET / ASP.NET Core', description: 'EF Core or Flyway, Npgsql, xUnit', value: 'dotnet' },
     ],
     { title, placeHolder: 'Choose project language and framework' },
+  );
+  return pick?.value;
+}
+
+/** Migration tool for a .NET project; other languages have one tool each. */
+type LakebaseDotnetMigrationTool = DotnetMigrationTool;
+async function pickDotnetMigrationTool(title: string): Promise<LakebaseDotnetMigrationTool | undefined> {
+  const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { value: LakebaseDotnetMigrationTool }>(
+    [
+      { label: '$(symbol-class) EF Core migrations', description: 'C# migrations generated from your DbContext model (dotnet ef)', value: 'efcore' },
+      { label: '$(database) Flyway (SQL)', description: 'Versioned SQL files in db/migrations/; EF Core as the runtime ORM', value: 'flyway' },
+    ],
+    { title, placeHolder: 'How should schema migrations be written?' },
   );
   return pick?.value;
 }
@@ -1692,6 +1706,11 @@ export async function activate(context: vscode.ExtensionContext) {
       // ── Language stack ───────────────────────────────────────────
       const languageValue = await pickLakebaseLanguage('Lakebase: Project Language (7/9)');
       if (!languageValue) { return; }
+      let migrationToolValue: LakebaseDotnetMigrationTool | undefined;
+      if (languageValue === 'dotnet') {
+        migrationToolValue = await pickDotnetMigrationTool('Lakebase: .NET Migrations');
+        if (!migrationToolValue) { return; }
+      }
 
       // ── Step 2c: Runner type ─────────────────────────────────────
       const runnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type (8/9)');
@@ -1747,6 +1766,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 githubOwner: ghUser,
                 privateRepo,
                 language: languageValue,
+                migrationTool: migrationToolValue,
                 runnerType: runnerValue,
               },
               (step, detail) => {
@@ -1922,19 +1942,35 @@ export async function activate(context: vscode.ExtensionContext) {
       // workflows). Only a truly empty adopt (no markers -> "unknown") still needs
       // the picker + the scaffold. Picks happen BEFORE auth so a user never
       // authenticates only to abandon the wizard at a pick.
-      const LAKEBASE_LANGS: readonly LakebaseLanguage[] = ['java', 'kotlin', 'python', 'nodejs'];
+      const LAKEBASE_LANGS: readonly LakebaseLanguage[] = ['java', 'kotlin', 'python', 'nodejs', 'dotnet'];
       const detectedLanguage = detectLanguage(root);
-      const alreadyScaffolded = (LAKEBASE_LANGS as readonly string[]).includes(detectedLanguage);
+      // A .NET repo whose projects sit below the root (no root .sln/.csproj) is
+      // not detected as .NET, but it is NOT empty: never scaffold over it.
+      const { findCsprojFiles } = require('@databricks-solutions/lakebase-scm-utils');
+      const nestedDotnet = detectedLanguage === 'unknown' && findCsprojFiles(root).length > 0;
+      if (nestedDotnet) {
+        vscode.window.showWarningMessage(
+          'This looks like a .NET project, but there is no .sln or .csproj at the repository root. ' +
+          'Lakebase wiring is set up without scaffolding; add a root .sln for full .NET migration support.'
+        );
+      }
+      const alreadyScaffolded = (LAKEBASE_LANGS as readonly string[]).includes(detectedLanguage) || nestedDotnet;
       let setupLanguageValue: LakebaseLanguage;
+      let setupMigrationTool: LakebaseDotnetMigrationTool | undefined;
       let setupRunnerValue: Awaited<ReturnType<typeof pickLakebaseRunner>> = undefined;
       if (alreadyScaffolded) {
-        setupLanguageValue = detectedLanguage as LakebaseLanguage;
+        setupLanguageValue = nestedDotnet ? 'dotnet' : detectedLanguage as LakebaseLanguage;
         log(`existing project: detected language "${detectedLanguage}" from marker files – skipping the language + runner pickers and the language-tree scaffold (adopt only wires .env + Lakebase).`);
       } else {
         const pickedLanguage = await pickLakebaseLanguage('Lakebase: Project Language');
         if (!pickedLanguage) { log('=== ABORT: user dismissed language pick ==='); return; }
         setupLanguageValue = pickedLanguage;
         log(`language (greenfield adopt): ${setupLanguageValue}`);
+        if (setupLanguageValue === 'dotnet') {
+          setupMigrationTool = await pickDotnetMigrationTool('Lakebase: .NET Migrations');
+          if (!setupMigrationTool) { log('=== ABORT: user dismissed migration-tool pick ==='); return; }
+          log(`migration tool: ${setupMigrationTool}`);
+        }
 
         setupRunnerValue = await pickLakebaseRunner('Lakebase: CI Runner Type');
         if (!setupRunnerValue) { log('=== ABORT: user dismissed runner pick ==='); return; }
@@ -2056,6 +2092,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 databricksHost: host,
                 lakebaseProjectId: projectId,
                 language: setupLanguageValue,
+                migrationTool: setupMigrationTool,
                 runnerType: setupRunnerValue!,
                 report: (step: string, detail?: string) => {
                   progress.report({ message: `${step}${detail ? ' (' + detail + ')' : ''}` });
@@ -2750,9 +2787,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('lakebaseSync.runMigrate', async () => {
       schemaDiffService.clearCache();
-      const root = getWorkspaceRoot();
-      const lang = detectLanguage(root);
-      const { name, cmd } = migrationService.buildMigrateCommand(lang);
+      // getConfig() honors lakebaseSync.language and the monorepo migrationPath walk.
+      const { name, cmd } = migrationService.buildMigrateCommand(getConfig().language);
       const terminal = vscode.window.createTerminal(name);
       terminal.show();
       terminal.sendText(cmd);
@@ -3030,7 +3066,7 @@ export async function activate(context: vscode.ExtensionContext) {
             schemaDiffService.clearCache();
             const migrationCount = migrationService.getMigrationCount();
             if (migrationCount > 0) {
-              const switchLang = detectLanguage(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+              const switchLang = getConfig().language;
               const migCmd = migrationService.buildMigrateCommand(switchLang, { branchLabel: targetGitBranch });
               const terminal = vscode.window.createTerminal({
                 name: migCmd.name,
@@ -3124,7 +3160,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (diff && diff.inSync && !diff.error) {
           try {
             const config = getConfig();
-            const mainMigrations = await gitService.listMigrationsOnBranch(config.trunkBranch || 'main', config.migrationPath);
+            const mainMigrations = await gitService.listMigrationsOnBranch(config.trunkBranch || 'main', config.migrationPath, config.migrationPattern);
             const mainSet = new Set(mainMigrations);
             const branchMigrations = migrationService.listMigrations();
             const newMigrations = branchMigrations.filter(m => !mainSet.has(m.filename));
